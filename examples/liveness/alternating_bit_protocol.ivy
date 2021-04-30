@@ -1,0 +1,486 @@
+#lang ivy1.7
+
+# This file contains a liveness proof of the alternating bit protocol,
+# and illustrates Ivy's liveness to safety tactic on an infinite-state
+# system that requires both dynamic abstraction and temporal
+# prophecy. The example is discussed in the following papers:
+#
+# Oded Padon, Jochen Hoenicke, Giuliano Losa, Andreas Podelski, Mooly
+# Sagiv, and Sharon Shoham: Reducing Liveness to Safety in First-Order
+# Logic. POPL 2018: Article 26.
+#
+# Oded Padon, Jochen Hoenicke, Kenneth L. McMillan, Andreas Podelski,
+# Mooly Sagiv, Sharon Shoham: Temporal Prophecy for Proving Temporal
+# Properties of Infinite-State Systems. FMCAD 2018: 1-11
+#
+# To verify this file, run:
+#
+#     $ ivy_check alternating_bit_protocol.ivy
+#     ...
+#     OK
+#
+
+################################################################################
+#
+# A basic version of alternating bit protocol with binary (1-bit)
+# sequence number and FIFO channels.
+#
+################################################################################
+
+################################################################################
+#
+# Module for axiomatizing a totally ordered set with fixed order
+#
+# The module includes an le relation, a minimal element (zero) and
+# get_succ and get_pred actions.
+#
+# In this module, the order is arbitrary and fixed.
+#
+################################################################################
+
+module total_order(carrier) = {
+    relation le(X:carrier,Y:carrier)   # less than or equal
+
+    axiom le(X, X)                        # Reflexivity
+    axiom le(X, Y) & le(Y, Z) -> le(X, Z) # Transitivity
+    axiom le(X, Y) & le(Y, X) -> X = Y    # Anti-symmetry
+    axiom le(X, Y) | le(Y, X)             # Totality
+
+    individual zero:carrier
+    axiom le(zero, X)
+
+    action get_succ(x:carrier) returns (y:carrier) = {
+        assume le(x,y) & x ~= y & ((le(x, Z) & x ~= Z) -> le(y, Z));
+    }
+
+    action get_pred(y:carrier) returns (x:carrier) = {
+        require y ~= zero;
+        assume le(x,y) & x ~= y & ((le(x, Z) & x ~= Z) -> le(y, Z));
+    }
+}
+
+################################################################################
+#
+# Module for a fifo channel
+#
+################################################################################
+
+module fifo_channel(m_t) = {
+    relation le(X:m_t,Y:m_t)  # partial order representing messages in
+                              # the channel - larger messages are
+                              # older. le(x,x) means message x is in
+                              # the channel
+
+    invariant le(X, Y) & le(Y, Z) -> le(X, Z)  # Transitivity
+    invariant le(X, Y) & le(Y, X) -> X = Y  # Anti-symmetry
+    invariant le(X, Y) -> le(X, X) & le(Y, Y)  # Partial reflexivity
+    invariant le(X, X) & le(Y, Y) -> le(X, Y) | le(Y, X)  # Partial Totality
+
+    after init {
+        le(X, Y) := false;
+    }
+
+    action send(m: m_t) = {
+        # insert m as a newest message
+        require ~le(m, m);
+        le(m, m) := true;
+        le(m, X) := le(X,X);
+    }
+
+    action receive returns (m: m_t) = {
+        # receive the oldest message and remove it
+        assume le(m, m);
+        assume le(m,X) -> X = m;
+        le(X,m) := false;
+    }
+
+    action drop(m:m_t) = {
+        # drop a message
+        le(X,Y) := le(X, Y) & X ~= m & Y ~= m;
+    }
+}
+
+################################################################################
+#
+# The protocol itself, with tracking of events for expressing
+# fairness assumptions.
+#
+################################################################################
+
+isolate abp = {
+
+    # a totally ordered set for indices
+    type index_t
+    instantiate index : total_order(index_t)
+
+    # an uninterpreted sort for data items
+    type value
+    individual bot:value # special bottom value
+
+    # data messages (sent from sender to received), with a fifo channel,
+    # and a data item and sequence bit for every message
+    type data_msg_t
+    instantiate data_msg : fifo_channel(data_msg_t)
+    function d(D:data_msg_t): value  # immutable
+    relation dbit(D:data_msg_t)  # immutable
+
+    # ack messages (sent from receiver to sender), with a fifo channel and
+    # a sequence number bit for every message.
+    type ack_msg_t
+    instantiate ack_msg : fifo_channel(ack_msg_t)
+    relation abit(A:ack_msg_t)  # immutable
+
+    action gen_data(v:value)
+    action sender_send_data(m:data_msg_t, a:ack_msg_t)
+    action sender_receive_ack(m:data_msg_t, a:ack_msg_t)
+    action receiver_receive_data(m:data_msg_t, a:ack_msg_t)
+    action receiver_send_ack(m:data_msg_t, a:ack_msg_t)
+    action data_msg_drop(m:data_msg_t, a:ack_msg_t)
+    action ack_msg_drop(m:data_msg_t, a:ack_msg_t)
+
+    specification {
+
+        # sender array and receiver array
+        individual sender_array(I:index_t) : value
+        individual receiver_array(I:index_t) : value
+
+        # sender index and receiver index
+        individual sender_i:index_t
+        individual sender_gen_i:index_t
+        individual receiver_i:index_t
+
+        # sender and receiver bits, initially 0 (false)
+        relation sender_bit
+        relation receiver_bit
+
+        # flags for tracking fairness assumptions
+        relation sender_scheduled
+        relation receiver_scheduled
+        relation data_sent
+        relation data_received
+        relation ack_sent
+        relation ack_received
+
+        after init {
+            sender_array(I) := bot;
+            receiver_array(I) := bot;
+            sender_i := index.zero;
+            sender_gen_i := index.zero;
+            receiver_i := index.zero;
+            sender_bit := false;
+            receiver_bit := false;
+            sender_scheduled := false;
+            receiver_scheduled := false;
+            data_sent := false;
+            data_received := false;
+            ack_sent := false;
+            ack_received := false;
+        }
+
+        ################################################################################
+        #
+        # Protocol actions
+        #
+        ################################################################################
+
+        before gen_data {
+            require v ~= bot;
+            sender_array(sender_gen_i) := v;
+            sender_gen_i := index.get_succ(sender_gen_i);
+        }
+
+        before sender_send_data {
+            sender_scheduled := true;
+            sender_scheduled := false;
+
+            if (sender_array(sender_i) ~= bot) {
+                assume d(m) = sender_array(sender_i);
+                assume dbit(m) <-> sender_bit;
+                call data_msg.send(m);
+
+                data_sent := true;
+                data_sent := false;
+            };
+        }
+
+        before sender_receive_ack {
+            ack_received := true;
+            ack_received := false;
+
+            a := ack_msg.receive();
+            if abit(a) <-> sender_bit {
+                sender_bit := ~sender_bit;
+                sender_i := index.get_succ(sender_i)
+            };
+        }
+
+        before receiver_receive_data {
+            data_received := true;
+            data_received := false;
+
+            m := data_msg.receive();
+            if dbit(m) <-> receiver_bit {
+                # flip receiver bit, append to receiver array
+                receiver_bit := ~receiver_bit;
+                receiver_array(receiver_i) := d(m);
+                receiver_i := index.get_succ(receiver_i)
+            };
+        }
+
+        before receiver_send_ack {
+            receiver_scheduled := true;
+            receiver_scheduled := false;
+
+            # send ack with ~receiver_bit
+            assume abit(a) <-> ~receiver_bit;
+            call ack_msg.send(a);
+
+            ack_sent := true;
+            ack_sent := false;
+        }
+
+        before data_msg_drop {
+            call data_msg.drop(m);
+        }
+
+        before ack_msg_drop {
+            call ack_msg.drop(a);
+        }
+
+        ################################################################################
+	#
+	# Invariants for proving safety (also help for liveness)
+	#
+	################################################################################
+
+        # safety - receiver array has values from sender array for all received indices
+        invariant receiver_array(I) ~= bot -> receiver_array(I) = sender_array(I)
+
+        # inductive invariant for proving safety
+
+        invariant index.le(sender_gen_i, I) <-> sender_array(I) = bot
+        invariant index.le(receiver_i, I) <-> receiver_array(I) = bot
+        invariant index.le(sender_i, sender_gen_i)
+
+        invariant ~sender_bit & ~receiver_bit & ack_msg.le(A,A) -> abit(A)
+        invariant ~sender_bit & ~receiver_bit & data_msg.le(M1,M2) -> ~(dbit(M1) & ~dbit(M2))
+
+        invariant sender_bit & receiver_bit & ack_msg.le(A,A) -> ~abit(A)
+        invariant sender_bit & receiver_bit & data_msg.le(M1,M2) -> ~(~dbit(M1) & dbit(M2))
+
+        invariant ~sender_bit & receiver_bit & data_msg.le(M,M) -> ~dbit(M)
+        invariant ~sender_bit & receiver_bit & ack_msg.le(A1,A2) -> ~(abit(A1) & ~abit(A2))
+
+        invariant sender_bit & ~receiver_bit & data_msg.le(M,M) -> dbit(M)
+        invariant sender_bit & ~receiver_bit & ack_msg.le(A1,A2) -> ~(~abit(A1) & abit(A2))
+
+        invariant (sender_bit <-> receiver_bit)  -> sender_i = receiver_i
+        invariant (sender_bit <-> ~receiver_bit) -> (
+            # receiver_i = sender_i + 1
+            ~index.le(receiver_i, sender_i) &
+            (forall I. ~index.le(I,sender_i) -> index.le(receiver_i,I))
+        )
+
+        invariant data_msg.le(M,M) & (dbit(M) <-> sender_bit) -> ~index.le(sender_gen_i, sender_i)
+        invariant data_msg.le(M,M) & (dbit(M) <-> sender_bit) -> d(M) = sender_array(sender_i)
+        invariant data_msg.le(M,M) -> d(M) ~= bot
+
+        invariant ack_msg.le(A,A) & (abit(A) <-> sender_bit) -> ~index.le(receiver_i,sender_i)
+        invariant ack_msg.le(A,A) & (abit(A) <-> sender_bit) -> receiver_array(sender_i) = sender_array(sender_i)
+        invariant ack_msg.le(A,A) & (abit(A) <-> sender_bit) -> receiver_array(sender_i) ~= bot
+
+        ################################################################################
+        #
+        # Temporal property and its proof
+        #
+        # The property to prove is:
+        # (
+        #    (globally eventually sender_scheduled) &                                 # scheduling fairness
+        #    (globally eventually receiver_scheduled) &                               # scheduling fairness
+        #    ((globally eventually data_sent) -> (globally eventually data_received)) # data channel fairness
+        #    ((globally eventually ack_sent) -> (globally eventually ack_received))   # ack channel fairness
+        # ) -> (forall I. globally (sender_array(I) ~= bot -> eventually (receiver_array(I) ~= bot)))
+        #
+        # The set A of formulas containts the following formulas (and their subformulas):
+        # 1. the property
+        # 2. eventually globally ~sender_bit & ~receiver_bit
+        # 3. eventually globally ~sender_bit &  receiver_bit
+        # 4. eventually globally  sender_bit & ~receiver_bit
+        # 5. eventually globally  sender_bit &  receiver_bit
+        #
+        # We also use "witness constants" for the following formula:
+        # ~ globally (sender_array(I) ~= bot -> eventually receiver_array(I) ~= bot)
+
+        #
+        ################################################################################
+
+        individual sk0:index_t  # witness for the formula (exists I. ~ globally (sender_array(I) ~= bot -> (eventually receiver_array(I) ~= bot)))
+
+        temporal property [liveness] (
+            # temporal witnesses
+                ((exists I. ~ globally (sender_array(I  ) ~= bot -> (eventually receiver_array(I  ) ~= bot))) ->
+                           (~ globally (sender_array(sk0) ~= bot -> (eventually receiver_array(sk0) ~= bot))))
+        ) -> (
+            # temporal property
+            (
+                (globally eventually sender_scheduled) &                                   # scheduling fairness
+                (globally eventually receiver_scheduled) &                                 # scheduling fairness
+                ((globally eventually data_sent) -> (globally eventually data_received)) & # data channel fairness
+                ((globally eventually ack_sent) -> (globally eventually ack_received))     # ack channel fairness
+            ) -> (forall I. globally (sender_array(I) ~= bot -> eventually (receiver_array(I) ~= bot)))
+        )
+        proof {
+            tactic l2s with
+
+	    ################################################################################
+	    #
+	    # Invariants for proving liveness
+	    #
+	    ################################################################################
+
+            # basic, should be added automatically
+            invariant l2s_waiting | l2s_frozen | l2s_saved
+            invariant ~l2s_waiting | ~l2s_frozen
+            invariant ~l2s_waiting | ~l2s_saved
+            invariant ~l2s_frozen  | ~l2s_saved
+
+            # some things never change (maybe this should also be detected automatically)
+	    invariant l2s_saved -> (index.le(X,Y) <-> ($l2s_s X,Y. index.le(X,Y))(X,Y))
+	    invariant l2s_saved -> (index.zero = ($l2s_s. index.zero))
+	    invariant l2s_saved -> (abit(X) <-> ($l2s_s X. abit(X))(X))
+	    invariant l2s_saved -> (dbit(X) <-> ($l2s_s X. dbit(X))(X))
+	    invariant l2s_saved -> (d(X) = ($l2s_s X. d(X))(X))
+	    invariant l2s_saved -> (sk0 = ($l2s_s. sk0))
+
+            # flags are only transiently true
+            invariant ~sender_scheduled
+            invariant ~receiver_scheduled
+            invariant ~data_sent
+            invariant ~data_received
+            invariant ~ack_sent
+            invariant ~ack_received
+
+	    # basic temporal information
+            invariant globally eventually sender_scheduled
+            invariant globally eventually receiver_scheduled
+            invariant (globally eventually data_sent) -> (globally eventually data_received)
+            invariant (globally eventually ack_sent) -> (globally eventually ack_received)
+
+            # properties of sk0
+            invariant ~globally (sender_array(sk0) ~= bot -> (eventually receiver_array(sk0) ~= bot))
+            invariant ~($l2s_w. ~(sender_array(sk0) ~= bot -> (eventually receiver_array(sk0) ~= bot))) -> ~(sender_array(sk0) ~= bot -> (eventually receiver_array(sk0) ~= bot))
+            invariant ~l2s_waiting -> sender_array(sk0) ~= bot
+            invariant ~l2s_waiting -> (~eventually receiver_array(sk0) ~= bot)
+            invariant ~l2s_waiting -> receiver_array(sk0) = bot
+            # interestingly, this is not provable in the l2s_waiting state:
+            # invariant receiver_array(sk0) = bot
+
+            # basic use of temporal prophecy formulas
+            invariant (eventually globally (~sender_bit & ~receiver_bit)) & (~l2s_waiting | ~($l2s_w. globally (~sender_bit & ~receiver_bit))) -> globally (~sender_bit & ~receiver_bit)
+            invariant (eventually globally (~sender_bit &  receiver_bit)) & (~l2s_waiting | ~($l2s_w. globally (~sender_bit &  receiver_bit))) -> globally (~sender_bit &  receiver_bit)
+            invariant (eventually globally ( sender_bit & ~receiver_bit)) & (~l2s_waiting | ~($l2s_w. globally ( sender_bit & ~receiver_bit))) -> globally ( sender_bit & ~receiver_bit)
+            invariant (eventually globally ( sender_bit &  receiver_bit)) & (~l2s_waiting | ~($l2s_w. globally ( sender_bit &  receiver_bit))) -> globally ( sender_bit &  receiver_bit)
+
+            # l2s_d is large enough
+            invariant index.le(I,sender_gen_i) -> l2s_d(I)
+            invariant data_msg.le(M,M) -> l2s_d(M)
+            invariant ack_msg.le(A,A) -> l2s_d(A)
+            # l2s_a is large enough
+            invariant ~l2s_waiting -> ( index.le(I,sk0) -> l2s_a(I) )
+            invariant ~l2s_waiting & (
+                (globally (~sender_bit & ~receiver_bit)) |
+                (globally (~sender_bit &  receiver_bit)) |
+                (globally ( sender_bit & ~receiver_bit)) |
+                (globally ( sender_bit &  receiver_bit))
+            ) -> ( data_msg.le(M,M) & (dbit(M) <-> ~sender_bit) -> l2s_a(M) )
+            invariant ~l2s_waiting & (
+                (globally (~sender_bit & ~receiver_bit)) |
+                (globally (~sender_bit &  receiver_bit)) |
+                (globally ( sender_bit & ~receiver_bit)) |
+                (globally ( sender_bit &  receiver_bit))
+            ) -> ( ack_msg.le(A,A) & (abit(A) <-> receiver_bit) -> l2s_a(A) )
+
+
+            # more properties of reachable protocol states (but only in ~l2s_waiting)
+            invariant ~l2s_waiting -> index.le(sender_i, sk0)
+            invariant ~l2s_waiting -> index.le(receiver_i, sk0)
+            # and their saved state counterparts
+            invariant l2s_saved -> ($l2s_s X,Y. index.le(X,Y))(($l2s_s. sender_i), ($l2s_s. sk0))
+            invariant l2s_saved -> ($l2s_s X,Y. index.le(X,Y))(($l2s_s. receiver_i), ($l2s_s. sk0))
+
+            # relating current state and saved state
+            invariant l2s_saved -> index.le(($l2s_s. sender_i), sender_i)
+            invariant l2s_saved -> index.le(($l2s_s. receiver_i), receiver_i)
+            invariant l2s_saved & (
+                (globally (~sender_bit & ~receiver_bit)) |
+                (globally (~sender_bit &  receiver_bit)) |
+                (globally ( sender_bit & ~receiver_bit)) |
+                (globally ( sender_bit &  receiver_bit))
+            ) -> (
+                ( sender_bit <-> ($l2s_s. sender_bit) ) &
+                ( receiver_bit <-> ($l2s_s. receiver_bit) ) &
+                ( sender_i = ($l2s_s. sender_i) ) &
+                ( receiver_i = ($l2s_s. receiver_i) )
+            )
+            invariant l2s_saved & (
+                (globally (~sender_bit & ~receiver_bit)) |
+                (globally (~sender_bit &  receiver_bit)) |
+                (globally ( sender_bit & ~receiver_bit)) |
+                (globally ( sender_bit &  receiver_bit))
+            ) -> (
+                data_msg.le(M,M) & (dbit(M) <-> ~sender_bit) -> ($l2s_s X,Y. data_msg.le(X,Y))(M,M)
+            )
+            invariant l2s_saved & (
+                (globally (~sender_bit & ~receiver_bit)) |
+                (globally (~sender_bit &  receiver_bit)) |
+                (globally ( sender_bit & ~receiver_bit)) |
+                (globally ( sender_bit &  receiver_bit))
+            ) -> (
+                ack_msg.le(A,A)  & (abit(A) <-> receiver_bit) -> ($l2s_s X,Y. ack_msg.le(X,Y))(A,A)
+            )
+            invariant l2s_saved & (sender_bit <-> ~($l2s_s. sender_bit)) -> sender_i ~= ($l2s_s. sender_i)
+            invariant l2s_saved & (receiver_bit <-> ~($l2s_s. receiver_bit)) -> receiver_i ~= ($l2s_s. receiver_i)
+
+            # proof that messages are infinitely often sent and received
+            invariant ~(globally eventually data_sent) & (~l2s_waiting | ~($l2s_w. globally ~data_sent)) -> globally ~data_sent
+            invariant ~(globally eventually ack_sent) & (~l2s_waiting | ~($l2s_w. globally ~ack_sent)) -> globally ~ack_sent
+            invariant l2s_saved -> (($l2s_s. globally ~data_sent) -> globally ~data_sent)
+            invariant l2s_saved -> (($l2s_s. globally ~ack_sent) -> globally ~ack_sent)
+            invariant l2s_saved & ~($l2s_w. sender_scheduled) -> ~($l2s_s. globally ~data_sent)
+            invariant l2s_saved & ~($l2s_w. receiver_scheduled) -> ~($l2s_s. globally ~ack_sent)
+
+            # the messages that exist and show the difference between current state and saved state
+            invariant l2s_saved & (
+                (globally (~sender_bit & ~receiver_bit)) |
+                (globally (~sender_bit &  receiver_bit)) |
+                (globally ( sender_bit & ~receiver_bit)) |
+                (globally ( sender_bit &  receiver_bit))
+            ) & ~($l2s_w. data_received) & ~(globally ~data_sent) & (($l2s_s. sender_bit) <-> ($l2s_s. receiver_bit)) ->
+                exists M:data_msg_t. l2s_a(M) & ~data_msg.le(M,M) & ($l2s_s X,Y. data_msg.le(X,Y))(M,M) & (dbit(M) <-> ~receiver_bit)
+
+            invariant l2s_saved & (
+                (globally (~sender_bit & ~receiver_bit)) |
+                (globally (~sender_bit &  receiver_bit)) |
+                (globally ( sender_bit & ~receiver_bit)) |
+                (globally ( sender_bit &  receiver_bit))
+            ) & ~($l2s_w. ack_received) & ~(globally ~ack_sent) & (($l2s_s. sender_bit) <-> ~($l2s_s. receiver_bit)) ->
+                exists A:ack_msg_t. l2s_a(A) & ~ack_msg.le(A,A) & ($l2s_s X,Y. ack_msg.le(X,Y))(A,A) & (abit(A) <-> ~sender_bit)
+
+            # index shows the difference between current state and
+            # saved state (just the same invariant 4 times, for the
+            # possible valuations of saved sender and receiver bits)
+            invariant l2s_saved & ~(globally (~sender_bit & ~receiver_bit)) & ~($l2s_s. sender_bit) & ~($l2s_s. receiver_bit) & ~($l2s_w. ~(~sender_bit & ~receiver_bit)) -> ( sender_i ~= ($l2s_s. sender_i) | receiver_i ~= ($l2s_s. receiver_i) )
+            invariant l2s_saved & ~(globally (~sender_bit &  receiver_bit)) & ~($l2s_s. sender_bit) &  ($l2s_s. receiver_bit) & ~($l2s_w. ~(~sender_bit &  receiver_bit)) -> ( sender_i ~= ($l2s_s. sender_i) | receiver_i ~= ($l2s_s. receiver_i) )
+            invariant l2s_saved & ~(globally ( sender_bit & ~receiver_bit)) &  ($l2s_s. sender_bit) & ~($l2s_s. receiver_bit) & ~($l2s_w. ~( sender_bit & ~receiver_bit)) -> ( sender_i ~= ($l2s_s. sender_i) | receiver_i ~= ($l2s_s. receiver_i) )
+            invariant l2s_saved & ~(globally ( sender_bit &  receiver_bit)) &  ($l2s_s. sender_bit) &  ($l2s_s. receiver_bit) & ~($l2s_w. ~( sender_bit &  receiver_bit)) -> ( sender_i ~= ($l2s_s. sender_i) | receiver_i ~= ($l2s_s. receiver_i) )
+        }
+    }
+}
+
+export abp.gen_data
+export abp.sender_send_data
+export abp.sender_receive_ack
+export abp.receiver_receive_data
+export abp.receiver_send_ack
+export abp.data_msg_drop
+export abp.ack_msg_drop

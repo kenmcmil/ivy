@@ -1,0 +1,1592 @@
+ #lang ivy1.7
+
+################################################################################
+# A liveness proof of the TLB shootdown algorithm
+################################################################################
+
+isolate tlb = {
+
+    ################################################################################
+    #
+    # The protocol itself.  This closely follows the algorithm written in Figure 9 of
+    #
+    #  J. Hoenicke, R. Majumdar, A. Podelski: Thread Modularity at Many Levels. POPL 2017
+    #
+    # The locations match the line number in the figure.
+    #
+    ################################################################################
+
+    # we distinguish between processors and pagemaps -- the above paper misused
+    # processors for both.
+    #
+    # pageentry is an abstract type to represent the value in a pagemap (the paper used integers).
+    #
+    type processor
+    type pmap
+    type pageentry
+
+    action initiator1(p:processor, m:pmap)
+    action initiator2(p:processor)
+    action initiator3(p:processor, cpu:processor)
+    action initiator3exit(p:processor)
+    action initiator4(p:processor, cpu:processor)
+    action initiator5(p:processor, cpu:processor)
+    action initiator6(p:processor, cpu:processor)
+    action initiator7(p:processor, cpu:processor)
+    action initiator8(p:processor, cpu:processor)
+    action initiator9(p:processor, cpu:processor)
+    action initiator9exit(p:processor)
+    action initiator11(p:processor, e:pageentry)
+    action initiator12(p:processor)
+    action initiator14(p:processor)
+    action initiator15(p:processor)
+    action responder1(p:processor)
+    action responder2(p:processor)
+    action responder3(p:processor)
+    action responder5(p:processor)
+    action responder6(p:processor)
+    action responder7(p:processor)
+    action responder8(p:processor)
+    action main2(p:processor)
+    action main3a(p:processor)
+    action main3b(p:processor)
+    action main5(p:processor)
+    action boot1(p:processor, m:pmap)
+
+    specification {
+
+        # the locations closely match the line numbers in Figure 9
+        #
+        # type location = {i1,i2,i3,i4,i5,i6,i7,i8,i9,i11,i12,i14,i15,m2,m3,m5,r1,r2,r3,r5,r6,r7,r8,b1}
+        # individual pc(P:processor):location
+        # init pc(P)=b1
+        #
+        # until we have support for enumerated types in ivy_l2s, use this monstrosity (see tlb.py for python code to generate this)
+        #
+        relation pc_i1(P:processor)
+        relation pc_i2(P:processor)
+        relation pc_i3(P:processor)
+        relation pc_i4(P:processor)
+        relation pc_i5(P:processor)
+        relation pc_i6(P:processor)
+        relation pc_i7(P:processor)
+        relation pc_i8(P:processor)
+        relation pc_i9(P:processor)
+        relation pc_i11(P:processor)
+        relation pc_i12(P:processor)
+        relation pc_i14(P:processor)
+        relation pc_i15(P:processor)
+        relation pc_m2(P:processor)
+        relation pc_m3(P:processor)
+        relation pc_m5(P:processor)
+        relation pc_r1(P:processor)
+        relation pc_r2(P:processor)
+        relation pc_r3(P:processor)
+        relation pc_r5(P:processor)
+        relation pc_r6(P:processor)
+        relation pc_r7(P:processor)
+        relation pc_r8(P:processor)
+        relation pc_b1(P:processor)
+
+        individual userpmap(P:processor):pmap
+        # this variable is called pmap in the paper
+        individual writepmap(P:processor):pmap
+        relation actionlock(P:processor)
+        relation actionneeded(P:processor)
+        relation active(P:processor)
+        relation interrupt(P:processor)
+        # this represents the cpu variable as relation
+        relation currentcpu(P:processor, CPU:processor)
+        relation plock(M:pmap)
+        individual tlb(P:processor):pageentry
+        individual pentry(M:pmap):pageentry
+
+        # elements to iterate in the for cpu ~= pid loops.
+        relation todo(P1:processor, P2:processor)
+
+        # error is set if some assertions fails, e.g. lock not held on unlock.
+        relation error
+
+        # the last scheduled processor
+        relation scheduled(P:processor)
+
+        after init {
+            currentcpu(P,C) := false;
+            plock(P) := false;
+            actionlock(P) := false;
+            actionneeded(P) := false;
+            interrupt(P) := false;
+            active(P) := true;
+            error := false;
+            scheduled(P) := false;
+
+            # init of pc (from tlb.py)
+            pc_b1(P) := true;
+            pc_i1(P) := false;
+            pc_i2(P) := false;
+            pc_i3(P) := false;
+            pc_i4(P) := false;
+            pc_i5(P) := false;
+            pc_i6(P) := false;
+            pc_i7(P) := false;
+            pc_i8(P) := false;
+            pc_i9(P) := false;
+            pc_i11(P) := false;
+            pc_i12(P) := false;
+            pc_i14(P) := false;
+            pc_i15(P) := false;
+            pc_m2(P) := false;
+            pc_m3(P) := false;
+            pc_m5(P) := false;
+            pc_r1(P) := false;
+            pc_r2(P) := false;
+            pc_r3(P) := false;
+            pc_r5(P) := false;
+            pc_r6(P) := false;
+            pc_r7(P) := false;
+            pc_r8(P) := false;
+        }
+
+        # i1: active := false   we also havoc writepmap here
+        before initiator1 {
+            # assume pc(p)=i1;
+            assume pc_i1(p);
+            active(p) := false;
+            writepmap(p) := m;
+            # pc(p) := i2;
+            pc_i2(p) := true;
+            pc_i1(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i2: lock plock(writepmap)
+        # Also prepares for cpu ~= pid loop.
+        # Note that we busy-loop if lock is taken.  This is necessary to
+        # detect deadlock as non-terminating runs.
+        before initiator2 {
+            # assume pc(p)=i2;
+            assume pc_i2(p);
+            if (~plock(writepmap(p))) {
+                plock(writepmap(p)) := true;
+                # todo(p,X) := ~pc(X) ~= b1 & p ~= X;
+                todo(p,X) := ~pc_b1(X) & p ~= X;
+                # pc(p) := i3;
+                pc_i3(p) := true;
+                pc_i2(p) := false;
+            };
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i3: for cpu ~= pid
+        # This translates for (cpu ~= pid)
+        # if todo contains a cpu, it is set in the currentcpu relation and we enter the loop
+        before initiator3 {
+            # assume pc(p)=i3;
+            assume pc_i3(p);
+            assume todo(p, cpu);
+            currentcpu(p, X) := X = cpu;
+            todo(p, cpu) := false;
+            # pc(p) := i4;
+            pc_i4(p) := true;
+            pc_i3(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # Otherwise if todo list is empty, we leave the loop
+        # and prepare the next for pid ~= cpu loop.
+        before initiator3exit {
+            # assume pc(p)=i3;
+            assume pc_i3(p);
+            assume ~todo(p, X);
+            # todo(p, X) := pc(X) ~= b1 & X ~= p;
+            todo(p, X) := ~pc_b1(X) & X ~= p;
+            # pc(p) := i9;
+            pc_i9(p) := true;
+            pc_i3(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i4:    if userpmap[cpu] = pmap
+        before initiator4 {
+            # assume pc(p)=i4;
+            assume pc_i4(p);
+            assume currentcpu(p, cpu);
+            if (userpmap(cpu) = writepmap(p)) {
+                # pc(p) := i5;
+                pc_i5(p) := true;
+                pc_i4(p) := false;
+            } else {
+                # pc(p) := i3;
+                pc_i3(p) := true;
+                pc_i4(p) := false;
+            };
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i5:        lock actionlock[cpu]
+        before initiator5 {
+            # assume pc(p)=i5;
+            assume pc_i5(p);
+            assume currentcpu(p, cpu);
+            if (~actionlock(cpu)) {
+                actionlock(cpu) := true;
+                # pc(p) := i6;
+                pc_i6(p) := true;
+                pc_i5(p) := false;
+            };
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i6:        actionneeded[cpu] := true
+        before initiator6 {
+            # assume pc(p)=i6;
+            assume pc_i6(p);
+            assume currentcpu(p, cpu);
+            actionneeded(cpu) := true;
+            # pc(p) := i7;
+            pc_i7(p) := true;
+            pc_i6(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i7:        unlock actionlock[cpu]
+        before initiator7 {
+            # assume pc(p)=i7;
+            assume pc_i7(p);
+            assume currentcpu(p, cpu);
+            if (~actionlock(cpu)) {
+                error := true
+            };
+            actionlock(cpu) := false;
+            # pc(p) := i8;
+            pc_i8(p) := true;
+            pc_i7(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i8:        interrupt[cpu] := true
+        before initiator8 {
+            # assume pc(p)=i8;
+            assume pc_i8(p);
+            assume currentcpu(p, cpu);
+            interrupt(cpu) := true;
+            # pc(p) := i3;
+            pc_i3(p) := true;
+            pc_i8(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i9: for cpu ~= pid
+        # i10:    wait until ~active[cpu] | userpmap[cpu] ~= writepmap
+        before initiator9 {
+            # assume pc(p)=i9;
+            assume pc_i9(p);
+            assume todo(p, cpu);
+            if (~active(cpu) | userpmap(cpu) ~= writepmap(p)) {
+                todo(p, cpu) := false;
+            };
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        before initiator9exit {
+            # assume pc(p)=i9;
+            assume pc_i9(p);
+            assume ~todo(p, X);
+            # pc(p) := i11;
+            pc_i11(p) := true;
+            pc_i9(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i11: entry[pmap] := *
+        before initiator11 {
+            # assume pc(p)=i11;
+            assume pc_i11(p);
+            pentry(writepmap(p)) := e;
+            # pc(p) := i12;
+            pc_i12(p) := true;
+            pc_i11(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i12: if (userpmap = pmap)
+        # i13:    tlb := entry[pmap]
+        before initiator12 {
+            # assume pc(p)=i12;
+            assume pc_i12(p);
+            if (userpmap(p) = writepmap(p)) {
+                tlb(p) := pentry(writepmap(p))
+            };
+            # pc(p) := i14;
+            pc_i14(p) := true;
+            pc_i12(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i14: unlock plock[pmap]
+        before initiator14 {
+            # assume pc(p)=i14;
+            assume pc_i14(p);
+            if (~plock(writepmap(p))) {
+                error := true
+            };
+            plock(writepmap(p)) := false;
+            # pc(p) := i15;
+            pc_i15(p) := true;
+            pc_i14(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # i15: active := true
+        before initiator15 {
+            # assume pc(p)=i15;
+            assume pc_i15(p);
+            active(p) := true;
+            # pc(p) := m5;
+            pc_m5(p) := true;
+            pc_i15(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # r1: while actionneeded
+        before responder1 {
+            # assume pc(p)=r1;
+            assume pc_r1(p);
+            if (actionneeded(p)) {
+                # pc(p) := r2;
+                pc_r2(p) := true;
+                pc_r1(p) := false;
+            } else {
+                # pc(p) := m2;
+                pc_m2(p) := true;
+                pc_r1(p) := false;
+            };
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # r2:   active := false
+        before responder2 {
+            # assume pc(p)=r2;
+            assume pc_r2(p);
+            active(p) := false;
+            # pc(p) := r3;
+            pc_r3(p) := true;
+            pc_r2(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # this must be atomic (bug in original TLB algorithm, see paper)
+        # r3:   wait until plock[userpmap] = unlocked
+        # r4:   lock actionlock(p)
+        before responder3 {
+            # assume pc(p)=r3;
+            assume pc_r3(p);
+            if (~plock(userpmap(p))) {
+                if actionlock(p) {
+                    error := true
+                };
+                actionlock(p) := true;
+                # pc(p) := r5;
+                pc_r5(p) := true;
+                pc_r3(p) := false;
+            };
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # r5:   tlb := entry[userpmap]
+        before responder5 {
+            # assume pc(p)=r5;
+            assume pc_r5(p);
+            tlb(p) := pentry(userpmap(p));
+            # pc(p) := r6;
+            pc_r6(p) := true;
+            pc_r5(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # r6:   actionneeded := false
+        before responder6 {
+            # assume pc(p)=r6;
+            assume pc_r6(p);
+            actionneeded(p) := false;
+            # pc(p) := r7;
+            pc_r7(p) := true;
+            pc_r6(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # r7:   unlock actionlock
+        before responder7 {
+            # assume pc(p)=r7;
+            assume pc_r7(p);
+            if (~actionlock(p)) {
+                error := true
+            };
+            actionlock(p) := false;
+            # pc(p) := r8;
+            pc_r8(p) := true;
+            pc_r7(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # r8:   active := false
+        before responder8 {
+            # assume pc(p)=r8;
+            assume pc_r8(p);
+            active(p) := true;
+            # pc(p) := r1;
+            pc_r1(p) := true;
+            pc_r8(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # m1: while true
+        # m2:    assert tlb = entry[userpmap]
+        before main2 {
+            # assume pc(p)=m2;
+            assume pc_m2(p);
+            if (tlb(p) ~= pentry(userpmap(p))) {
+                error := true
+            };
+            # pc(p) := m3;
+            pc_m3(p) := true;
+            pc_m2(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # m3:    if (*)
+        # m4:        Initiator()
+        before main3a {
+            # assume pc(p)=m3;
+            assume pc_m3(p);
+            # pc(p) := i1;
+            pc_i1(p) := true;
+            pc_m3(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+        before main3b {
+            # assume pc(p)=m3;
+            assume pc_m3(p);
+            # pc(p) := m5;
+            pc_m5(p) := true;
+            pc_m3(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # m5:    if (interrupt)
+        # m6:        interrupt := false; Responder()
+        before main5 {
+            # assume pc(p)=m5;
+            assume pc_m5(p);
+            if (interrupt(p)) {
+                interrupt(p) := false;
+                # pc(p) := r1;
+                pc_r1(p) := true;
+                pc_m5(p) := false;
+            } else {
+                # pc(p) := m2
+                pc_m2(p) := true;
+                pc_m5(p) := false;
+            };
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        # b1: pid := ++n  // create process
+        # b2: atomic userpmap := *
+        #            assume plock[userpmap] = unlocked
+        #            tlb := entry[userpmap]
+        # b3: Main()
+        before boot1 {
+            # assume pc(p)=b1;
+            assume pc_b1(p);
+            assume ~plock(m);
+            userpmap(p) := m;
+            tlb(p) := pentry(m);
+            # pc(p) := m2;
+            pc_m2(p) := true;
+            pc_b1(p) := false;
+            scheduled(p) := true;
+            scheduled(p) := false;
+        }
+
+        ################################################################################
+        #
+        # Invariants for proving safety (also help for liveness)
+        #
+        ################################################################################
+
+        # all invariants are universal with at most two variables (provable at level 2)
+
+        # plock(writepmap) is taken in i3-i14
+        invariant pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P) -> plock(writepmap(P))
+        # plock(writepmap) ensures mutual exclusion of i3-i14
+        invariant (pc_i3(P1) | pc_i4(P1) | pc_i5(P1) | pc_i6(P1) | pc_i7(P1) | pc_i8(P1) | pc_i9(P1) | pc_i11(P1) | pc_i12(P1) | pc_i14(P1))
+        & (pc_i3(P2) | pc_i4(P2) | pc_i5(P2) | pc_i6(P2) | pc_i7(P2) | pc_i8(P2) | pc_i9(P2) | pc_i11(P2) | pc_i12(P2) | pc_i14(P2))
+        -> writepmap(P1) ~= writepmap(P2) | P1 = P2
+
+        # currentcpu has at most one value
+        invariant currentcpu(P,C1) & currentcpu(P, C2) -> C1 = C2
+
+        # actionlock(cpu) is taken in i6-i7
+        invariant (pc_i6(P) | pc_i7(P)) & currentcpu(P, C) -> actionlock(C)
+        # actionlock(p) is taken in r5-r7
+        invariant (pc_r5(P) | pc_r6(P) | pc_r7(P)) -> actionlock(P)
+        # actionlock(p) ensures mutual exclusion of i6-i7
+        invariant (pc_i6(P1) | pc_i7(P1)) & currentcpu(P1, C) & (pc_i6(P2) | pc_i7(P2)) & currentcpu(P2, C) -> P1 = P2
+        # actionlock(p) ensures mutual exclusion of r5-r7 and i6-i7
+        invariant ~((pc_r5(P1) | pc_r6(P1) | pc_r7(P1)) & (pc_i6(P2) | pc_i7(P2)) & currentcpu(P2, P1))
+
+        invariant (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P)) & todo(P,C) -> ~pc_b1(C) & C ~= P
+        invariant (pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P)) & currentcpu(P,C) -> ~pc_b1(C)
+        invariant (pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P)) & currentcpu(P,C) -> userpmap(C) = writepmap(P)
+        invariant pc_b1(C) -> ~actionlock(C)
+
+        # while actionlock(p) is taken outside r5-r7 it can only be if someone is in i6-i7, so plock(userpmap) should hold
+        invariant actionlock(C) & ~(pc_r5(C) | pc_r6(C) | pc_r7(C)) -> plock(userpmap(C))
+        # and then no other process with the same writepmap can be in i3-i14
+        invariant actionlock(C) & ~(pc_r5(C) | pc_r6(C) | pc_r7(C)) &
+        (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P)) ->
+        userpmap(C) ~= writepmap(P) | (currentcpu(P,C) & (pc_i6(P) | pc_i7(P)))
+
+        # instructions i5-i7 are only executed if writepmap = userpmap(cpu)
+        invariant (pc_i5(P) | pc_i6(P) | pc_i7(P)) & currentcpu(P,C) -> writepmap(P) = userpmap(C)
+
+        # active is only exactly set in these limited locations
+        invariant active(P) <->
+        (pc_b1(P) | pc_m2(P) | pc_m3(P) | pc_m5(P) | pc_i1(P) | pc_r1(P) | pc_r2(P))
+
+        # If we already iterated over a process C in the i3-i8 loop of P or if we are currently iterating and we
+        # are past the i6 instruction, and userpmap(C) = writepmap(P) then we set the actionneeded flag, so it is
+        # still set and C cannot enter the actionlock
+        invariant (pc_i3(P) | pc_i7(P) | pc_i8(P)) & ~todo(P,C) & ~pc_b1(C) & userpmap(C) = writepmap(P) -> (actionneeded(C) & ~pc_r5(C)  & ~pc_r6(C)) | P = C
+        invariant (pc_i4(P) | pc_i5(P) | pc_i6(P)) & ~todo(P,C) & ~currentcpu(P,C) & ~pc_b1(C) & userpmap(C) = writepmap(P) -> (actionneeded(C) & ~pc_r5(C)  & ~pc_r6(C)) | P = C
+        # The same if we are in the i9 loop or in i11
+        invariant (pc_i9(P) | pc_i11(P)) & ~pc_b1(C) & userpmap(C) = writepmap(P) -> (actionneeded(C) & ~pc_r5(C)  & ~pc_r6(C)) | P = C
+
+        # When the tlb(P) is incorrect actionneded(P) is still set (unless we changed our own tlb, but then
+        # we are in i12 where we fix it in the next step)
+        invariant ~pc_b1(P) & tlb(P) ~= pentry(userpmap(P)) -> (actionneeded(P) & ~pc_r6(P)) | (pc_i12(P) & userpmap(P) = writepmap(P))
+
+        # If we already iterated over a process C in the i3-i8 loop of P and userpmap(C) = writepmap(P) then
+        # we set the interrupt flag, so it is still set or C is in the interrupt routine
+        invariant (pc_i3(P)) & ~todo(P,C) & ~pc_b1(C) & userpmap(C) = writepmap(P) -> interrupt(C) | P = C | (pc_r1(C) | pc_r2(C) | pc_r3(C))
+        invariant (pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P)) & ~todo(P,C) & ~pc_b1(C) & ~currentcpu(P,C) & userpmap(C) = writepmap(P) -> interrupt(C) | P = C | (pc_r1(C) | pc_r2(C) | pc_r3(C))
+        invariant (pc_i9(P) | pc_i11(P)) & ~pc_b1(C) & userpmap(C) = writepmap(P) -> interrupt(C) | P = C | (pc_r1(C) | pc_r2(C) | pc_r3(C))
+        # When the tlb(C) is incorrect the process must be interrupted
+        invariant tlb(C) ~= pentry(userpmap(C)) & ~pc_b1(C) -> interrupt(C) | (pc_r1(C) | pc_r2(C) | pc_r3(C) | pc_r5(C)) | (pc_i12(C) & writepmap(C) = userpmap(C))
+
+        # We wait for a process in the i9 loop at least until it leaves m2 and it cannot enter m2 again before i11
+        invariant ((pc_i9(P) & ~todo(P,C)) | pc_i11(P)) & userpmap(C) = writepmap(P) -> ~pc_m2(C)
+        # When the tlb(C) is incorrect the process is not in m2
+        invariant tlb(P) ~= pentry(userpmap(P)) -> ~pc_m2(P)
+
+        invariant ~error
+
+        # scheduled is only transiently true
+        invariant ~scheduled(P)
+
+        # invariants about pc (from tlb.py)
+        invariant ~pc_i1(P) | ~pc_i2(P)
+        invariant ~pc_i1(P) | ~pc_i3(P)
+        invariant ~pc_i1(P) | ~pc_i4(P)
+        invariant ~pc_i1(P) | ~pc_i5(P)
+        invariant ~pc_i1(P) | ~pc_i6(P)
+        invariant ~pc_i1(P) | ~pc_i7(P)
+        invariant ~pc_i1(P) | ~pc_i8(P)
+        invariant ~pc_i1(P) | ~pc_i9(P)
+        invariant ~pc_i1(P) | ~pc_i11(P)
+        invariant ~pc_i1(P) | ~pc_i12(P)
+        invariant ~pc_i1(P) | ~pc_i14(P)
+        invariant ~pc_i1(P) | ~pc_i15(P)
+        invariant ~pc_i1(P) | ~pc_m2(P)
+        invariant ~pc_i1(P) | ~pc_m3(P)
+        invariant ~pc_i1(P) | ~pc_m5(P)
+        invariant ~pc_i1(P) | ~pc_r1(P)
+        invariant ~pc_i1(P) | ~pc_r2(P)
+        invariant ~pc_i1(P) | ~pc_r3(P)
+        invariant ~pc_i1(P) | ~pc_r5(P)
+        invariant ~pc_i1(P) | ~pc_r6(P)
+        invariant ~pc_i1(P) | ~pc_r7(P)
+        invariant ~pc_i1(P) | ~pc_r8(P)
+        invariant ~pc_i1(P) | ~pc_b1(P)
+        invariant ~pc_i2(P) | ~pc_i3(P)
+        invariant ~pc_i2(P) | ~pc_i4(P)
+        invariant ~pc_i2(P) | ~pc_i5(P)
+        invariant ~pc_i2(P) | ~pc_i6(P)
+        invariant ~pc_i2(P) | ~pc_i7(P)
+        invariant ~pc_i2(P) | ~pc_i8(P)
+        invariant ~pc_i2(P) | ~pc_i9(P)
+        invariant ~pc_i2(P) | ~pc_i11(P)
+        invariant ~pc_i2(P) | ~pc_i12(P)
+        invariant ~pc_i2(P) | ~pc_i14(P)
+        invariant ~pc_i2(P) | ~pc_i15(P)
+        invariant ~pc_i2(P) | ~pc_m2(P)
+        invariant ~pc_i2(P) | ~pc_m3(P)
+        invariant ~pc_i2(P) | ~pc_m5(P)
+        invariant ~pc_i2(P) | ~pc_r1(P)
+        invariant ~pc_i2(P) | ~pc_r2(P)
+        invariant ~pc_i2(P) | ~pc_r3(P)
+        invariant ~pc_i2(P) | ~pc_r5(P)
+        invariant ~pc_i2(P) | ~pc_r6(P)
+        invariant ~pc_i2(P) | ~pc_r7(P)
+        invariant ~pc_i2(P) | ~pc_r8(P)
+        invariant ~pc_i2(P) | ~pc_b1(P)
+        invariant ~pc_i3(P) | ~pc_i4(P)
+        invariant ~pc_i3(P) | ~pc_i5(P)
+        invariant ~pc_i3(P) | ~pc_i6(P)
+        invariant ~pc_i3(P) | ~pc_i7(P)
+        invariant ~pc_i3(P) | ~pc_i8(P)
+        invariant ~pc_i3(P) | ~pc_i9(P)
+        invariant ~pc_i3(P) | ~pc_i11(P)
+        invariant ~pc_i3(P) | ~pc_i12(P)
+        invariant ~pc_i3(P) | ~pc_i14(P)
+        invariant ~pc_i3(P) | ~pc_i15(P)
+        invariant ~pc_i3(P) | ~pc_m2(P)
+        invariant ~pc_i3(P) | ~pc_m3(P)
+        invariant ~pc_i3(P) | ~pc_m5(P)
+        invariant ~pc_i3(P) | ~pc_r1(P)
+        invariant ~pc_i3(P) | ~pc_r2(P)
+        invariant ~pc_i3(P) | ~pc_r3(P)
+        invariant ~pc_i3(P) | ~pc_r5(P)
+        invariant ~pc_i3(P) | ~pc_r6(P)
+        invariant ~pc_i3(P) | ~pc_r7(P)
+        invariant ~pc_i3(P) | ~pc_r8(P)
+        invariant ~pc_i3(P) | ~pc_b1(P)
+        invariant ~pc_i4(P) | ~pc_i5(P)
+        invariant ~pc_i4(P) | ~pc_i6(P)
+        invariant ~pc_i4(P) | ~pc_i7(P)
+        invariant ~pc_i4(P) | ~pc_i8(P)
+        invariant ~pc_i4(P) | ~pc_i9(P)
+        invariant ~pc_i4(P) | ~pc_i11(P)
+        invariant ~pc_i4(P) | ~pc_i12(P)
+        invariant ~pc_i4(P) | ~pc_i14(P)
+        invariant ~pc_i4(P) | ~pc_i15(P)
+        invariant ~pc_i4(P) | ~pc_m2(P)
+        invariant ~pc_i4(P) | ~pc_m3(P)
+        invariant ~pc_i4(P) | ~pc_m5(P)
+        invariant ~pc_i4(P) | ~pc_r1(P)
+        invariant ~pc_i4(P) | ~pc_r2(P)
+        invariant ~pc_i4(P) | ~pc_r3(P)
+        invariant ~pc_i4(P) | ~pc_r5(P)
+        invariant ~pc_i4(P) | ~pc_r6(P)
+        invariant ~pc_i4(P) | ~pc_r7(P)
+        invariant ~pc_i4(P) | ~pc_r8(P)
+        invariant ~pc_i4(P) | ~pc_b1(P)
+        invariant ~pc_i5(P) | ~pc_i6(P)
+        invariant ~pc_i5(P) | ~pc_i7(P)
+        invariant ~pc_i5(P) | ~pc_i8(P)
+        invariant ~pc_i5(P) | ~pc_i9(P)
+        invariant ~pc_i5(P) | ~pc_i11(P)
+        invariant ~pc_i5(P) | ~pc_i12(P)
+        invariant ~pc_i5(P) | ~pc_i14(P)
+        invariant ~pc_i5(P) | ~pc_i15(P)
+        invariant ~pc_i5(P) | ~pc_m2(P)
+        invariant ~pc_i5(P) | ~pc_m3(P)
+        invariant ~pc_i5(P) | ~pc_m5(P)
+        invariant ~pc_i5(P) | ~pc_r1(P)
+        invariant ~pc_i5(P) | ~pc_r2(P)
+        invariant ~pc_i5(P) | ~pc_r3(P)
+        invariant ~pc_i5(P) | ~pc_r5(P)
+        invariant ~pc_i5(P) | ~pc_r6(P)
+        invariant ~pc_i5(P) | ~pc_r7(P)
+        invariant ~pc_i5(P) | ~pc_r8(P)
+        invariant ~pc_i5(P) | ~pc_b1(P)
+        invariant ~pc_i6(P) | ~pc_i7(P)
+        invariant ~pc_i6(P) | ~pc_i8(P)
+        invariant ~pc_i6(P) | ~pc_i9(P)
+        invariant ~pc_i6(P) | ~pc_i11(P)
+        invariant ~pc_i6(P) | ~pc_i12(P)
+        invariant ~pc_i6(P) | ~pc_i14(P)
+        invariant ~pc_i6(P) | ~pc_i15(P)
+        invariant ~pc_i6(P) | ~pc_m2(P)
+        invariant ~pc_i6(P) | ~pc_m3(P)
+        invariant ~pc_i6(P) | ~pc_m5(P)
+        invariant ~pc_i6(P) | ~pc_r1(P)
+        invariant ~pc_i6(P) | ~pc_r2(P)
+        invariant ~pc_i6(P) | ~pc_r3(P)
+        invariant ~pc_i6(P) | ~pc_r5(P)
+        invariant ~pc_i6(P) | ~pc_r6(P)
+        invariant ~pc_i6(P) | ~pc_r7(P)
+        invariant ~pc_i6(P) | ~pc_r8(P)
+        invariant ~pc_i6(P) | ~pc_b1(P)
+        invariant ~pc_i7(P) | ~pc_i8(P)
+        invariant ~pc_i7(P) | ~pc_i9(P)
+        invariant ~pc_i7(P) | ~pc_i11(P)
+        invariant ~pc_i7(P) | ~pc_i12(P)
+        invariant ~pc_i7(P) | ~pc_i14(P)
+        invariant ~pc_i7(P) | ~pc_i15(P)
+        invariant ~pc_i7(P) | ~pc_m2(P)
+        invariant ~pc_i7(P) | ~pc_m3(P)
+        invariant ~pc_i7(P) | ~pc_m5(P)
+        invariant ~pc_i7(P) | ~pc_r1(P)
+        invariant ~pc_i7(P) | ~pc_r2(P)
+        invariant ~pc_i7(P) | ~pc_r3(P)
+        invariant ~pc_i7(P) | ~pc_r5(P)
+        invariant ~pc_i7(P) | ~pc_r6(P)
+        invariant ~pc_i7(P) | ~pc_r7(P)
+        invariant ~pc_i7(P) | ~pc_r8(P)
+        invariant ~pc_i7(P) | ~pc_b1(P)
+        invariant ~pc_i8(P) | ~pc_i9(P)
+        invariant ~pc_i8(P) | ~pc_i11(P)
+        invariant ~pc_i8(P) | ~pc_i12(P)
+        invariant ~pc_i8(P) | ~pc_i14(P)
+        invariant ~pc_i8(P) | ~pc_i15(P)
+        invariant ~pc_i8(P) | ~pc_m2(P)
+        invariant ~pc_i8(P) | ~pc_m3(P)
+        invariant ~pc_i8(P) | ~pc_m5(P)
+        invariant ~pc_i8(P) | ~pc_r1(P)
+        invariant ~pc_i8(P) | ~pc_r2(P)
+        invariant ~pc_i8(P) | ~pc_r3(P)
+        invariant ~pc_i8(P) | ~pc_r5(P)
+        invariant ~pc_i8(P) | ~pc_r6(P)
+        invariant ~pc_i8(P) | ~pc_r7(P)
+        invariant ~pc_i8(P) | ~pc_r8(P)
+        invariant ~pc_i8(P) | ~pc_b1(P)
+        invariant ~pc_i9(P) | ~pc_i11(P)
+        invariant ~pc_i9(P) | ~pc_i12(P)
+        invariant ~pc_i9(P) | ~pc_i14(P)
+        invariant ~pc_i9(P) | ~pc_i15(P)
+        invariant ~pc_i9(P) | ~pc_m2(P)
+        invariant ~pc_i9(P) | ~pc_m3(P)
+        invariant ~pc_i9(P) | ~pc_m5(P)
+        invariant ~pc_i9(P) | ~pc_r1(P)
+        invariant ~pc_i9(P) | ~pc_r2(P)
+        invariant ~pc_i9(P) | ~pc_r3(P)
+        invariant ~pc_i9(P) | ~pc_r5(P)
+        invariant ~pc_i9(P) | ~pc_r6(P)
+        invariant ~pc_i9(P) | ~pc_r7(P)
+        invariant ~pc_i9(P) | ~pc_r8(P)
+        invariant ~pc_i9(P) | ~pc_b1(P)
+        invariant ~pc_i11(P) | ~pc_i12(P)
+        invariant ~pc_i11(P) | ~pc_i14(P)
+        invariant ~pc_i11(P) | ~pc_i15(P)
+        invariant ~pc_i11(P) | ~pc_m2(P)
+        invariant ~pc_i11(P) | ~pc_m3(P)
+        invariant ~pc_i11(P) | ~pc_m5(P)
+        invariant ~pc_i11(P) | ~pc_r1(P)
+        invariant ~pc_i11(P) | ~pc_r2(P)
+        invariant ~pc_i11(P) | ~pc_r3(P)
+        invariant ~pc_i11(P) | ~pc_r5(P)
+        invariant ~pc_i11(P) | ~pc_r6(P)
+        invariant ~pc_i11(P) | ~pc_r7(P)
+        invariant ~pc_i11(P) | ~pc_r8(P)
+        invariant ~pc_i11(P) | ~pc_b1(P)
+        invariant ~pc_i12(P) | ~pc_i14(P)
+        invariant ~pc_i12(P) | ~pc_i15(P)
+        invariant ~pc_i12(P) | ~pc_m2(P)
+        invariant ~pc_i12(P) | ~pc_m3(P)
+        invariant ~pc_i12(P) | ~pc_m5(P)
+        invariant ~pc_i12(P) | ~pc_r1(P)
+        invariant ~pc_i12(P) | ~pc_r2(P)
+        invariant ~pc_i12(P) | ~pc_r3(P)
+        invariant ~pc_i12(P) | ~pc_r5(P)
+        invariant ~pc_i12(P) | ~pc_r6(P)
+        invariant ~pc_i12(P) | ~pc_r7(P)
+        invariant ~pc_i12(P) | ~pc_r8(P)
+        invariant ~pc_i12(P) | ~pc_b1(P)
+        invariant ~pc_i14(P) | ~pc_i15(P)
+        invariant ~pc_i14(P) | ~pc_m2(P)
+        invariant ~pc_i14(P) | ~pc_m3(P)
+        invariant ~pc_i14(P) | ~pc_m5(P)
+        invariant ~pc_i14(P) | ~pc_r1(P)
+        invariant ~pc_i14(P) | ~pc_r2(P)
+        invariant ~pc_i14(P) | ~pc_r3(P)
+        invariant ~pc_i14(P) | ~pc_r5(P)
+        invariant ~pc_i14(P) | ~pc_r6(P)
+        invariant ~pc_i14(P) | ~pc_r7(P)
+        invariant ~pc_i14(P) | ~pc_r8(P)
+        invariant ~pc_i14(P) | ~pc_b1(P)
+        invariant ~pc_i15(P) | ~pc_m2(P)
+        invariant ~pc_i15(P) | ~pc_m3(P)
+        invariant ~pc_i15(P) | ~pc_m5(P)
+        invariant ~pc_i15(P) | ~pc_r1(P)
+        invariant ~pc_i15(P) | ~pc_r2(P)
+        invariant ~pc_i15(P) | ~pc_r3(P)
+        invariant ~pc_i15(P) | ~pc_r5(P)
+        invariant ~pc_i15(P) | ~pc_r6(P)
+        invariant ~pc_i15(P) | ~pc_r7(P)
+        invariant ~pc_i15(P) | ~pc_r8(P)
+        invariant ~pc_i15(P) | ~pc_b1(P)
+        invariant ~pc_m2(P) | ~pc_m3(P)
+        invariant ~pc_m2(P) | ~pc_m5(P)
+        invariant ~pc_m2(P) | ~pc_r1(P)
+        invariant ~pc_m2(P) | ~pc_r2(P)
+        invariant ~pc_m2(P) | ~pc_r3(P)
+        invariant ~pc_m2(P) | ~pc_r5(P)
+        invariant ~pc_m2(P) | ~pc_r6(P)
+        invariant ~pc_m2(P) | ~pc_r7(P)
+        invariant ~pc_m2(P) | ~pc_r8(P)
+        invariant ~pc_m2(P) | ~pc_b1(P)
+        invariant ~pc_m3(P) | ~pc_m5(P)
+        invariant ~pc_m3(P) | ~pc_r1(P)
+        invariant ~pc_m3(P) | ~pc_r2(P)
+        invariant ~pc_m3(P) | ~pc_r3(P)
+        invariant ~pc_m3(P) | ~pc_r5(P)
+        invariant ~pc_m3(P) | ~pc_r6(P)
+        invariant ~pc_m3(P) | ~pc_r7(P)
+        invariant ~pc_m3(P) | ~pc_r8(P)
+        invariant ~pc_m3(P) | ~pc_b1(P)
+        invariant ~pc_m5(P) | ~pc_r1(P)
+        invariant ~pc_m5(P) | ~pc_r2(P)
+        invariant ~pc_m5(P) | ~pc_r3(P)
+        invariant ~pc_m5(P) | ~pc_r5(P)
+        invariant ~pc_m5(P) | ~pc_r6(P)
+        invariant ~pc_m5(P) | ~pc_r7(P)
+        invariant ~pc_m5(P) | ~pc_r8(P)
+        invariant ~pc_m5(P) | ~pc_b1(P)
+        invariant ~pc_r1(P) | ~pc_r2(P)
+        invariant ~pc_r1(P) | ~pc_r3(P)
+        invariant ~pc_r1(P) | ~pc_r5(P)
+        invariant ~pc_r1(P) | ~pc_r6(P)
+        invariant ~pc_r1(P) | ~pc_r7(P)
+        invariant ~pc_r1(P) | ~pc_r8(P)
+        invariant ~pc_r1(P) | ~pc_b1(P)
+        invariant ~pc_r2(P) | ~pc_r3(P)
+        invariant ~pc_r2(P) | ~pc_r5(P)
+        invariant ~pc_r2(P) | ~pc_r6(P)
+        invariant ~pc_r2(P) | ~pc_r7(P)
+        invariant ~pc_r2(P) | ~pc_r8(P)
+        invariant ~pc_r2(P) | ~pc_b1(P)
+        invariant ~pc_r3(P) | ~pc_r5(P)
+        invariant ~pc_r3(P) | ~pc_r6(P)
+        invariant ~pc_r3(P) | ~pc_r7(P)
+        invariant ~pc_r3(P) | ~pc_r8(P)
+        invariant ~pc_r3(P) | ~pc_b1(P)
+        invariant ~pc_r5(P) | ~pc_r6(P)
+        invariant ~pc_r5(P) | ~pc_r7(P)
+        invariant ~pc_r5(P) | ~pc_r8(P)
+        invariant ~pc_r5(P) | ~pc_b1(P)
+        invariant ~pc_r6(P) | ~pc_r7(P)
+        invariant ~pc_r6(P) | ~pc_r8(P)
+        invariant ~pc_r6(P) | ~pc_b1(P)
+        invariant ~pc_r7(P) | ~pc_r8(P)
+        invariant ~pc_r7(P) | ~pc_b1(P)
+        invariant ~pc_r8(P) | ~pc_b1(P)
+        invariant pc_i1(P) | pc_i2(P) | pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P) | pc_i15(P) | pc_m2(P) | pc_m3(P) | pc_m5(P) | pc_r1(P) | pc_r2(P) | pc_r3(P) | pc_r5(P) | pc_r6(P) | pc_r7(P) | pc_r8(P) | pc_b1(P)
+
+        ################################################################################
+        #
+        # Temporal property and its proof
+        #
+        ################################################################################
+
+        individual sk0:processor  # witness for the formula (exists P. ~ globally ~ globally ~ (pc_m2(P) | pc_r6(P)))
+        individual sk1:processor  # witness for the formula (exists P. ~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P)))
+        individual sk2:pmap       # witness for the formula (exists M. ~ globally ~ globally plock(M))
+
+        temporal property [nonstarvation] (
+            # temporal witnesses
+            ((exists P. ~ globally ~ globally ~ (pc_m2(P) | pc_r6(P))) -> ~ globally ~ globally ~ (pc_m2(sk0) | pc_r6(sk0))) &
+            ((exists P. ~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) -> ~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1) | pc_i9(sk1) | pc_i11(sk1) | pc_i12(sk1) | pc_i14(sk1))) &
+            ((exists M. ~ globally ~ globally plock(M)) -> (~ globally ~ globally plock(sk2)))
+        ) -> (
+            (
+                #fairness:
+                # every process is scheduled infinitely often
+                (forall P. globally (~ (globally (~scheduled(P))))) &
+                # strong fairness for plocks
+                (forall P. (globally eventually (pc_i2(P) & ~plock(writepmap(P)))) -> (globally eventually pc_i3(P))) &
+                (forall P. (globally eventually (pc_r3(P) & ~plock(userpmap(P)))) -> (globally eventually pc_r5(P)))
+            ) ->
+            # liveness property
+            (forall P. (globally eventually (pc_m2(P) | pc_r6(P))))
+        )
+        proof {
+            tactic l2s with
+
+            ################################################################################
+            #
+            # Invariants for proving liveness
+            #
+            ################################################################################
+
+            # basic, should be added automatically
+            invariant l2s_waiting | l2s_frozen | l2s_saved
+            invariant ~l2s_waiting | ~l2s_frozen
+            invariant ~l2s_waiting | ~l2s_saved
+            invariant ~l2s_frozen  | ~l2s_saved
+
+            # fairness
+            invariant (forall P. globally eventually scheduled(P))
+
+            # Someone gets stuck and by definition it is sk0
+            invariant eventually (globally ~(pc_m2(sk0) | pc_r6(sk0)))
+            # and when it is stuck it will stay stuck
+            invariant (globally ~(pc_m2(sk0) | pc_r6(sk0))) |
+            ($l2s_w. (globally ~(pc_m2(sk0) | pc_r6(sk0))))
+            invariant ~l2s_waiting -> (globally ~(pc_m2(sk0) | pc_r6(sk0)))
+
+            # once sk0 is scheduled it leaves the boot state
+            invariant l2s_d(sk0) & l2s_d(sk1) & l2s_d(sk2)
+            invariant ~l2s_waiting -> l2s_a(sk0) & l2s_a(sk1) & l2s_a(sk2)
+            invariant (pc_b1(sk0) & ($l2s_w P. scheduled(P))(sk0)) | l2s_d(userpmap(sk0))
+            invariant ~l2s_waiting -> l2s_d(userpmap(sk0)) & l2s_a(userpmap(sk0))
+            invariant (pc_i2(P) -> l2s_d(writepmap(P)))
+            invariant ($l2s_w P. scheduled(P))(sk0) | (~pc_b1(sk0))
+            invariant ~l2s_waiting -> ~pc_b1(sk0)
+            invariant l2s_saved -> (~pc_b1(sk0) & ~($l2s_s X. pc_b1(X))(sk0))
+
+            # # lift some lemmas to saved
+            invariant l2s_saved -> (
+            ($l2s_s P0. active(P0))(P) <-> (
+            (($l2s_s X. pc_b1(X))(P) | ($l2s_s X. pc_m2(X))(P) | ($l2s_s X. pc_m3(X))(P) | ($l2s_s X. pc_m5(X))(P) |
+            ($l2s_s X. pc_i1(X))(P) | ($l2s_s X. pc_r1(X))(P) | ($l2s_s X. pc_r2(X))(P))
+            ))
+            invariant l2s_saved -> (
+            (($l2s_s X. pc_i3(X))(P1) | ($l2s_s X. pc_i4(X))(P1) | ($l2s_s X. pc_i5(X))(P1) | ($l2s_s X. pc_i6(X))(P1) | ($l2s_s X. pc_i7(X))(P1) | ($l2s_s X. pc_i8(X))(P1) | ($l2s_s X. pc_i9(X))(P1) | ($l2s_s X. pc_i11(X))(P1) | ($l2s_s X. pc_i12(X))(P1) | ($l2s_s X. pc_i14(X))(P1))
+            & (($l2s_s X. pc_i3(X))(P2) | ($l2s_s X. pc_i4(X))(P2) | ($l2s_s X. pc_i5(X))(P2) | ($l2s_s X. pc_i6(X))(P2) | ($l2s_s X. pc_i7(X))(P2) | ($l2s_s X. pc_i8(X))(P2) | ($l2s_s X. pc_i9(X))(P2) | ($l2s_s X. pc_i11(X))(P2) | ($l2s_s X. pc_i12(X))(P2) | ($l2s_s X. pc_i14(X))(P2))
+            -> ($l2s_s P0. writepmap(P0))(P1) ~= ($l2s_s P0. writepmap(P0))(P2) | P1 = P2
+            )
+
+            invariant l2s_saved -> (
+            (($l2s_s X. active(X))(P) <-> (
+            (($l2s_s X. pc_b1(X))(P) | ($l2s_s X. pc_m2(X))(P) | ($l2s_s X. pc_m3(X))(P) | ($l2s_s X. pc_m5(X))(P) |
+            ($l2s_s X. pc_i1(X))(P) | ($l2s_s X. pc_r1(X))(P) | ($l2s_s X. pc_r2(X))(P)))
+            ))
+
+            # some things never change (maybe this should also be detected automatically)
+            invariant l2s_saved -> (sk0 = ($l2s_s. sk0))
+            invariant l2s_saved -> (sk1 = ($l2s_s. sk1))
+
+            # l2s_d is large enough
+            invariant ~pc_b1(P) -> l2s_d(P)
+
+            # If process sk0 is stuck, it can only go in one direction, except for the i3-i8 loop.
+            # it also makes progress assuming that it doesn't get stuck in one of the loops.
+            invariant l2s_saved &
+            ($l2s_s X. pc_m2(X))(sk0) ->
+            ~pc_m2(sk0)
+
+            invariant l2s_saved & ($l2s_s X. pc_m3(X))(sk0) ->
+            ~pc_m2(sk0) & (~pc_m3(sk0) | ($l2s_w P0. scheduled(P0))(sk0))
+
+            invariant l2s_saved & ($l2s_s X. pc_i1(X))(sk0) ->
+            (pc_i2(sk0) | pc_i3(sk0) | pc_i4(sk0) | pc_i5(sk0) |
+            pc_i6(sk0) | pc_i7(sk0) | pc_i8(sk0) | pc_i9(sk0) |
+            pc_i11(sk0) | pc_i12(sk0) | pc_i14(sk0) | pc_i15(sk0) |
+            pc_m5(sk0) |
+            pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_i1(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            invariant l2s_saved &
+            (globally (~ (globally (pc_i2(sk0))))) &
+            ($l2s_s X. pc_i2(X))(sk0) ->
+            (pc_i3(sk0) | pc_i4(sk0) | pc_i5(sk0) |
+            pc_i6(sk0) | pc_i7(sk0) | pc_i8(sk0) | pc_i9(sk0) |
+            pc_i11(sk0) | pc_i12(sk0) | pc_i14(sk0) | pc_i15(sk0) |
+            pc_m5(sk0) |
+            pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_i2(sk0) & ($l2s_w. ~pc_i2(sk0))))
+
+            invariant l2s_saved &
+            (exists P. P=sk0 & (globally (~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))))) &
+            (($l2s_s X. pc_i3(X))(sk0) | ($l2s_s X. pc_i4(X))(sk0) | ($l2s_s X. pc_i5(X))(sk0) | ($l2s_s X. pc_i6(X))(sk0) | ($l2s_s X. pc_i7(X))(sk0) | ($l2s_s X. pc_i8(X))(sk0) | ($l2s_s X. pc_i9(X))(sk0) | ($l2s_s X. pc_i11(X))(sk0) | ($l2s_s X. pc_i12(X))(sk0) | ($l2s_s X. pc_i14(X))(sk0)) ->
+            (($l2s_w P. ~(pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P)))(sk0) &
+            (pc_i3(sk0) | pc_i4(sk0) | pc_i5(sk0) |
+            pc_i6(sk0) | pc_i7(sk0) | pc_i8(sk0) | pc_i9(sk0) |
+            pc_i11(sk0) | pc_i12(sk0) | pc_i14(sk0))) |
+            pc_i15(sk0) | pc_m5(sk0) |
+            pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0)
+
+            invariant l2s_saved & ($l2s_s X. pc_i15(X))(sk0) ->
+            (pc_m5(sk0) |
+            pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_i15(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            invariant l2s_saved & ($l2s_s X. pc_m5(X))(sk0) ->
+            (pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_m5(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            invariant l2s_saved & ($l2s_s X. pc_r1(X))(sk0) ->
+            (pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_r1(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            invariant l2s_saved & ($l2s_s X. pc_r2(X))(sk0) ->
+            (pc_r3(sk0) | pc_r5(sk0) |
+            (pc_r2(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            invariant l2s_saved &
+            (globally ~ globally (pc_r3(sk0))) &
+            ($l2s_s X. pc_r3(X))(sk0) ->
+            (pc_r5(sk0) | (pc_r3(sk0) & ($l2s_w. ~pc_r3(sk0))))
+
+            invariant l2s_saved &
+            ($l2s_s X. pc_r5(X))(sk0) ->
+            (pc_r5(sk0) & ($l2s_w P0. scheduled(P0))(sk0))
+
+            invariant l2s_saved & ($l2s_s X. pc_r6(X))(sk0) ->
+            (pc_r7(sk0) | pc_r8(sk0) |
+            pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_r6(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            invariant l2s_saved &
+            ($l2s_s X. pc_r7(X))(sk0) ->
+            (pc_r8(sk0) |
+            pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_r7(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            invariant l2s_saved &
+            ($l2s_s X. pc_r8(X))(sk0) ->
+            (pc_r1(sk0) | pc_r2(sk0) | pc_r3(sk0) | pc_r5(sk0) |
+            (pc_r8(sk0) & ($l2s_w P0. scheduled(P0))(sk0)))
+
+            # Use strong fairness to show that sk0 cannot be stuck in i2.
+            invariant (exists P. P=sk0 &
+            ((~ globally ~ globally ~ (pc_i2(P) & ~plock(writepmap(P)))) |
+            (globally ~ globally ~ pc_i3(P))))
+
+            invariant (~ globally ~ globally pc_i2(sk0)) &
+            (~l2s_waiting | ~($l2s_w. globally pc_i2(sk0))) ->
+            globally pc_i2(sk0)
+
+            invariant (~ globally ~ globally pc_i2(sk0)) & ~l2s_waiting -> l2s_a(writepmap(sk0))
+
+            invariant (exists P. P=sk0 & (~ globally ~ globally ~ (pc_i2(P) & ~plock(writepmap(P))))) &
+            (~l2s_waiting |
+            ~($l2s_w P. globally ~ (pc_i2(P) & ~plock(writepmap(P))))(sk0)) ->
+            (exists P. P=sk0 & globally ~ (pc_i2(P) & ~plock(writepmap(P))))
+
+            invariant l2s_saved & (~ globally ~ globally pc_i2(sk0)) &
+            (exists P. P=sk0 & (globally ~ globally ~ pc_i3(P))) ->
+            ($l2s_w P. pc_i3(P))(sk0)
+
+            invariant l2s_saved & (~ globally ~ globally pc_i2(sk0)) &
+            (exists M. M=writepmap(sk0) & (globally ~ globally plock(M))) &
+            (exists P. P=sk0 & (~ globally ~ globally ~ (pc_i2(P) & ~plock(writepmap(P))))) ->
+            ($l2s_w M. ~plock(M))(writepmap(sk0))
+
+            # ... and it cannot be stuck in r3.
+            invariant (exists P. P=sk0 &
+            ((~ globally ~ globally ~ (pc_r3(P) & ~plock(userpmap(P)))) |
+            (globally ~ globally ~ pc_r5(P))))
+
+            invariant (~ globally ~ globally pc_r3(sk0)) &
+            (~l2s_waiting | ~($l2s_w. globally pc_r3(sk0))) ->
+            globally pc_r3(sk0)
+
+            invariant (exists P. P=sk0 & ~ globally ~ globally ~ (pc_r3(P) & ~plock(userpmap(P)))) & (~l2s_waiting | ~($l2s_w P. globally ~ (pc_r3(P) & ~plock(userpmap(P))))(sk0)) -> (exists P. P=sk0 & globally ~ (pc_r3(P) & ~plock(userpmap(P))))
+
+            invariant l2s_saved & (~ globally ~ globally pc_r3(sk0)) &
+            (exists P. P=sk0 & (globally ~ globally ~ pc_r5(P))) ->
+            ($l2s_w P. pc_r5(P))(sk0)
+
+            invariant l2s_saved & (~ globally ~ globally pc_r3(sk0)) &
+            (exists M. M=userpmap(sk0) & (globally ~ globally plock(M))) &
+            (exists P. P=sk0 & (~ globally ~ globally ~ (pc_r3(P) & ~plock(userpmap(P))))) ->
+            ($l2s_w M. ~plock(M))(userpmap(sk0))
+
+            # now show that there is no lock that is taken forever
+
+            invariant (globally ~ globally plock(sk2)) -> (globally ~ globally plock(M))
+
+            invariant (~ globally ~ globally plock(sk2)) & (~l2s_waiting | ~($l2s_w. globally plock(sk2))) ->
+            (globally plock(sk2))
+
+            invariant plock(sk2) ->
+            (exists P. writepmap(P) = sk2
+            & (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P)))
+
+            invariant ~l2s_waiting & (~ globally ~ globally plock(sk2)) ->
+            (exists P. l2s_a(P) & writepmap(P) = sk2
+            & (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P)))
+
+            invariant l2s_saved & (~ globally ~ globally plock(sk2)) &
+            (globally ~ globally (pc_i3(P1) | pc_i4(P1) | pc_i5(P1) | pc_i6(P1) | pc_i7(P1) | pc_i8(P1) | pc_i9(P1) | pc_i11(P1) | pc_i12(P1) | pc_i14(P1))) &
+            l2s_a(P1) & writepmap(P1) = sk2 &
+            (pc_i3(P1) | pc_i4(P1) | pc_i5(P1) | pc_i6(P1) | pc_i7(P1) | pc_i8(P1) | pc_i9(P1) | pc_i11(P1) | pc_i12(P1) | pc_i14(P1)) ->
+            ($l2s_w P. ~(pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P)))(P1)
+
+            # Now show safety for the case a process gets stuck between i3-i14
+            # it must be sk1, and it is already stuck when freezing the abstraction.
+
+            invariant (~ (globally (~ (globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P)))))) ->
+            (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1) | pc_i9(sk1) | pc_i11(sk1) | pc_i12(sk1) | pc_i14(sk1)))
+
+            invariant (~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) ->
+            ($l2s_w. globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1) | pc_i9(sk1) | pc_i11(sk1) | pc_i12(sk1) | pc_i14(sk1))) |
+            (globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1) | pc_i9(sk1) | pc_i11(sk1) | pc_i12(sk1) | pc_i14(sk1)))
+
+            invariant ~l2s_waiting & (~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) ->
+            (globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1) | pc_i9(sk1) | pc_i11(sk1) | pc_i12(sk1) | pc_i14(sk1)))
+
+            # if sk1 doesn't get stuck in pc_i3-i8, but later then these states need to be left
+
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) &
+            (globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            (($l2s_s X. pc_i3(X))(sk1) | ($l2s_s X. pc_i4(X))(sk1) | ($l2s_s X. pc_i5(X))(sk1) | ($l2s_s X. pc_i6(X))(sk1) |
+            ($l2s_s X. pc_i7(X))(sk1) | ($l2s_s X. pc_i8(X))(sk1) | ($l2s_s X. pc_i9(X))(sk1)) ->
+            (($l2s_w. ~(pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) |
+            pc_i9(sk1) | pc_i11(sk1) | pc_i12(sk1) | pc_i14(sk1)
+
+            # if sk1 doesn't get stuck in pc_i9 then this state needs to be left
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) &
+            (globally ~ globally (pc_i9(sk1))) &
+            (($l2s_s P. pc_i9(P))(sk1)) ->
+            (($l2s_w. ~ pc_i9(sk1)) & pc_i9(sk1)) |
+            pc_i11(sk1) | pc_i12(sk1) | pc_i14(sk1)
+
+            # Now show that sk1 doesn't get stuck in i3-i8
+            invariant (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1)))
+            & (~l2s_waiting | ~($l2s_w. globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1)))) ->
+            (globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1)))
+
+            # todo monotonous
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            todo(sk1,C) -> ($l2s_s P1,P2. todo(P1,P2))(sk1,C)
+
+            # if sk1 is in the i5, it holds the lock for the page map for each cpu and never releases it
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            ($l2s_s P. pc_i5(P))(sk1) & ($l2s_s P1,P2. currentcpu(P1,P2))(sk1,C) ->
+            userpmap(C) = writepmap(sk1) & ~pc_b1(C)
+
+            # i3 removes some todo
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            ($l2s_s P. pc_i3(P))(sk1) ->
+            (($l2s_w P. scheduled(P))(sk1) & pc_i3(sk1)) |
+            (exists C. l2s_a(C) & ($l2s_s P1,P2. todo(P1,P2))(sk1,C) & ~todo(sk1,C))
+
+            # while some process is waiting to enter actionlock in i5, the other CPU
+            # cannot enter its actionlock.
+            # ... and if it entered it before, it has to change when scheduled.
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            ($l2s_s P. pc_i5(P))(sk1) & ($l2s_s P1,P2. currentcpu(P1,P2))(sk1,C) ->
+            (~pc_r5(C) & ~pc_r6(C) & ~pc_r7(C)) |
+            (($l2s_s P. pc_r5(P))(C) &
+            ((($l2s_w P. scheduled(P))(C) & pc_r5(C)) | ~pc_r5(C))) |
+            (($l2s_s P. pc_r6(P))(C) &
+            ((($l2s_w P. scheduled(P))(C) & pc_r6(C)) | (~pc_r5(C) & ~pc_r6(C)))) |
+            (($l2s_s P. pc_r7(P))(C) &
+            ((($l2s_w P. scheduled(P))(C) & pc_r7(C)) | (~pc_r5(C) & ~pc_r6(C) & ~pc_r7(C))))
+
+            # others change currentcpu or go only until i3
+
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) ->
+            (($l2s_s P. pc_i3(P))(sk1) | ($l2s_s P. pc_i4(P))(sk1) | ($l2s_s P. pc_i5(P))(sk1) | ($l2s_s P. pc_i6(P))(sk1) |
+            ($l2s_s P. pc_i7(P))(sk1) | ($l2s_s P. pc_i8(P))(sk1))
+
+            invariant (pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1)) -> exists C. currentcpu(sk1,C)
+
+            invariant l2s_saved & (($l2s_s P. pc_i4(P))(sk1) | ($l2s_s P. pc_i5(P))(sk1) | ($l2s_s P. pc_i6(P))(sk1) |
+            ($l2s_s P. pc_i7(P))(sk1) | ($l2s_s P. pc_i8(P))(sk1)) -> exists C. ($l2s_s P1,P2. currentcpu(P1,P2))(sk1,C)
+
+            invariant ~l2s_waiting & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1)) &
+            todo(sk1,C) -> l2s_a(C)
+
+            invariant (pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1)) & currentcpu(sk1,C) -> ~pc_b1(C) & ~todo(sk1,C) & sk1 ~= C
+
+            invariant ~l2s_waiting & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            (pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1)) &
+            currentcpu(sk1, C) -> l2s_a(C) & ~todo(sk1,C) & sk1 ~= C
+
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            (($l2s_s P. pc_i4(P))(sk1) | ($l2s_s P. pc_i5(P))(sk1) | ($l2s_s P. pc_i6(P))(sk1) | ($l2s_s P. pc_i7(P))(sk1) | ($l2s_s P. pc_i8(P))(sk1)) &
+            ($l2s_s P1,P2. currentcpu(P1,P2))(sk1, C) -> l2s_a(C) & ~todo(sk1,C) & sk1 ~= C
+
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(sk1) | pc_i4(sk1) | pc_i5(sk1) | pc_i6(sk1) | pc_i7(sk1) | pc_i8(sk1))) &
+            ~($l2s_s P. pc_i3(P))(sk1) & ($l2s_s P1,P2. currentcpu(P1, P2))(sk1, C) ->
+            ~currentcpu(sk1, C) | pc_i3(sk1) |
+            (pc_i8(sk1) & (($l2s_w P. scheduled(P))(sk1) | ~($l2s_s P. pc_i8(P))(sk1))) |
+            (pc_i7(sk1) & (($l2s_w P. scheduled(P))(sk1) | ~($l2s_s P. pc_i7(P))(sk1)) & ~($l2s_s P. pc_i8(P))(sk1)) |
+            (pc_i6(sk1) & (($l2s_w P. scheduled(P))(sk1) | ~($l2s_s P. pc_i6(P))(sk1)) & ~($l2s_s P. pc_i8(P))(sk1) & ~($l2s_s P. pc_i7(P))(sk1)) |
+            (pc_i5(sk1) & (($l2s_w P. scheduled(P))(sk1) | ~($l2s_s P. pc_i5(P))(sk1) | ($l2s_s P. pc_r5(P))(C) | ($l2s_s P. pc_r6(P))(C) | ($l2s_s P. pc_r7(P))(C))
+            & ~($l2s_s P. pc_i8(P))(sk1) & ~($l2s_s P. pc_i7(P))(sk1) & ~($l2s_s P. pc_i6(P))(sk1)) |
+            (pc_i4(sk1) & ($l2s_w P. scheduled(P))(sk1) & ($l2s_s P. pc_i4(P))(sk1))
+
+            # Now show that sk1 doesn't get stuck in i9
+            invariant (~ globally ~ globally pc_i9(sk1)) -> ($l2s_w. globally pc_i9(sk1)) | (globally pc_i9(sk1))
+            invariant ~l2s_waiting & (~ globally ~ globally pc_i9(sk1)) -> (globally pc_i9(sk1))
+            invariant ~l2s_waiting & (~ globally ~ globally pc_i9(sk1)) & todo(sk1,C) -> l2s_a(C)
+            invariant l2s_saved & (~ globally ~ globally pc_i9(sk1)) & ($l2s_s P0,P1. todo(P0,P1))(sk1,C) -> l2s_a(C)
+            invariant ~l2s_waiting & (~ globally ~ globally pc_i9(sk1)) & todo(sk1,C) -> ~pc_b1(C)
+            invariant l2s_saved & (~ globally ~ globally pc_i9(sk1)) & todo(sk1,C) -> ~($l2s_s P. pc_b1(P))(C)
+
+            # If sk1 waits for a process C that is in m5-r3, that process is trapped (because the lock is taken by sk1)
+            invariant l2s_saved & (~ globally ~ globally pc_i9(sk1)) & todo(sk1,C) &
+            userpmap(C) = writepmap(sk1) &
+            (($l2s_s P. pc_m5(P))(C) | ($l2s_s P. pc_r1(P))(C) | ($l2s_s P. pc_r2(P))(C) | ($l2s_s P. pc_r3(P))(C)) ->
+            (pc_m5(C) | pc_r1(C) | pc_r2(C) | pc_r3(C))
+
+            # If sk1 waits for a process C then C makes progress when it is scheduled
+
+            invariant l2s_saved & (~ globally ~ globally pc_i9(sk1)) &
+            todo(sk1,C) & userpmap(C) = writepmap(sk1) & active(C) ->
+            (($l2s_s P. pc_m2(P))(C) &
+            ((pc_m2(C) & ($l2s_w P. scheduled(P))(C)) | pc_m3(C) | pc_i1(C) | pc_m5(C) | pc_r1(C) | pc_r2(C))) |
+            (($l2s_s P. pc_m3(P))(C) &
+            ((pc_m3(C) & ($l2s_w P. scheduled(P))(C)) | pc_i1(C) | pc_m5(C) | pc_r1(C) | pc_r2(C))) |
+            (($l2s_s P. pc_i1(P))(C) &
+            ((pc_i1(C) & ($l2s_w P. scheduled(P))(C)) | pc_m5(C) | pc_r1(C) | pc_r2(C))) |
+            (~($l2s_s P. active(P))(C) & ~($l2s_s P. pc_r3(P))(C) &
+            (pc_m5(C) | pc_r1(C) | pc_r2(C))) |
+            (($l2s_s P. pc_m5(P))(C) &
+            ((pc_m5(C) & ($l2s_w P. scheduled(P))(C)) | pc_r1(C) | pc_r2(C))) |
+            (($l2s_s P. pc_r1(P))(C) &
+            ((pc_r1(C) & ($l2s_w P. scheduled(P))(C)) | pc_r2(C))) |
+            (($l2s_s P. pc_r2(P))(C) &
+            ((pc_r2(C) & ($l2s_w P. scheduled(P))(C))))
+
+            invariant l2s_saved & (~ globally ~ globally pc_i9(sk1)) &
+            todo(sk1,C) -> ($l2s_s P1, P2. todo(P1,P2))(sk1, C)
+
+            # If sk1 was scheduled, it either removed one process C, or C was active at that time sk1 was scheduled.
+            # The latter means it didn't start in pc_r3 and it is still active or it reached r3 or it started in m2/m3/i1.
+            invariant l2s_saved & (~ globally ~ globally pc_i9(sk1)) &
+            ~($l2s_w P. scheduled(P))(sk1) ->
+            (exists C. ($l2s_s P1, P2. todo(P1,P2))(sk1, C) &
+            (~todo(sk1, C) |
+            (userpmap(C) = writepmap(sk1) & ~($l2s_s P. pc_r3(P))(C) &
+            (active(C) | pc_r3(C) | ($l2s_s P. pc_i1(P))(C) | ($l2s_s P. pc_m2(P))(C) | ($l2s_s P. pc_m3(P))(C)))))
+
+            # if sk1 doesn't get stuck in i11, i12, or i4
+
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) &
+            (($l2s_s X. pc_i11(X))(sk1)) ->
+            (($l2s_w P. scheduled(P))(sk1) & pc_i11(sk1)) |
+            pc_i12(sk1) | pc_i14(sk1)
+
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) &
+            (($l2s_s X. pc_i12(X))(sk1)) ->
+            (($l2s_w P. scheduled(P))(sk1) & pc_i12(sk1)) |
+            pc_i14(sk1)
+
+            invariant l2s_saved & (~ globally ~ globally (pc_i3(P) | pc_i4(P) | pc_i5(P) | pc_i6(P) | pc_i7(P) | pc_i8(P) | pc_i9(P) | pc_i11(P) | pc_i12(P) | pc_i14(P))) &
+            (($l2s_s X. pc_i14(X))(sk1)) ->
+            (($l2s_w P. scheduled(P))(sk1) & pc_i14(sk1))
+
+            # invariants about pc for saved state (from tlb.py)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i4(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i1(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i4(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i2(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i4(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i3(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i4(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i5(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_i7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_i8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i6(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_i8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i7(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_i9(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i8(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_i11(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i9(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_i12(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i11(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_i14(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i12(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_i15(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i14(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_m2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_i15(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_m3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m2(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_m5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m3(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_r1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_m5(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r1(X))(P) | ~($l2s_s X. pc_r2(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r1(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r1(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r1(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r1(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r1(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r1(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r2(X))(P) | ~($l2s_s X. pc_r3(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r2(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r2(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r2(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r2(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r2(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r3(X))(P) | ~($l2s_s X. pc_r5(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r3(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r3(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r3(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r3(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r5(X))(P) | ~($l2s_s X. pc_r6(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r5(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r5(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r5(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r6(X))(P) | ~($l2s_s X. pc_r7(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r6(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r6(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r7(X))(P) | ~($l2s_s X. pc_r8(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r7(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ~($l2s_s X. pc_r8(X))(P) | ~($l2s_s X. pc_b1(X))(P)
+            invariant l2s_saved -> ($l2s_s X. pc_i1(X))(P) | ($l2s_s X. pc_i2(X))(P) | ($l2s_s X. pc_i3(X))(P) | ($l2s_s X. pc_i4(X))(P) | ($l2s_s X. pc_i5(X))(P) | ($l2s_s X. pc_i6(X))(P) | ($l2s_s X. pc_i7(X))(P) | ($l2s_s X. pc_i8(X))(P) | ($l2s_s X. pc_i9(X))(P) | ($l2s_s X. pc_i11(X))(P) | ($l2s_s X. pc_i12(X))(P) | ($l2s_s X. pc_i14(X))(P) | ($l2s_s X. pc_i15(X))(P) | ($l2s_s X. pc_m2(X))(P) | ($l2s_s X. pc_m3(X))(P) | ($l2s_s X. pc_m5(X))(P) | ($l2s_s X. pc_r1(X))(P) | ($l2s_s X. pc_r2(X))(P) | ($l2s_s X. pc_r3(X))(P) | ($l2s_s X. pc_r5(X))(P) | ($l2s_s X. pc_r6(X))(P) | ($l2s_s X. pc_r7(X))(P) | ($l2s_s X. pc_r8(X))(P) | ($l2s_s X. pc_b1(X))(P)
+        }
+    }
+}
+
+export tlb.initiator1
+export tlb.initiator2
+export tlb.initiator3
+export tlb.initiator3exit
+export tlb.initiator4
+export tlb.initiator5
+export tlb.initiator6
+export tlb.initiator7
+export tlb.initiator8
+export tlb.initiator9
+export tlb.initiator9exit
+export tlb.initiator11
+export tlb.initiator12
+export tlb.initiator14
+export tlb.initiator15
+export tlb.responder1
+export tlb.responder2
+export tlb.responder3
+export tlb.responder5
+export tlb.responder6
+export tlb.responder7
+export tlb.responder8
+export tlb.main2
+export tlb.main3a
+export tlb.main3b
+export tlb.main5
+export tlb.boot1

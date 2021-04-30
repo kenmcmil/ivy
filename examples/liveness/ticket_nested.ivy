@@ -1,0 +1,294 @@
+#lang ivy1.7
+
+# This file contains a liveness proof of the ticket protocol with
+# nested task queues, which illustrates Ivy's liveness to safety
+# tactic on an infinite-state system that require both dynamic
+# abstraction and temporal prophecy. The example is discussed in this
+# paper:
+#
+# Oded Padon, Jochen Hoenicke, Kenneth L. McMillan, Andreas Podelski,
+# Mooly Sagiv, Sharon Shoham: Temporal Prophecy for Proving Temporal
+# Properties of Infinite-State Systems. FMCAD 2018: 1-11
+#
+# To verify this file, run:
+#
+#     $ ivy_check ticket_nested.ivy
+#     ...
+#     OK
+#
+
+################################################################################
+# A liveness proof of the nested ticket protocol with task queues
+################################################################################
+
+
+################################################################################
+# Module for axiomatizing a total order
+################################################################################
+
+module total_order(r) = {
+    axiom r(X,X)                        # Reflexivity
+    axiom r(X, Y) & r(Y, Z) -> r(X, Z)  # Transitivity
+    axiom r(X, Y) & r(Y, X) -> X = Y    # Anti-symmetry
+    axiom r(X, Y) | r(Y, X)             # Totality
+}
+
+################################################################################
+#
+# Types, relations and functions describing the state
+#
+################################################################################
+
+isolate ticket_protocol = {
+
+    type thread
+    type ticket
+
+    action step12(t:thread)
+    action step22(t:thread, k:ticket)
+    action step23(t:thread, k:ticket)
+    action step33(t:thread, k:ticket)
+    action step31(t:thread)
+
+    specification {
+
+	relation le(X:ticket, Y:ticket)
+	instantiate total_order(le)
+	action succ(x:ticket) returns (y:ticket) = {
+            assume ~le(y,x) & forall Z:ticket. ~le(Z,x) -> le(y,Z)
+	}
+	individual zero:ticket
+	axiom forall X. le(zero, X)
+
+	relation pc1(T:thread)
+	relation pc2(T:thread)
+	relation pc3(T:thread)
+
+	individual service:ticket
+	individual next_ticket:ticket
+	relation m(T:thread, K:ticket)  # use relation and not a function to be in EPR
+	relation c(T:thread, K:ticket)  # use relation and not a function to be in EPR
+
+	relation scheduled(T:thread)
+
+	after init {
+	    pc1(T) := true;
+            pc2(T) := false;
+            pc3(T) := false;
+            service := zero;
+            next_ticket := zero;
+            m(T,K) := K = zero;
+	    c(T,K) := K = zero;
+            scheduled(T) := false;
+	}
+
+	before step12 {
+            require pc1(t);
+            m(t,K) := K = next_ticket;
+            next_ticket := succ(next_ticket);
+            pc1(t) := false;
+            pc2(t) := true;
+            scheduled(T) := T = t;
+	    scheduled(T) := false;
+	}
+
+	before step22 {
+            require pc2(t);
+            require m(t,k);
+            require ~le(k,service);
+            # stay in pc2
+            scheduled(T) := T = t;
+	    scheduled(T) := false;
+	}
+
+	before step23 {
+            require pc2(t);
+            require m(t,k);
+            require le(k,service);
+            pc2(t) := false;
+            pc3(t) := true;
+            c(t,K) := K = next_ticket; # here, next_ticket serves as a non-deterministic positive integer, as it can grow unboundedly
+            scheduled(T) := T = t;
+	    scheduled(T) := false;
+	}
+
+	before step33 {
+            require pc3(t);
+            require c(t,succ(k));
+            c(t,K) := K = k;
+            # stay in pc3
+            scheduled(T) := T = t;
+	    scheduled(T) := false;
+	}
+
+	before step31 {
+            require pc3(t);
+            require c(t,zero);
+            service := succ(service);
+            pc3(t) := false;
+            pc1(t) := true;
+            scheduled(T) := T = t;
+	    scheduled(T) := false;
+	}
+
+
+	################################################################################
+	#
+	# Invariants for proving safety (also help for liveness)
+	#
+	################################################################################
+
+	# safety property
+	invariant [safety] pc3(T1) & pc3(T2) -> T1 = T2
+	# basic
+	invariant pc1(T) | pc2(T) | pc3(T)
+	invariant ~pc1(T) | ~pc2(T)
+	invariant ~pc1(T) | ~pc3(T)
+	invariant ~pc2(T) | ~pc3(T)
+	invariant m(T,K1) & m(T,K2) -> K1 = K2
+	invariant c(T,K1) & c(T,K2) -> K1 = K2
+	# inductive invariant for proving safety
+	invariant next_ticket = zero -> m(T,zero)
+	invariant next_ticket ~= zero & m(T,M) -> ~le(next_ticket,M)
+	invariant (pc2(T) | pc3(T)) -> next_ticket ~= zero
+	invariant m(T1,M) & m(T2,M) & M ~= zero -> T1 = T2
+	invariant pc2(T) & m(T,M) -> le(service,M)
+	invariant pc3(T) -> m(T,service)
+	invariant le(service,next_ticket)
+	invariant ~(~pc1(T1) & ~pc1(T2) & m(T1,zero) & m(T2,zero) & T1 ~= T2)
+
+	################################################################################
+	#
+	# Temporal property and its proof
+	#
+	################################################################################
+
+	individual sk0:thread  # witness for the formula (exists T0. ~(globally ~(pc2(T0) & globally ~pc3(T0))))
+	individual sk1:thread  # witness for the formula (exists T1. ~(globally ~(globally pc3(T1))))
+
+	temporal property [nonstarvation] (
+            # temporal witnesses
+            ((exists T0. ~(globally ~(pc2(T0) & globally ~pc3(T0)))) -> ~(globally ~(pc2(sk0) & globally ~pc3(sk0)))) &
+            ((exists T1. ~(globally ~(globally pc3(T1)))) -> (~(globally ~(globally pc3(sk1)))))
+        ) -> (
+            # temporal property
+           (forall T. globally (eventually scheduled(T))) -> (forall T. globally ~(pc2(T) & globally ~pc3(T)))
+        )
+	proof {
+	    tactic l2s with
+
+	    ################################################################################
+	    #
+	    # Invariants for proving liveness
+	    #
+	    ################################################################################
+
+	    # basic, should be added automatically
+            invariant l2s_waiting | l2s_frozen | l2s_saved
+            invariant ~l2s_waiting | ~l2s_frozen
+            invariant ~l2s_waiting | ~l2s_saved
+            invariant ~l2s_frozen  | ~l2s_saved
+
+            # some things never change (maybe this should be detected automatically)
+            invariant l2s_saved -> (le(X,Y) <-> ($l2s_s K1,K2. le(K1,K2))(X,Y))
+            invariant l2s_saved -> (zero = ($l2s_s. zero))
+            invariant l2s_saved -> (sk0 = ($l2s_s. sk0))
+            invariant l2s_saved -> (sk1 = ($l2s_s. sk1))
+
+            # basic temporal information
+	    invariant ~scheduled(T)  # scheduled is only true transiently inside actions
+            invariant globally eventually scheduled(T)
+            invariant ~(globally ~(pc2(sk0) & globally ~pc3(sk0)))
+            invariant ~($l2s_w. (pc2(sk0) & globally ~pc3(sk0))) <-> (pc2(sk0) & globally ~pc3(sk0))
+
+            # more basic temporal properties, now in connection with monitor state
+            invariant l2s_frozen -> (pc2(sk0) & globally ~pc3(sk0))
+            invariant l2s_saved  -> (pc2(sk0) & globally ~pc3(sk0))
+            invariant l2s_saved  -> (($l2s_s T,K. m(T,K))(sk0,K) <-> m(sk0,K))
+            invariant l2s_saved  -> le( ($ l2s_s . service) , service)
+            invariant l2s_saved  -> le( ($ l2s_s . next_ticket) , next_ticket)
+
+            # temporal information regarding sk1
+            invariant ~(globally ~(globally pc3(sk1))) | (forall T. globally (~globally pc3(T)))
+            invariant ~(globally ~(globally pc3(sk1))) | (forall T. (~globally pc3(T)))
+            invariant (~($l2s_w. (globally pc3(sk1)))) -> (
+            (globally ~(globally pc3(sk1))) |
+            (globally pc3(sk1))
+            )
+            invariant ~(globally ~(globally pc3(sk1))) & ~l2s_waiting -> globally pc3(sk1)
+            # more information about sk1
+            invariant exists K. c(sk1,K)
+            invariant l2s_saved -> exists K. ($l2s_s T,K. c(T,K))(sk1,K)
+            invariant (globally pc3(sk1)) & l2s_saved & c(sk1,K1) & ($l2s_s T,K. c(T,K))(sk1,K2) -> le(K1,K2)
+            invariant (globally pc3(sk1)) & l2s_saved & c(sk1,K1) & ($l2s_s T,K. c(T,K))(sk1,K2) & ~($l2s_w X. scheduled(X))(sk1) -> K1 ~= K2
+
+            # more properties of reachable protocol states
+            invariant pc1(T) & m(T,M) & M ~= zero -> ~le(service, M)
+            invariant forall K:ticket. ~le(next_ticket, K) & le(service, K) -> exists T:thread. m(T,K) & ~pc1(T)
+            invariant exists M. m(sk0, M)
+
+            # l2s_d is large enough
+            invariant l2s_d(sk0)
+            invariant l2s_d(sk1)
+            invariant ~pc1(T) -> l2s_d(T)
+            invariant le(K,next_ticket) -> l2s_d(K)
+            invariant c(sk1,K0) & le(K,K0) -> l2s_d(K)
+            # l2s_a is large enough
+            invariant ~l2s_waiting -> l2s_a(sk0)
+            invariant ~l2s_waiting -> l2s_a(sk1)
+            invariant ~l2s_waiting & m(T,K) & m(sk0,K0) & ~le(K0,K) & ~pc1(T) -> l2s_a(T)
+            invariant ~l2s_waiting & m(sk0,K0) & le(K,K0) -> l2s_a(K)
+            invariant ~l2s_waiting & (globally pc3(sk1)) & c(sk1,K0) & le(K,K0) -> l2s_a(K)
+
+            # thread that have not been scheduled have not changed
+            invariant l2s_saved & ($l2s_w T. scheduled(T))(T) -> (($l2s_s T. pc1(T))(T) <-> pc1(T))
+            invariant l2s_saved & ($l2s_w T. scheduled(T))(T) -> (($l2s_s T. pc2(T))(T) <-> pc2(T))
+            invariant l2s_saved & ($l2s_w T. scheduled(T))(T) -> (($l2s_s T. pc3(T))(T) <-> pc3(T))
+            invariant l2s_saved & ($l2s_w T. scheduled(T))(T) -> (($l2s_s T,K. m(T,K))(T,K) <-> m(T,K))
+            invariant l2s_saved & ($l2s_w T. scheduled(T))(T) -> (($l2s_s T,K. c(T,K))(T,K) <-> c(T,K))
+
+            # the thread that must advance - the thread that had the service as its local ticket at the save point
+            invariant (
+	        l2s_saved &
+	        ($l2s_s T,K. m(T,K))    (T,($l2s_s. service)) &
+	        ~($l2s_w X. scheduled(X))(T) &
+	        ($l2s_s T. pc2(T))(T) &
+	        m(T,K) &
+	        m(sk0,K0)
+	    ) -> (
+	        (pc1(T) & K = ($l2s_s. service)) |
+	        (pc2(T) & ~le(K,K0)) |
+	        (pc3(T) & K = ($l2s_s. service))
+	    )
+            invariant (
+	        l2s_saved &
+	        ($l2s_s T,K. m(T,K))(T,($l2s_s. service)) &
+	        ($l2s_s T. pc3(T))(T) &
+	        m(T,K) &
+	        m(sk0,K0)
+	    ) -> (
+                (pc3(T) & K = ($l2s_s. service) & K = service) |
+	        (pc1(T) & K = ($l2s_s. service) & ~le(service, ($l2s_s. service))) |
+	        (pc2(T) & ~le(K,K0))
+	    )
+            invariant forall T:thread, K,K0. (
+	        l2s_saved &
+	        ($l2s_s T,K. m(T,K))(T,($l2s_s. service)) &
+	        ($l2s_s T. pc3(T))(T) &
+	        m(T,K) &
+	        m(sk0,K0) &
+	        ~($l2s_w T. ~pc3(T))(T) &
+	        ~(globally pc3(T))
+	    ) -> (
+	        (pc1(T) & K = ($l2s_s. service) & ~le(service, ($l2s_s. service))) |
+	        (pc2(T) & ~le(K,K0))
+	    )
+	}
+    }
+}
+
+export ticket_protocol.step12
+export ticket_protocol.step22
+export ticket_protocol.step23
+export ticket_protocol.step33
+export ticket_protocol.step31

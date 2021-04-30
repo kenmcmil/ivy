@@ -1,0 +1,433 @@
+#lang ivy1.7
+
+# Hybrid Reliable Broadcast (Clock synchronization, Widder, Schmid)
+#
+# This model includes all 4 node failure modes of Definitions 2, 6 and 7:
+#
+# f_c: processes are either clean crash or symmetric omission faulty
+#      (obedient processes that either perform complete broadcasts or
+#      full omissions). That is, when they send they may send to all
+#      or to none. Crash is simulated by sending to none from some
+#      point onwards.
+#
+# f_i: processes are either crash faulty or asymmetric omission faulty
+#      (obedient processes that may perform incomplete
+#      broadcasts). That is, they send only correct messages but may
+#      send to a subset of the nodes. Crash is simulated as above.
+#
+# f_s: processes are symmetric faulty. That is, send arbitrary
+#      messages, but either to all or to none.
+#
+# f_a: processes are arbitrary faulty. That is, send arbitrary
+#      messages, and also different messages to different nodes.
+
+################################################################################
+#
+# Types, relations and functions describing state of the network
+#
+################################################################################
+
+isolate hrb = {
+
+    type node     # n > tc + 3ta + 2ts + 2ti
+    type quorum_a # >= ta + ts + 1
+    type quorum_b # >= n - tc - ta - ts - ti
+
+    # protocol actions
+    action receive_init(n:node)
+    action receive_msg(n:node, s:node)
+    action receive_msg_c(n:node, s:node)
+    action receive_init_i(n:node)
+    action receive_msg_i(n:node, s:node)
+    action faulty_send_s(n:node)
+    action faulty_state_sa(n:node)
+    action faulty_send_a(n:node)
+
+    # helper action to model finiteness of set of nodes
+    action add_to_d(n:node)
+
+    specification {
+
+        relation member_a(N:node, Q:quorum_a)
+        relation member_b(N:node, Q:quorum_b)
+
+        # fc - symmetric omission
+        # fi - arbitrary omission
+        # fs - symmetric Byzantine
+        # fa - arbitrary Byzantine
+        relation member_fa(N:node)
+        relation member_fc(N:node)
+        relation member_fs(N:node)
+        relation member_fi(N:node)
+
+        # Quorum axiomatization (see Berkovits et al., Verification of Threshold-Based Distributed Algorithms by Decomposition to Decidable Logics, CAV 2019)
+        axiom exists B:quorum_b. forall N:node. member_b(N, B) -> ~member_fa(N) & ~member_fc(N) & ~member_fs(N) & ~member_fi(N)
+        axiom forall A_BP:quorum_a. exists N:node. member_a(N, A_BP) & ~member_fa(N) & ~member_fs(N)
+        axiom forall B_CF:quorum_b. exists A:quorum_a. forall N:node. member_a(N, A) -> member_b(N, B_CF) & ~member_fa(N) & ~member_fi(N)
+
+        # fc,fi,fs,fa are disjoint
+        axiom forall N:node. ~(member_fc(N) & member_fi(N))
+        axiom forall N:node. ~(member_fc(N) & member_fs(N))
+        axiom forall N:node. ~(member_fc(N) & member_fa(N))
+        axiom forall N:node. ~(member_fi(N) & member_fs(N))
+        axiom forall N:node. ~(member_fi(N) & member_fa(N))
+        axiom forall N:node. ~(member_fs(N) & member_fa(N))
+
+        # useful definitions
+        relation obedient(N:node) = ~member_fs(N) & ~member_fa(N)
+        relation symmetric(N:node) = ~member_fi(N) & ~member_fa(N)
+        relation correct(N:node) = ~member_fc(N) & ~member_fi(N) & ~member_fs(N) & ~member_fa(N)
+
+        # state of nodes
+        relation rcv_init(N:node)
+        relation accept(N:node)
+
+        # state of the network
+        relation sent_msg(SRC:node,DST:node)
+        relation rcv_msg(SRC:node,DST:node)
+
+        # projection of sent_msg
+        relation sent_msg_proj(SRC:node)
+
+        after init {
+            accept(N) := false;
+            sent_msg(N1,N2) := false;
+            sent_msg_proj(N) := false;
+            rcv_msg(N1,N2) := false;
+        }
+
+        ################################################################################
+        #
+        # Protocol actions
+        #
+        ################################################################################
+
+        ################################################################################
+        # Correct nodes
+        ################################################################################
+
+        before receive_init {
+            require rcv_init(n);
+            sent_msg(n,N) := true;
+            sent_msg_proj(n) := exists N. sent_msg(n,N);
+        }
+
+        before receive_msg {
+            require sent_msg(s,n);
+            rcv_msg(s,n) := true;
+            if exists B. forall N. member_b(N,B) -> rcv_msg(N,n) {
+                accept(n) := true;
+            };
+            if exists A. forall N. member_a(N,A) -> rcv_msg(N,n) {
+                sent_msg(n,N) := true;
+                sent_msg_proj(n) := exists N. sent_msg(n,N);
+            };
+        }
+
+        ################################################################################
+        # fc - symmetric omission
+        ################################################################################
+
+        # note receive_init_c is not needed
+
+        before receive_msg_c {
+            require member_fc(n);
+            require sent_msg(s,n);
+            rcv_msg(s,n) := true;
+            if exists B. forall N. member_b(N,B) -> rcv_msg(N,n) {
+                accept(n) := true;
+            };
+            var nondet:bool;
+            if exists A. forall N. member_a(N,A) -> rcv_msg(N,n) {
+                if nondet {
+                    sent_msg(n,N) := true;
+                    sent_msg_proj(n) := exists N. sent_msg(n,N);
+                };
+            };
+        }
+
+        ################################################################################
+        # fi - arbitrary omission
+        ################################################################################
+
+        before receive_init_i {
+            require member_fi(n);
+            require rcv_init(n);
+            assume sent_msg_proj(n) -> exists N. sent_msg(n,N);
+            sent_msg(n,N) := *;
+            assume old sent_msg(n,N) -> sent_msg(n,N);
+            sent_msg_proj(n) := exists N. sent_msg(n,N);
+        }
+
+        before receive_msg_i {
+            require member_fi(n);
+            require sent_msg(s,n);
+            rcv_msg(s,n) := true;
+            if exists B. forall N. member_b(N,B) -> rcv_msg(N,n) {
+                accept(n) := true;
+            };
+            if exists A. forall N. member_a(N,A) -> rcv_msg(N,n) {
+                assume sent_msg_proj(n) -> exists N. sent_msg(n,N);
+                sent_msg(n,N) := *;
+                assume old sent_msg(n,N) -> sent_msg(n,N);
+                sent_msg_proj(n) := exists N. sent_msg(n,N);
+            };
+        }
+
+        ################################################################################
+        # fs - symmetric Byzantine
+        ################################################################################
+
+        before faulty_send_s {
+            require member_fs(n);
+            sent_msg(n,N) := true;
+            sent_msg_proj(n) := exists N. sent_msg(n,N);
+        }
+
+        before faulty_state_sa {
+            require member_fs(n) | member_fa(n);
+            accept(n) := *;
+            rcv_msg(N,n) := *;
+        }
+
+        ################################################################################
+        # fa - arbitrary Byzantine
+        ################################################################################
+
+        before faulty_send_a {
+            require member_fa(n);
+            assume sent_msg_proj(n) -> exists N. sent_msg(n,N);
+            sent_msg(n,N) := *;
+            assume old sent_msg(n,N) -> sent_msg(n,N);
+            sent_msg_proj(n) := exists N. sent_msg(n,N);
+        }
+
+        ################################################################################
+        #
+        # Safety specification
+        #
+        ################################################################################
+
+        invariant (exists N. obedient(N) & accept(N)) -> (exists M. obedient(M) & rcv_init(M)) # unforgebility
+
+        ################################################################################
+	#
+	# Invariants for proving safety (also help for liveness)
+	#
+	################################################################################
+
+        invariant sent_msg(N1,N2) -> sent_msg_proj(N1)
+        # invariant sent_msg_proj(N1) -> exists N2. sent_msg(N1,N2) # can be verified with complete=fo
+        invariant obedient(N2) & rcv_msg(N1,N2) -> sent_msg(N1,N2)
+        invariant symmetric(N1) & sent_msg_proj(N1) -> sent_msg(N1,N2) # symmetric where it should be
+        invariant obedient(N1) & sent_msg(N1,N2) & ~rcv_init(N1) -> exists A. forall M. member_a(M,A) -> sent_msg_proj(M)
+        invariant obedient(N1) & accept(N1) -> exists B. forall M. member_b(M,B) -> sent_msg_proj(M)
+        invariant (exists A. forall M. member_a(M,A) & obedient(M) -> sent_msg_proj(M)) -> (exists N. obedient(N) & rcv_init(N))
+
+        # definitions are not well-implemented for liveness proofs, so we record them in these invariants
+        invariant obedient(N) <-> ( ~member_fs(N) & ~member_fa(N) )
+        invariant symmetric(N) <-> ( ~member_fi(N) & ~member_fa(N) )
+        invariant correct(N) <-> ( ~member_fc(N) & ~member_fi(N) & ~member_fs(N) & ~member_fa(N) )
+
+        ################################################################################
+        #
+        # Temporal properties and their proofs
+        #
+        ################################################################################
+
+        # workaround to take advantage of the fact that the set of nodes is finite
+        relation d(N:node)
+        after init {
+            d(N) := false;
+        }
+        before add_to_d { d(n) := true }
+        # fairness: eventually forall N. d(N)
+
+        ################################################################################
+        #
+        # "Correctness"
+        #
+        ################################################################################
+
+        individual n0:node  # witness for the formula (exists N. correct(N)), needed to avoid quantifier alternation
+
+        explicit temporal property [correctness] (
+            # temporal witnesses
+            ((exists N. correct(N)) -> correct(n0)) &
+            # encoding finite set of nodes
+            (eventually forall N. d(N))
+        ) -> (
+            (
+                # fairness:
+                (forall N,M. correct(N) & rcv_init(N) -> eventually sent_msg(N,M)) &
+                (forall N1,N2. globally (sent_msg(N1,N2) & correct(N2) -> eventually rcv_msg(N1,N2)))
+            ) ->
+            # correctness:
+            ((forall N1. obedient(N1) -> rcv_init(N1)) -> (eventually exists N2. correct(N2) & accept(N2)))
+        )
+        proof {
+            tactic l2s with
+
+            ################################################################################
+            #
+            # Invariants for proving liveness
+            #
+            ################################################################################
+
+            # basic, should be added automatically
+            invariant l2s_waiting | l2s_frozen | l2s_saved
+            invariant ~l2s_waiting | ~l2s_frozen
+            invariant ~l2s_waiting | ~l2s_saved
+            invariant ~l2s_frozen  | ~l2s_saved
+
+            # some things never change (maybe this should also be detected automatically)
+            invariant l2s_saved -> ( ($l2s_s X,Y. member_a(X,Y))(N,A) <-> member_a(N,A) )
+            invariant l2s_saved -> ( ($l2s_s X,Y. member_b(X,Y))(N,B) <-> member_b(N,B) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fc(X))(N) <-> member_fc(N) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fi(X))(N) <-> member_fi(N) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fs(X))(N) <-> member_fs(N) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fa(X))(N) <-> member_fa(N) )
+            invariant l2s_saved -> ( ($l2s_s X. rcv_init(X))(N) <-> rcv_init(N) )
+            invariant l2s_saved -> ( ($l2s_s. n0) = n0 )
+
+            # some things change monotonically (maybe this should also be detected automatically)
+            invariant l2s_saved -> ( ($l2s_s X,Y. sent_msg(X,Y))(N1,N2) -> sent_msg(N1,N2) )
+            invariant l2s_saved -> ( ($l2s_s X. sent_msg_proj(X))(N) -> sent_msg_proj(N) )
+            invariant l2s_saved -> ( ($l2s_s X,Y. rcv_msg(X,Y))(N1,N2) & obedient(N2) -> rcv_msg(N1,N2) )
+            invariant l2s_saved -> ( ($l2s_s X. accept(X))(N) & obedient(N)-> accept(N) )
+
+            # basic temporal information obtained from fairness and negation of property
+            invariant correct(N) & rcv_init(N) -> eventually sent_msg(N,M)
+            invariant globally (sent_msg(N1,N2) & correct(N2) -> eventually rcv_msg(N1,N2))
+            invariant obedient(N1) -> rcv_init(N1)
+            invariant ~(eventually exists N2. correct(N2) & accept(N2))
+
+            # nodes finite workaround
+            invariant eventually forall N. d(N)
+            invariant ($l2s_w. forall N. d(N)) | forall N. d(N)
+            invariant d(N) -> l2s_d(N)
+            invariant ~l2s_waiting -> forall N:node. l2s_d(N)
+            invariant ~l2s_waiting -> forall N:node. l2s_a(N)
+
+            # using "correct(N) & rcv_init(N) -> eventually sent_msg(N,M)"
+            invariant l2s_saved & correct(N) & rcv_init(N) & ~($l2s_w X,Y. sent_msg(X,Y))(N,M) -> sent_msg(N,M)
+
+            # using "sent_msg(N1,N2) & correct(N2) -> eventually rcv_msg(N1,N2)":
+            invariant l2s_saved & correct(N2) & ($l2s_s X,Y. sent_msg(X,Y))(N1,N2) & ~($l2s_w X,Y. rcv_msg(X,Y))(N1,N2) -> rcv_msg(N1,N2)
+
+            # the closing argument
+            invariant correct(n0)
+            invariant ~(exists B. forall N1. member_b(N1,B) -> rcv_msg(N1,n0))
+        }
+
+        # ODED: it seems like an ivy bug: if we uncomment "Relay"
+        # below but comment out "Correctness" above, the file
+        # passes. But with both properties uncommented the file fails.
+
+        # ################################################################################
+        # #
+        # # "Relay"
+        # #
+        # ################################################################################
+
+        individual n1:node  # witness for the formula (exists N. correct(N) & globally ~accept(N))
+        individual n2:node  # witness for the formula (exists N. correct(N) & globally ~sent_msg_proj(N))
+
+        explicit temporal property [relay] (
+            # temporal witnesses
+            ((exists N. correct(N) & globally ~accept(N)) -> (correct(n1) & globally ~accept(n1))) &
+            ((exists N. correct(N) & globally ~sent_msg_proj(N)) -> (correct(n2) & globally ~sent_msg_proj(n2))) &
+            # encoding finite set of nodes
+            (eventually forall N. d(N))
+        ) -> (
+            (
+                # fairness:
+                (forall N,M. correct(N) & rcv_init(N) -> eventually sent_msg(N,M)) &
+                (forall N1,N2. globally (sent_msg(N1,N2) & correct(N2) -> eventually rcv_msg(N1,N2)))
+            ) ->
+            # relay:
+            ((eventually exists N. obedient(N) & accept(N)) -> (eventually forall N. correct(N) -> accept(N)))
+        )
+        proof {
+            tactic l2s with
+
+            ################################################################################
+            #
+            # Invariants for proving liveness
+            #
+            ################################################################################
+
+            # basic, should be added automatically
+            invariant l2s_waiting | l2s_frozen | l2s_saved
+            invariant ~l2s_waiting | ~l2s_frozen
+            invariant ~l2s_waiting | ~l2s_saved
+            invariant ~l2s_frozen  | ~l2s_saved
+
+            # some things never change (maybe this should also be detected automatically)
+            invariant l2s_saved -> ( ($l2s_s X,Y. member_a(X,Y))(N,A) <-> member_a(N,A) )
+            invariant l2s_saved -> ( ($l2s_s X,Y. member_b(X,Y))(N,B) <-> member_b(N,B) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fc(X))(N) <-> member_fc(N) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fi(X))(N) <-> member_fi(N) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fs(X))(N) <-> member_fs(N) )
+            invariant l2s_saved -> ( ($l2s_s X. member_fa(X))(N) <-> member_fa(N) )
+            invariant l2s_saved -> ( ($l2s_s X. rcv_init(X))(N) <-> rcv_init(N) )
+            invariant l2s_saved -> ( ($l2s_s. n1) = n1 )
+            invariant l2s_saved -> ( ($l2s_s. n2) = n2 )
+
+            # some things change monotonically (maybe this should also be detected automatically)
+            invariant l2s_saved -> ( ($l2s_s X,Y. sent_msg(X,Y))(N1,N2) -> sent_msg(N1,N2) )
+            invariant l2s_saved -> ( ($l2s_s X. sent_msg_proj(X))(N) -> sent_msg_proj(N) )
+            invariant l2s_saved -> ( ($l2s_s X,Y. rcv_msg(X,Y))(N1,N2) & obedient(N2) -> rcv_msg(N1,N2) )
+            invariant l2s_saved -> ( ($l2s_s X. accept(X))(N) & obedient(N)-> accept(N) )
+
+            # basic temporal information obtained from fairness, negation of property
+            invariant correct(N) & rcv_init(N) -> eventually sent_msg(N,M)
+            invariant globally (sent_msg(N1,N2) & correct(N2) -> eventually rcv_msg(N1,N2))
+            invariant eventually exists N. obedient(N) & accept(N)
+            invariant ~eventually forall N. correct(N) -> accept(N)
+            invariant exists N. correct(N) & ~accept(N)
+
+            # nodes finite workaround
+            invariant (eventually forall N. d(N))
+            invariant ($l2s_w. forall N. d(N)) | forall N. d(N)
+            invariant d(N) -> l2s_d(N)
+            invariant ~l2s_waiting -> forall N:node. l2s_d(N)
+            invariant ~l2s_waiting -> forall N:node. l2s_a(N)
+
+            # using "correct(N) & rcv_init(N) -> eventually sent_msg(N,M)"
+            invariant l2s_saved & correct(N) & rcv_init(N) & ~($l2s_w X,Y. sent_msg(X,Y))(N,M) -> sent_msg(N,M)
+
+            # using "globally (sent_msg(N1,N2) & correct(N2) -> eventually rcv_msg(N1,N2))":
+            invariant l2s_saved & correct(N2) & ($l2s_s X,Y. sent_msg(X,Y))(N1,N2) & ~($l2s_w X,Y. rcv_msg(X,Y))(N1,N2) -> rcv_msg(N1,N2)
+
+            # using "eventually exists N. obedient(N) & accept(N)"
+            invariant ($l2s_w. exists N. obedient(N) & accept(N)) | (exists N. obedient(N) & accept(N))
+            invariant ~l2s_waiting -> (exists N. obedient(N) & accept(N))
+            invariant l2s_saved -> (exists N. obedient(N) & ($l2s_s X. accept(X))(N))
+
+            # correct nodes that received an A quorum must send, and nodes correct nodes that received a B quorum must accept
+            # the natural way to write this involves quantifier alternations:
+            # invariant forall N,B. correct(N) & ~accept(N) -> exists M. member_b(M,B) & ~rcv_msg(M,N)
+            # invariant forall N,A. correct(N) & ~sent_msg_proj(N) -> exists M. member_a(M,A) & ~rcv_msg(M,N)
+            # using temporal prophecy, we can write the following (and stay in EPR):
+            invariant forall B. correct(n1) & ~accept(n1) -> exists M. member_b(M,B) & ~rcv_msg(M,n1)
+            invariant forall A. correct(n2) & ~sent_msg_proj(n2) -> exists M. member_a(M,A) & ~rcv_msg(M,n2)
+            # to finish, we need some properties of n1,n2 and basic temporal manipulation:
+            invariant (exists N. correct(N) & globally ~accept(N)) -> (correct(n1) & globally ~accept(n1))
+            invariant (exists N. correct(N) & globally ~sent_msg_proj(N)) -> (correct(n2) & globally ~sent_msg_proj(n2))
+            invariant l2s_saved & obedient(N) & ~($l2s_w X. accept(X))(N) -> (accept(N) | globally ~accept(N))
+            invariant l2s_saved & obedient(N) & ~($l2s_w X. sent_msg_proj(X))(N) -> (sent_msg_proj(N) | globally ~sent_msg_proj(N))
+        }
+
+    }
+}
+
+export hrb.receive_init
+export hrb.receive_msg
+export hrb.receive_msg_c
+export hrb.receive_init_i
+export hrb.receive_msg_i
+export hrb.faulty_send_s
+export hrb.faulty_state_sa
+export hrb.faulty_send_a
+export hrb.add_to_d
