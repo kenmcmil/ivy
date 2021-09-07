@@ -3853,7 +3853,7 @@ def emit_quant(variables,body,header,code,exists=False):
             ebnds = []
             get_extensional_bound_exprs(v0,body,exists,ebnds)
             if not ebnds:
-                if not isinstance(berr):
+                if not isinstance(berr,BoundsError):
                     berr = BoundsError(None,"cannot iterate over sort {}".format(v0.sort))
                 berr.throw()
             ebnd = ebnds[0]
