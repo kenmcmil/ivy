@@ -37,8 +37,8 @@ tokens = (
    'PTO',
    'DOLLAR',
    'CARET',
-    'LB',
-    'RB',
+   'LB',
+   'RB',
 )
 
 reserved = all_reserved = {
@@ -146,15 +146,15 @@ reserved = all_reserved = {
    'spoil' : 'SPOIL',
    'explicit' : 'EXPLICIT',
    'thunk' : 'THUNK',
-    'isa' : 'ISA',
+   'isa' : 'ISA',
    'autoinstance' : 'AUTOINSTANCE',
    'constructor' : 'CONSTRUCTOR',
    'finite' : 'FINITE',
    'tactic' : 'TACTIC',
-    'unfold' : 'UNFOLD',
-    'forget' : 'FORGET',
-    'debug' : 'DEBUG',
-    'for' : 'FOR'
+   'unfold' : 'UNFOLD',
+   'forget' : 'FORGET',
+   'debug' : 'DEBUG',
+   'for' : 'FOR'
 }
 
 tokens += tuple(all_reserved.values())
