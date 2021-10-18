@@ -5532,7 +5532,7 @@ public:
         header.append("""
         if(__ivy_modelfile.is_open()){
             __ivy_modelfile << "begin sat:\\n" << slvr << "end sat:\\n" << std::endl;
-            __ivy_modelfile << model;
+            __ivy_modelfile << model << std::endl;
             __ivy_modelfile.flush();
         }
 """)
