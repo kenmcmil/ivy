@@ -1305,8 +1305,6 @@ def apply_mixin(decl,action1,action2):
     assert  hasattr(action2,'lineno')
     name1,name2 = (a.relname for a in decl.args)
     if len(action1.formal_params) != len(action2.formal_params):
-        print 'foo: {}'.format(action1.formal_params)
-        print 'bar: {}'.format(action2.formal_params)
         raise IvyError(decl,"mixin {} has wrong number of input parameters for {}".format(name1,name2))
     if len(action1.formal_returns) != len(action2.formal_returns):
         raise IvyError(decl,"mixin {} has wrong number of output parameters for {}".format(name1,name2))
