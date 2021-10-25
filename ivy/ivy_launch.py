@@ -172,12 +172,16 @@ def main():
                             cmd.append('{}={}'.format(param['name'],val))
                         else:
                             cmd.append('{}'.format(val))
+                start_seed = 0  # default start seed
                 if 'test_params' in descriptor:
                     for param in descriptor['test_params']:
                         if param in ps:
-                            cmd.append('{}={}'.format(param,ps[param]))
+                            if param == 'seed' and have_runs:
+                                start_seed = int(ps[param])
+                            else:
+                                cmd.append('{}={}'.format(param,ps[param]))
                 if have_runs:
-                    cmd.append("seed={}".format(run))
+                    cmd.append("seed={}".format(start_seed + run))
                 print ' '.join(cmd)
                 pname = process['name']
                 if pname == 'this':
