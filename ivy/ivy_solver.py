@@ -274,6 +274,8 @@ def lookup_native(thing,table,kind):
                         return lambda x,y: z3.If(x*y > ub, ub, z3.If(x*y < lb, lb, x*y))
                     if thing.name == '/':
                         return lambda x,y: z3.If(x/y > ub, ub, z3.If(x/y < lb, lb, x/y))
+                    if thing.name == 'cast':
+                        return lambda x:x
                 z3val = table(thing.name)
                 if z3val == None:
                     raise iu.IvyError(None,'{} is not a supported Z3 {}'.format(name,kind))
