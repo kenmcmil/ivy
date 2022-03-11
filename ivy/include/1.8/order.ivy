@@ -365,6 +365,7 @@ module iterable = {
             >>>
         }
 
+        definition succ(N:this,M:this) = (N ~= max & N + 1 = M)
     }
     
     specification {
