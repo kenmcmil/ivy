@@ -169,7 +169,17 @@ failures = 0
 def print_dots():
     print '...',
     sys.stdout.flush()
-    
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m' 
 
 class Checker(object):
     def __init__(self,conj,report_pass=True,invert=True):
@@ -186,14 +196,14 @@ class Checker(object):
         if self.report_pass:
             print_dots()
     def sat(self):
-        print('FAIL')
+        print(bcolors.FAIL + 'FAIL' + bcolors.ENDC)
         global failures
         failures += 1
         self.failed = True
         return not (diagnose.get() or opt_trace.get()) # ignore failures if not diagnosing
     def unsat(self):
         if self.report_pass:
-            print('PASS')
+            print(bcolors.OKGREEN + 'PASS' + bcolors.ENDC)
     def assume(self):
         return False
     def get_annot(self):
@@ -224,7 +234,7 @@ class ConjAssumer(Checker):
         self.lf = lf
         Checker.__init__(self,lf.formula,invert=False)
     def start(self):
-        print pretty_lf(self.lf) + "  [assumed]"
+        print pretty_lf(self.lf) + bcolors.OKBLUE + "  [assumed]" + bcolors.ENDC
     def assume(self):
         return True
 
@@ -589,7 +599,7 @@ def check_isolate():
                                    some_failed = True
                                    break
                         if not some_failed:
-                            print 'PASS'
+                            print bcolors.OKGREEN + 'PASS' + bcolors.ENDC
                         act.checked_assert.value = old_checked_assert
                     else:
                         print ""
@@ -714,7 +724,7 @@ def mc_isolate(isolate,meth=ivy_mc.check_isolate):
             res = meth()
             if res is not None:
                 print res
-                print 'FAIL'
+                print bcolors.FAIL + 'FAIL' + bcolors.ENDC
                 exit(1)
         return
     for lineno in all_assert_linenos():
@@ -725,7 +735,7 @@ def mc_isolate(isolate,meth=ivy_mc.check_isolate):
                 res = meth()
             if res is not None:
                 print res
-                print 'FAIL'
+                print bcolors.FAIL + 'FAIL' + bcolors.ENDC
                 exit(1)
             act.checked_assert.value = old_checked_assert
     
