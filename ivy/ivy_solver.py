@@ -38,17 +38,19 @@ def set_seed(seed):
 opt_seed = iu.Parameter("seed",0,process=int)
 opt_seed.set_callback(set_seed)
 
-database = None
 def set_database(db):
-    print 'using {} as a database of proven invariants'.format(db)
-    database = db
+    print 'Using {} as a database of proven invariants'.format(db)
 
 def check_db(db):
     try:
         with open(db, 'r') as fr:
             _ = fr.read()
     except:
-        return False
+        try:
+            with open(db, 'w') as fw:
+                pass
+        except:
+            return False
     return True
 
 opt_database = iu.Parameter("database",None,check_db)
@@ -1107,35 +1109,35 @@ def model_if_none(clauses1,implied,model):
     return h
 
 def databaseContains(tag):
-    if database == None or tag == None:
+    if opt_database.get() == None or tag == None:
         return False
     try:
-        with open(database, 'r') as fr:
+        with open(opt_database.get(), 'r') as fr:
             for line in fr:
                 if line.strip() == tag:
                     return True
     except Exception as e:
         raise iu.IvyError(None,"Encountered error looking for \""
-            + str(tag) + "\" in database \"" + str(database) + "\": "
+            + str(tag) + "\" in database \"" + str(opt_database.get()) + "\": "
             + str(e))
     return False
 
 def addToDatabase(tag):
-    if database != None and tag != None:
+    if opt_database.get() != None and tag != None and len(tag) > 0:
         try:
-            with open(database, 'a') as fw:
-                fw.write(tag)
+            with open(opt_database.get(), 'a') as fw:
+                fw.write(tag + "\n")
         except Exception as e:
             raise iu.IvyError(None, "Encountered error writing \""
-                + str(tag) + "\" to database \"" + str(database) + "\": "
+                + str(tag) + "\" to database \"" + str(opt_database.get()) + "\": "
                 + str(e))
     return
 
 def decide(s,atoms=None):
     # print "solving{"
-    tag = hash(s.to_smt2())
+    tag = str(hash(s.to_smt2()))
     if databaseContains(tag):
-        print "Found s in database {}".format(database)
+        print "(found in {}) ".format(opt_database.get()),
         return z3.unsat
     res = s.check() if atoms == None else s.check(atoms)
     if res == z3.unknown:
