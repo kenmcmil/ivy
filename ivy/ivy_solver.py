@@ -38,6 +38,22 @@ def set_seed(seed):
 opt_seed = iu.Parameter("seed",0,process=int)
 opt_seed.set_callback(set_seed)
 
+database = None
+def set_database(db):
+    print 'using {} as a database of proven invariants'.format(db)
+    database = db
+
+def check_db(db):
+    try:
+        with open(db, 'r') as fr:
+            _ = fr.read()
+    except:
+        return False
+    return True
+
+opt_database = iu.Parameter("database",None,check_db)
+opt_database.set_callback(set_database)
+
 def set_macro_finder(truth):
     z3.set_param('smt.macro_finder',truth)
     
@@ -1090,7 +1106,7 @@ def model_if_none(clauses1,implied,model):
             s.pop()
     return h
 
-def databaseContains(database, tag):
+def databaseContains(tag):
     if database == None or tag == None:
         return False
     try:
@@ -1104,7 +1120,7 @@ def databaseContains(database, tag):
             + str(e))
     return False
 
-def addToDatabase(database, tag):
+def addToDatabase(tag):
     if database != None and tag != None:
         try:
             with open(database, 'a') as fw:
@@ -1115,21 +1131,21 @@ def addToDatabase(database, tag):
                 + str(e))
     return
 
-def decide(s,atoms=None,database=None):
+def decide(s,atoms=None):
     # print "solving{"
     tag = hash(s.to_smt2())
-    if databaseContains(database, tag):
+    if databaseContains(tag):
         return z3.unsat
     res = s.check() if atoms == None else s.check(atoms)
     if res == z3.unknown:
         print s.to_smt2()
         raise iu.IvyError(None,"Solver produced inconclusive result")
     # print "}"
-    if res == z3.unsat and database != None:
-        addToDatabase(database, tag)
+    if res == z3.unsat:
+        addToDatabase(tag)
     return res
 
-def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_cond=None, shrink=True, database=None):
+def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_cond=None, shrink=True):
     """
     Return a HerbrandModel with a "small" model of clauses.
 
@@ -1170,7 +1186,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
 #    iu.dbg('the_fmla')
     s.add(the_fmla)
     
-    # res = decide(s, database=database)
+    # res = decide(s)
     # if res == z3.unsat:
     #     return None
 
@@ -1204,7 +1220,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                     the_fmla = clauses_to_z3(foo)
                     # iu.dbg('the_fmla')
                     s.add(the_fmla)
-                    res = decide(s, database=database)
+                    res = decide(s)
                     if res != z3.unsat:
                         if fc.sat():
                             res = z3.unsat
@@ -1216,9 +1232,9 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                         s.pop()
         else:
             s.add(clauses_to_z3(final_cond))
-            res = decide(s, database=database)
+            res = decide(s)
     else:
-        res = decide(s, database=database)
+        res = decide(s)
     if res == z3.unsat:
         return None
 
@@ -1230,7 +1246,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                 s.push()
                 sc = size_constraint(x, n)
                 s.add(formula_to_z3(sc))
-                res = decide(s, database=database)
+                res = decide(s)
                 if res == z3.sat:
                     break
                 else:
@@ -1393,7 +1409,7 @@ def filter_redundant_facts(clauses,axioms):
         s2.add(c)
     keep = []
     for fmla,alit in zip(neg_fmlas,alits):
-        if decide(s2,atoms=[alit],database=database) == z3.sat:
+        if decide(s2,[alit]) == z3.sat:
             keep.append(fmla)
 #    print "unsat_core res = {}".format(res)
     return Clauses(pos_fmlas+keep,list(clauses.defs))
