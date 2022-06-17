@@ -36,3 +36,10 @@ specs
 
 # These are library directories
 gnutls
+ivy/include/*.h
+include/
+ivy/bin/
+ivy/lib/
+ivy/z3/
+*.so
+bin/z3
