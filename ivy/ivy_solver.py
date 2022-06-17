@@ -1135,6 +1135,7 @@ def decide(s,atoms=None):
     # print "solving{"
     tag = hash(s.to_smt2())
     if databaseContains(tag):
+        print "Found s in database {}".format(database)
         return z3.unsat
     res = s.check() if atoms == None else s.check(atoms)
     if res == z3.unknown:
