@@ -1090,20 +1090,46 @@ def model_if_none(clauses1,implied,model):
             s.pop()
     return h
 
+def databaseContains(database, tag):
+    if database == None or tag == None:
+        return False
+    try:
+        with open(database, 'r') as fr:
+            for line in fr:
+                if line.strip() == tag:
+                    return True
+    except Exception as e:
+        raise iu.IvyError(None,"Encountered error looking for \""
+            + str(tag) + "\" in database \"" + str(database) + "\": "
+            + str(e))
+    return False
 
-def decide(s,atoms=None):
+def addToDatabase(database, tag):
+    if database != None and tag != None:
+        try:
+            with open(database, 'a') as fw:
+                fw.write(tag)
+        except Exception as e:
+            raise iu.IvyError(None, "Encountered error writing \""
+                + str(tag) + "\" to database \"" + str(database) + "\": "
+                + str(e))
+    return
+
+def decide(s,atoms=None,database=None):
     # print "solving{"
-    # f = open("ivy.smt2","w")
-    # f.write(s.to_smt2())
-    # f.close()
+    tag = hash(s.to_smt2())
+    if databaseContains(database, tag):
+        return z3.unsat
     res = s.check() if atoms == None else s.check(atoms)
     if res == z3.unknown:
         print s.to_smt2()
         raise iu.IvyError(None,"Solver produced inconclusive result")
     # print "}"
+    if res == z3.unsat and database != None:
+        addToDatabase(database, tag)
     return res
 
-def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_cond=None, shrink=True):
+def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_cond=None, shrink=True, database=None):
     """
     Return a HerbrandModel with a "small" model of clauses.
 
@@ -1144,7 +1170,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
 #    iu.dbg('the_fmla')
     s.add(the_fmla)
     
-    # res = decide(s)
+    # res = decide(s, database=database)
     # if res == z3.unsat:
     #     return None
 
@@ -1178,7 +1204,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                     the_fmla = clauses_to_z3(foo)
                     # iu.dbg('the_fmla')
                     s.add(the_fmla)
-                    res = decide(s)
+                    res = decide(s, database=database)
                     if res != z3.unsat:
                         if fc.sat():
                             res = z3.unsat
@@ -1190,9 +1216,9 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                         s.pop()
         else:
             s.add(clauses_to_z3(final_cond))
-            res = decide(s)
+            res = decide(s, database=database)
     else:
-        res = decide(s)
+        res = decide(s, database=database)
     if res == z3.unsat:
         return None
 
@@ -1204,7 +1230,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                 s.push()
                 sc = size_constraint(x, n)
                 s.add(formula_to_z3(sc))
-                res = decide(s)
+                res = decide(s, database=database)
                 if res == z3.sat:
                     break
                 else:
@@ -1367,7 +1393,7 @@ def filter_redundant_facts(clauses,axioms):
         s2.add(c)
     keep = []
     for fmla,alit in zip(neg_fmlas,alits):
-        if decide(s2,[alit]) == z3.sat:
+        if decide(s2,atoms=[alit],database=database) == z3.sat:
             keep.append(fmla)
 #    print "unsat_core res = {}".format(res)
     return Clauses(pos_fmlas+keep,list(clauses.defs))
