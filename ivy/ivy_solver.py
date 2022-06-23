@@ -24,6 +24,8 @@ import logic as lg
 
 import sys
 from filelock import FileLock
+import logging
+logging.getLogger("filelock").setLevel(logging.INFO)
 
 # Following accounts for Z3 API symbols that are hidden as of Z3-4.5.0
 
