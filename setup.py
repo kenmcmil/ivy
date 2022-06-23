@@ -15,6 +15,7 @@ except:
   long_description = None
 
 setup(name='ms_ivy',
+      python_requires='<3',
       version='1.8.23',
       description='IVy verification tool',
       long_description=long_description,
@@ -35,7 +36,17 @@ setup(name='ms_ivy',
           'pydot',
       ] + (['applescript'] if platform.system() == 'Darwin' else []),
       entry_points = {
-        'console_scripts': ['ivy=ivy.ivy:main','ivy_check=ivy.ivy_check:main','ivy_to_cpp=ivy.ivy_to_cpp:main','ivy_show=ivy.ivy_show:main','ivy_ev_viewer=ivy.ivy_ev_viewer:main','ivyc=ivy.ivy_to_cpp:ivyc','ivy_to_md=ivy.ivy_to_md:main','ivy_libs=ivy.ivy_libs:main','ivy_shell=ivy.ivy_shell:main','ivy_launch=ivy.ivy_launch:main'],
+        'console_scripts': [
+            'ivy=ivy.ivy:main',
+            'ivy_check=ivy.ivy_check:main',
+            'ivy_to_cpp=ivy.ivy_to_cpp:main',
+            'ivy_show=ivy.ivy_show:main',
+            'ivy_ev_viewer=ivy.ivy_ev_viewer:main',
+            'ivyc=ivy.ivy_to_cpp:ivyc',
+            'ivy_to_md=ivy.ivy_to_md:main',
+            'ivy_libs=ivy.ivy_libs:main',
+            'ivy_shell=ivy.ivy_shell:main',
+            'ivy_launch=ivy.ivy_launch:main'],
         },
       zip_safe=False)
 

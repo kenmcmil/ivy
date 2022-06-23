@@ -31,13 +31,14 @@ import ivy_tactics
 import sys
 from collections import defaultdict
 
-diagnose = iu.BooleanParameter("diagnose",False)
-coverage = iu.BooleanParameter("coverage",True)
-checked_action = iu.Parameter("action","")
-opt_trusted = iu.BooleanParameter("trusted",False)
-opt_mc = iu.BooleanParameter("mc",False)
-opt_trace = iu.BooleanParameter("trace",False)
-opt_separate = iu.BooleanParameter("separate",None)
+diagnose       = iu.BooleanParameter("diagnose",False)
+coverage       = iu.BooleanParameter("coverage",True )
+checked_action = iu.Parameter       ("action"  ,""   )
+opt_trusted    = iu.BooleanParameter("trusted" ,False)
+opt_mc         = iu.BooleanParameter("mc"      ,False)
+opt_trace      = iu.BooleanParameter("trace"   ,False)
+opt_separate   = iu.BooleanParameter("separate",None )
+opt_colors     = iu.BooleanParameter("colors"  ,True )
 
 def display_cex(msg,ag):
     if diagnose.get():
@@ -169,7 +170,17 @@ failures = 0
 def print_dots():
     print '...',
     sys.stdout.flush()
-    
+
+class bcolors:
+    HEADER    = '\033[95m' if opt_colors.get() else ''
+    OKBLUE    = '\033[94m' if opt_colors.get() else ''
+    OKCYAN    = '\033[96m' if opt_colors.get() else ''
+    OKGREEN   = '\033[92m' if opt_colors.get() else ''
+    WARNING   = '\033[93m' if opt_colors.get() else ''
+    FAIL      = '\033[91m' if opt_colors.get() else ''
+    ENDC      = '\033[0m'  if opt_colors.get() else ''
+    BOLD      = '\033[1m'  if opt_colors.get() else ''
+    UNDERLINE = '\033[4m'  if opt_colors.get() else '' 
 
 class Checker(object):
     def __init__(self,conj,report_pass=True,invert=True):
@@ -186,14 +197,14 @@ class Checker(object):
         if self.report_pass:
             print_dots()
     def sat(self):
-        print('FAIL')
+        print(bcolors.FAIL + 'FAIL' + bcolors.ENDC)
         global failures
         failures += 1
         self.failed = True
         return not (diagnose.get() or opt_trace.get()) # ignore failures if not diagnosing
     def unsat(self):
         if self.report_pass:
-            print('PASS')
+            print(bcolors.OKGREEN + 'PASS' + bcolors.ENDC)
     def assume(self):
         return False
     def get_annot(self):
@@ -224,7 +235,7 @@ class ConjAssumer(Checker):
         self.lf = lf
         Checker.__init__(self,lf.formula,invert=False)
     def start(self):
-        print pretty_lf(self.lf) + "  [assumed]"
+        print pretty_lf(self.lf) + bcolors.OKBLUE + "  [assumed]" + bcolors.ENDC
     def assume(self):
         return True
 
@@ -589,7 +600,7 @@ def check_isolate():
                                    some_failed = True
                                    break
                         if not some_failed:
-                            print 'PASS'
+                            print bcolors.OKGREEN + 'PASS' + bcolors.ENDC
                         act.checked_assert.value = old_checked_assert
                     else:
                         print ""
@@ -714,7 +725,7 @@ def mc_isolate(isolate,meth=ivy_mc.check_isolate):
             res = meth()
             if res is not None:
                 print res
-                print 'FAIL'
+                print bcolors.FAIL + 'FAIL' + bcolors.ENDC
                 exit(1)
         return
     for lineno in all_assert_linenos():
@@ -725,7 +736,7 @@ def mc_isolate(isolate,meth=ivy_mc.check_isolate):
                 res = meth()
             if res is not None:
                 print res
-                print 'FAIL'
+                print bcolors.FAIL + 'FAIL' + bcolors.ENDC
                 exit(1)
             act.checked_assert.value = old_checked_assert
     
@@ -810,13 +821,13 @@ def main():
         with utl.ErrorPrinter():
             ivy_init.source_file(sys.argv[1],ivy_init.open_read(sys.argv[1]),create_isolate=False)
             if isinstance(act.checked_assert.get(),iu.LocationTuple) and act.checked_assert.get().filename == 'none.ivy' and act.checked_assert.get().line == 0:
-                print 'NOT CHECKED'
+                print bcolors.WARNING + 'NOT CHECKED' + bcolors.ENDC
                 exit(0);
             check_module()
     if some_bounded:
-        print "BOUNDED"
+        print bcolors.WARNING + "BOUNDED" + bcolors.ENDC
     else:
-        print "OK"
+        print bcolors.OKGREEN + "OK" + bcolors.ENDC
 
 
 if __name__ == "__main__":

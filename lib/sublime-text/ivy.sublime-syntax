@@ -1,0 +1,87 @@
+%YAML 1.2
+---
+# See http://www.sublimetext.com/docs/syntax.html
+file_extensions:
+  - ivy
+scope: source.example-c
+contexts:
+  main:
+    # Strings begin and end with quotes, and use backslashes as an escape
+    # character
+    - match: '"'
+      scope: punctuation.definition.string.begin.example-c
+      push: double_quoted_string
+
+    # Comments begin with a '#' and finish at the end of the line
+    - match: '#'
+      scope: punctuation.definition.comment.example-c
+      push: line_comment
+
+    # Keywords are if, else for and while.
+    # Note that blackslashes don't need to be escaped within single quoted
+    # strings in YAML. When using single quoted strings, only single quotes
+    # need to be escaped: this is done by using two single quotes next to each
+    # other.
+    - match: '\b(if|else|for|while)\b'
+      scope: keyword.control.example-c
+
+    # Numbers
+    - match: '\b(-)?[0-9.]+\b'
+      scope: constant.numeric.example-c
+
+    # Imports
+    - match: '\b(include|export|instance)\b'
+      scope: keyword.control.import.example-c
+
+    # Definitions
+    - match: '\b(module)\b'
+      scope: entity.name.class.example-c
+
+    # Definitions
+    - match: '\b(after|before)\b'
+      scope: entity.name.trait.example-c
+
+    # Functions
+    - match: '\b(action)\b'
+      scope: entity.name.function.example-c
+
+    # Meta Types
+    - match: '\b(var|parameter|type)\b'
+      scope: storage.type.class.example-c
+
+    # Actual Types
+    - match: '\b(nat|bool|int|array|map|bool_vec|vec|relation)\b'
+      scope: storage.type.example-c
+
+    # with blablabla
+    - match: '\b(with)\b'
+      scope: entity.other.inherited-class.example-c
+
+    # spec, impl, etc.
+    - match: '\b(specification|implementation|definition|implement|invariant|require|assert|assume)\b'
+      scope: entity.other.attribute-name.example-c
+
+    # Arithmetic operators
+    - match: \+|\-|\*|\*\*|/|//|%|<<|>>|&|\||\^|~
+      scope: keyword.operator.arithmetic.example-c
+
+    # Comparison Operators
+    - match: <\=|>\=|\=\=|<|>|~\=
+      scope: keyword.operator.comparison.example-c
+
+    # Assignment
+    - match: :=|=
+      scope: keyword.operator.assignment.example-c
+
+  double_quoted_string:
+    - meta_scope: string.quoted.double.example-c
+    - match: '\\.'
+      scope: constant.character.escape.example-c
+    - match: '"'
+      scope: punctuation.definition.string.end.example-c
+      pop: true
+
+  line_comment:
+    - meta_scope: comment.line.example-c
+    - match: $
+      pop: true

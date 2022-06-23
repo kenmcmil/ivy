@@ -23,6 +23,9 @@ import ivy_unitres as ur
 import logic as lg
 
 import sys
+from filelock import FileLock
+import logging
+logging.getLogger("filelock").setLevel(logging.INFO)
 
 # Following accounts for Z3 API symbols that are hidden as of Z3-4.5.0
 
@@ -37,6 +40,26 @@ def set_seed(seed):
 
 opt_seed = iu.Parameter("seed",0,process=int)
 opt_seed.set_callback(set_seed)
+
+def set_database(db):
+    print 'Using {} as a database of proven invariants'.format(db)
+
+def check_db(db):
+    try:
+        lock = FileLock(db + ".lock")
+        with lock:
+            with open(db, 'r') as fr:
+                _ = fr.read()
+    except:
+        try:
+            with open(db, 'w') as fw:
+                pass
+        except:
+            return False
+    return True
+
+opt_database = iu.Parameter("database",None,check_db)
+opt_database.set_callback(set_database)
 
 def set_macro_finder(truth):
     z3.set_param('smt.macro_finder',truth)
@@ -1090,17 +1113,49 @@ def model_if_none(clauses1,implied,model):
             s.pop()
     return h
 
+def databaseContains(tag):
+    if opt_database.get() == None or tag == None:
+        return False
+    try:
+        lock = FileLock(opt_database.get() + ".lock")
+        with lock:
+            with open(opt_database.get(), 'r') as fr:
+                for line in fr:
+                    if line.strip() == tag:
+                        return True
+    except Exception as e:
+        raise iu.IvyError(None,"Encountered error looking for \""
+            + str(tag) + "\" in database \"" + str(opt_database.get()) + "\": "
+            + str(e))
+    return False
+
+def addToDatabase(tag):
+    if opt_database.get() != None and tag != None and len(tag) > 0:
+        try:
+            lock = FileLock(opt_database.get() + ".lock")
+            with lock:
+                with open(opt_database.get(), 'a') as fw:
+                    fw.write(tag + "\n")
+        except Exception as e:
+            raise iu.IvyError(None, "Encountered error writing \""
+                + str(tag) 
+                + "\" to database \"" + str(opt_database.get()) + "\": "
+                + str(e))
+    return
 
 def decide(s,atoms=None):
     # print "solving{"
-    # f = open("ivy.smt2","w")
-    # f.write(s.to_smt2())
-    # f.close()
+    tag = str(hash(s.to_smt2()))
+    if databaseContains(tag):
+        print "(found in {}) ".format(opt_database.get()),
+        return z3.unsat
     res = s.check() if atoms == None else s.check(atoms)
     if res == z3.unknown:
         print s.to_smt2()
         raise iu.IvyError(None,"Solver produced inconclusive result")
     # print "}"
+    if res == z3.unsat:
+        addToDatabase(tag)
     return res
 
 def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_cond=None, shrink=True):
