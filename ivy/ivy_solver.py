@@ -23,6 +23,7 @@ import ivy_unitres as ur
 import logic as lg
 
 import sys
+from filelock import FileLock
 
 # Following accounts for Z3 API symbols that are hidden as of Z3-4.5.0
 
@@ -43,8 +44,10 @@ def set_database(db):
 
 def check_db(db):
     try:
-        with open(db, 'r') as fr:
-            _ = fr.read()
+        lock = FileLock(db + ".lock")
+        with lock:
+            with open(db, 'r') as fr:
+                _ = fr.read()
     except:
         try:
             with open(db, 'w') as fw:
@@ -1112,10 +1115,12 @@ def databaseContains(tag):
     if opt_database.get() == None or tag == None:
         return False
     try:
-        with open(opt_database.get(), 'r') as fr:
-            for line in fr:
-                if line.strip() == tag:
-                    return True
+        lock = FileLock(opt_database.get() + ".lock")
+        with lock:
+            with open(opt_database.get(), 'r') as fr:
+                for line in fr:
+                    if line.strip() == tag:
+                        return True
     except Exception as e:
         raise iu.IvyError(None,"Encountered error looking for \""
             + str(tag) + "\" in database \"" + str(opt_database.get()) + "\": "
@@ -1125,11 +1130,14 @@ def databaseContains(tag):
 def addToDatabase(tag):
     if opt_database.get() != None and tag != None and len(tag) > 0:
         try:
-            with open(opt_database.get(), 'a') as fw:
-                fw.write(tag + "\n")
+            lock = FileLock(opt_database.get() + ".lock")
+            with lock:
+                with open(opt_database.get(), 'a') as fw:
+                    fw.write(tag + "\n")
         except Exception as e:
             raise iu.IvyError(None, "Encountered error writing \""
-                + str(tag) + "\" to database \"" + str(opt_database.get()) + "\": "
+                + str(tag) 
+                + "\" to database \"" + str(opt_database.get()) + "\": "
                 + str(e))
     return
 
