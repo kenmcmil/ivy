@@ -714,7 +714,8 @@ def set_privates(mod,isolate,suff=None):
         nsuff = get_private_from_attributes(mod,n,suff,isolate)
         for ns in ['impl','spec'] if nsuff == 'priv' else [nsuff]:
             if ns in l:
-                mod.privates.add(iu.compose_names(n,ns))
+                pname = iu.compose_names(n,ns)
+                mod.privates.add(pname)
     for name in mod.attributes:
         p,c = iu.parent_child_name(name)
         if c in ['spec','impl','private']:
@@ -729,7 +730,7 @@ def set_privates(mod,isolate,suff=None):
             vprivates.add(v.rep)
     if isinstance(isolate,ivy_ast.ProcessDef):
         for isol in mod.isolates.values():
-            if isinstance(isolate,ivy_ast.ProcessDef):
+            if isinstance(isol,ivy_ast.ProcessDef):
                 if isolate.name() != isol.name():
                     mod.privates.add(isol.name())
             for v in isol.verified():
@@ -1110,22 +1111,25 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     # convert the properties not being verified to axioms
     
     exact_present = set(a.relname for a in isolate.present())
-    proved,not_proved = get_props_proved_in_isolate(mod,isolate)
-    # mod.labeled_axioms.extend(not_proved)
-    mod.labeled_axioms = [m for m in mod.labeled_axioms if not m.explicit or m.name in exact_present]
-    new_props = []
-    proved_ids = set(p.id for p in proved)
-    not_proved_ids = set(p.id for p in not_proved)
-    for p in mod.labeled_props:
-        p = p.clone(p.args)
-        if p.id in not_proved_ids:
-            p.assumed = True
-            p.explicit = p.explicit and p.name not in exact_present
-            new_props.append(p)
-        elif p.id in proved_ids:
-            new_props.append(p)
+    if not isinstance(isolate,ivy_ast.ExtractDef):
+        proved,not_proved = get_props_proved_in_isolate(mod,isolate)
+        # mod.labeled_axioms.extend(not_proved)
+        mod.labeled_axioms = [m for m in mod.labeled_axioms if not m.explicit or m.name in exact_present]
+        new_props = []
+        proved_ids = set(p.id for p in proved)
+        not_proved_ids = set(p.id for p in not_proved)
+        for p in mod.labeled_props:
+            p = p.clone(p.args)
+            if p.id in not_proved_ids:
+                p.assumed = True
+                p.explicit = p.explicit and p.name not in exact_present
+                new_props.append(p)
+            elif p.id in proved_ids:
+                new_props.append(p)
             
-    mod.labeled_props = new_props
+        mod.labeled_props = new_props
+    else:
+        mod.labeled_props = []
 
     # filter natives
 
@@ -1286,7 +1290,7 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
 
     # check that any properties have dependencies present
 
-    if enforce_axioms.get():
+    if enforce_axioms.get() and not isinstance(isolate,ivy_ast.ExtractDef):
         all_syms_norm = map(ivy_logic.normalize_symbol,all_syms)
         for p,ds in prop_deps:
             for d in ds:
@@ -1650,8 +1654,14 @@ def create_isolate(iso,mod = None,**kwargs):
 #                    extra_with.append(ivy_ast.Atom(extname))
                 if iso and iso in mod.isolates and name in orig_imports:
                     ps = mod.isolates[iso].params()
-                    extra_strip[impname] = [a.rep for a in ps]
-                    extra_strip[extname] = [a.rep for a in ps]
+                    def fixit(p):
+                        if isinstance(p,ivy_ast.Variable):
+                            v = ivy_ast.App('iso:'+p.rep)
+                            v.sort = p.sort
+                            return v
+                        return p
+                    extra_strip[impname] = [fixit(a).rep for a in ps]
+                    extra_strip[extname] = [fixit(a).rep for a in ps]
             mod.imports = newimps
 
         mixers = set()
@@ -1957,10 +1967,15 @@ def get_isolate_lfs(mod,iso,lfs,verified=True,present=True):
     lf_map = dict((lf.label.rep,lf) for lf in lfs)
     memo = set()
     lfs = []
+    explicit = set()
+    for pres in iso.present():
+        explicit.add(pres.rep)
     def fun(name):
         if name in lf_map:
             if name not in memo:
-                lfs.append(lf_map[name])
+                lf = lf_map[name]
+                if name in explicit or not (hasattr(lf,'explicit') and lf.explicit==True):
+                    lfs.append(lf)
             memo.add(name)
     iter_isolate(mod,iso,fun,verified,present)
     return lfs

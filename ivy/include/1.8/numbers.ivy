@@ -1,20 +1,142 @@
 #lang ivy
 
+module number_iterator(range) = {
+
+    type this = struct {
+	is_end : bool,
+	val : range
+    }
+    alias t=this
+
+    definition (X < Y) = ~is_end(X) & is_end(Y) 
+                      | ~is_end(X) & ~is_end(Y) & val(X) < val(Y)
+
+    function done(X,Y) = is_end(Y) | X < val(Y)
+    function ahead(X,Y) = ~is_end(Y) & val(Y) < X
+    function between(X,V,Y) = ~done(V,X) & done(V,Y)
+    function value(X:t) = val(X)
+    
+    action create(x:range) returns (y:t)
+    action begin returns (y:t)
+    action end returns (y:t)
+    
+    implement create {
+	is_end(y) := false;
+	val(y) := x
+    }
+    implement begin {
+	is_end(y) := false;
+	val(y) := 0;
+    }
+    implement end {
+	is_end(y) := true;
+	val(y) := 0
+    }
+
+    action next(x:t) returns (x:t)
+    action prev(x:t) returns (x:t)
+    
+    implement next {
+	if range.is_max(val(x)) {
+	    x := end
+	} else {
+	    x := create(range.next(val(x)))
+	}
+    }
+    implement prev {
+	x := create(range.prev(val(x)))
+    }
+
+}
+
+module exponentiation(base_t,exp_t) = {
+    action pow(base:base_t, exp : exp_t) returns (result : base_t) = {
+        result := 1;
+        while exp {
+            if exp ~= exp / 2 * 2 {
+                result := result * base;
+            }
+            exp := exp / 2;
+            base := base * base;
+        }
+    }
+}
+
 module unsigned_bit_vector(bits) = {
-    type this
     global {
+        type this
         interpret this -> bv[bits]
+        action next(x:this) returns (x:this) = {
+            x := x + 1;
+        }
+        action prev(x:this) returns (x:this) = {
+            x := x - 1;
+        }
+        action is_max(x:this) returns (res:bool) = {
+            res := x + 1 = 0;
+        }
+        action random returns (res:this)
+        implementation {
+            implement random {
+                <<<
+                res = 0;
+                for (int b = `bits`; b > 0; b -= 15) {
+                    int q = ( b < 15 ) ? b : 15;
+                    res = (res << q) | (::random() & ~(-1 << q));
+                }
+                >>>
+            }
+        }
+        instantiate exponentiation(this,this)
+        instance iter : number_iterator(this)
+        alias t=this
+        class range_t = {
+            field begin : iter
+            field end : iter
+            function value(r:this,n:t) = n
+        }
+
+        action range(begin:iter,end:iter) returns(it:range_t) = {
+            it.begin := begin;
+            it.end := end;
+        }
     }
 }
     
 autoinstance uint[bits] : unsigned_bit_vector(bits)
 
-object nat = {
-    type this
-    global {
+global {
+    object nat = {
+        type this
         interpret nat -> nat
+
+        function mod(X:this,Y:this) = X - X / Y * Y
+        function next(X:this) = X + 1
+        function max2(X:this,Y:this) = X if X >= Y else Y
+        action random (upper:this) returns (res:this)  # not perfectly uniform!
+        implementation {
+            implement random {
+                <<<
+                res = 0;
+                for (int b = 64; b > 0; b -= 15) {
+                    int q = ( b < 15 ) ? b : 15;
+                    res = (res << q) | (::random() & ~(-1 << q));
+                }
+                res = res % upper;
+                >>>
+            }
+        }
+
+        class range_t = {
+            field begin : nat
+            field end : nat
+            function value(r:this,n:nat) = n
+        }
+
+        action range(begin:nat,end:nat) returns(it:range_t) = {
+            it.begin := begin;
+            it.end := end;
+        }
+        instantiate exponentiation(this,this)
     }
-    function max2(X:this,Y:this) = Y if X <= Y else X
-    function mod(X:this,Y:this) = X - X / Y * Y
-    function next(X:this) = X + 1
 }

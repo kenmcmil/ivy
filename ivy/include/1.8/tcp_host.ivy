@@ -32,6 +32,8 @@ module tcp_host(endpoint,data) = {
     #include <netinet/tcp.h>
     #include <list>
     #include <semaphore.h>
+    #include <mutex>
+    #include <condition_variable>
 
     class tcp_listener;   // class of threads that listen for connections
     class tcp_callbacks;  // class holding callbacks to ivy
@@ -66,16 +68,9 @@ module tcp_host(endpoint,data) = {
 #endif
    };
 
-   struct tcp_sem {
-       sem_t sem;
-       tcp_sem() { sem_init(&sem,0,0); }
-       void up() {sem_post(&sem); }
-       void down() {sem_wait(&sem);}
-   };
-
    class tcp_queue {
-       tcp_mutex mutex; 
-       tcp_sem sem;
+       std::mutex mtx;
+       std::condition_variable cv;
        bool closed;
        bool reported_closed;
        std::list<std::vector<char> > bufs;
@@ -83,69 +78,80 @@ module tcp_host(endpoint,data) = {
        `endpoint` other; // only acces while holding lock!
        tcp_queue(`endpoint` other) : closed(false), reported_closed(false), other(other) {}
        bool enqueue_swap(std::vector<char> &buf) {
-           mutex.lock();
+           std::unique_lock<std::mutex> lock(mtx);
+           // mutex.lock();
            if (closed) {
-               mutex.unlock();
+               // mutex.unlock();
                return true;
            }
            if (bufs.size() < MAX_TCP_SEND_QUEUE) {
                bufs.push_back(std::vector<char>());
                buf.swap(bufs.back());
            }
-           mutex.unlock();
-           sem.up();
+           // mutex.unlock();
+           // sem.up();
+           cv.notify_all();
            return false;
        }
        bool dequeue_swap(std::vector<char> &buf) {
+           std::unique_lock<std::mutex> lock(mtx);
            while(true) {
-               sem.down();
+               // sem.down();
                // std::cout << "DEQUEUEING" << closed << std::endl;
-               mutex.lock();
+               // mutex.lock();
                if (closed) {
                    if (reported_closed) {
-                       mutex.unlock();
+                       // mutex.unlock();
+                       cv.wait(lock);
                        continue;
                    }
                    reported_closed = true;
-                   mutex.unlock();
+                   // mutex.unlock();
                    // std::cout << "REPORTING CLOSED" << std::endl;
                    return true;
                }
                if (bufs.size() > 0) {
                    buf.swap(bufs.front());
                    bufs.erase(bufs.begin());
-                   mutex.unlock();
+                   // mutex.unlock();
                    return false;
                }
-               mutex.unlock();
+               cv.wait(lock);
+               // mutex.unlock();
             }
        }
        void set_closed(bool report=true) {
-           mutex.lock();
+           std::unique_lock<std::mutex> lock(mtx);
+           // mutex.lock();
            closed = true;
            bufs.clear();
            if (!report)
                reported_closed = true;
-           mutex.unlock();
-           sem.up();
+           // mutex.unlock();
+           // sem.up();
+           cv.notify_all();
        }
        void set_open(`endpoint` _other) {
-           mutex.lock();
+           std::unique_lock<std::mutex> lock(mtx);
+           // mutex.lock();
            closed = false;
            reported_closed = false;
            other = _other;
-           mutex.unlock();
-           sem.up();
+           // mutex.unlock();
+           // sem.up();
+           cv.notify_all();
        }
        void wait_open(bool closed_val = false){
+           std::unique_lock<std::mutex> lock(mtx);
            while (true) {
-               mutex.lock();
+               // mutex.lock();
                if (closed == closed_val) {
-                   mutex.unlock();
+                   // mutex.unlock();
                    return;
                }
-               mutex.unlock();
-               sem.down();
+               // mutex.unlock();
+               // sem.down();
+               cv.wait(lock);
             }
        }
 
@@ -196,6 +202,7 @@ module tcp_host(endpoint,data) = {
 
     class tcp_task : public reader {
       protected:
+        std::mutex sock_mtx;
         int sock;           // socket associated to this task, or -1 if task complete
         tcp_callbacks cb;   // callbacks to ivy
         ivy_class *ivy;     // pointer to main ivy object (mainly to get lock)
@@ -206,6 +213,7 @@ module tcp_host(endpoint,data) = {
           : sock(sock), cb(cb), ivy(ivy) {} 
 
         virtual int fdes() {
+            std::unique_lock<std::mutex> lock(sock_mtx);
             return sock;
         }
 
@@ -220,18 +228,26 @@ module tcp_host(endpoint,data) = {
       public:
         tcp_reader(int sock, const tcp_callbacks &cb, ivy_class *ivy)
             : tcp_task(sock, cb, ivy) {
+            
         }
 
         // This is called in a loop by the task thread.
 
         virtual void read() {
-//            std::cout << "RECEIVING\n";
-
+            std::unique_lock<std::mutex> lock(sock_mtx);
+            if (sock < 0) return;
+        
+            // std::cout << "RECEIVING\n";
             buf.resize(2048);
             int newbytes;
 	    if ((newbytes = ::read(sock,&buf[0],2048)) < 0)
 		 { perror("read failed"); exit(1); }
 
+            if (newbytes == 0) {
+                return;
+            }
+
+            // std::cout << "RECEIVED\n";
             // copy received bytes into the result
 
             `data` pkt;
@@ -246,6 +262,18 @@ module tcp_host(endpoint,data) = {
         }
     };
 
+    class tcp_reader_lock : public tcp_reader {
+        std::unique_lock<std::mutex> lock;
+      public:
+        tcp_reader_lock(int sock, const tcp_callbacks &cb, ivy_class *ivy, std::mutex *mtx)
+            : tcp_reader(sock, cb, ivy), lock(*mtx) {
+            
+        }
+        void kill() {
+            std::unique_lock<std::mutex> lock(sock_mtx);
+            sock = -1;
+        }
+    };
 
     // This class writes queued bytes to a socket. Packets can be added
     // asynchronously to the tail of the queue. If the socket is closed,
@@ -257,9 +285,13 @@ module tcp_host(endpoint,data) = {
     class tcp_writer : public tcp_task {
         tcp_queue *queue;
         bool connected;
+        tcp_reader_lock *reader;
+        std::mutex reader_mutex;
       public:
         tcp_writer(int sock, tcp_queue *queue, const tcp_callbacks &cb, ivy_class *ivy)
-            : tcp_task(sock,cb,ivy), queue(queue), connected(false) {
+    : tcp_task(sock,cb,ivy), queue(queue), connected(false) {
+            reader = new tcp_reader_lock(sock,cb,ivy,&reader_mutex);
+            ivy->install_reader(reader);
         }
 
         virtual int fdes() {
@@ -289,6 +321,7 @@ module tcp_host(endpoint,data) = {
 
             if (qclosed) {
                 // std::cout << "CLOSING " << sock << std::endl;
+                kill_reader();
                 ::close(sock);
                 connected = false;
                 return;
@@ -296,7 +329,11 @@ module tcp_host(endpoint,data) = {
 
             // try a blocking send
 
+#ifdef MSG_NOSIGNAL	    
             int bytes = send(sock,&buf[0],buf.size(),MSG_NOSIGNAL);
+#else
+            int bytes = send(sock,&buf[0],buf.size(),0);
+#endif
         
             // std::cout << "SENT\n";
 
@@ -348,11 +385,16 @@ module tcp_host(endpoint,data) = {
             // zombie sockets.
 
             // std::cout << "CLOSING ON FAILURE " << sock << std::endl;
+            kill_reader();
             ::close(sock);
             cb.fcb(sock);
             connected = false;
         }
 
+        void kill_reader() {
+            reader->kill();
+            std::unique_lock<std::mutex> lock(reader_mutex);
+        }
     };
 
     // This task listens for connections on a socket in the background. 

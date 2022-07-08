@@ -159,7 +159,7 @@ class Module(object):
                         ax = ax.to_constraint()
                         if ldf.formula.args[0].args:
                             ax = il.ForAll(ldf.formula.args[0].args,ax)
-                            theory.append(ax) # TODO: make this a def?
+                        theory.append(ax) # TODO: make this a def?
                     else:
                         defs.append(ax)
         # extensionality axioms for structs

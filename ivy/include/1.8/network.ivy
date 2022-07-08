@@ -256,8 +256,9 @@ global {
         module net(msg_t) = {
 
             specification {
+                instance msgvec : vector(msg_t)
                 relation sent(S:tcp.endpoint,D:tcp.endpoint,M:msg_t)
-                function queue(S:tcp.endpoint,D:tcp.endpoint) : vector[msg_t]
+                function queue(S:tcp.endpoint,D:tcp.endpoint) : msgvec
                 function len(S:tcp.endpoint,D:tcp.endpoint) : index
                 after init {
                     len(S,D) := 0;

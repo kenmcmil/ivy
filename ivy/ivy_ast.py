@@ -595,6 +595,12 @@ class ObjectDecl(Decl):
 
 lf_counter = 0
 
+always_clone_with_fresh_id = False
+
+def set_always_clone_with_fresh_id(val):
+    global always_clone_with_fresh_id
+    always_clone_with_fresh_id = val
+
 class LabeledFormula(AST):
     def __init__(self,*args):
         global lf_counter
@@ -621,8 +627,10 @@ class LabeledFormula(AST):
     def clone(self,args):
         global lf_counter
         res = AST.clone(self,args)
-        lf_counter -= 1
-        res.id = self.id
+        global always_clone_with_fresh_id
+        if not always_clone_with_fresh_id:
+            lf_counter -= 1
+            res.id = self.id
         res.temporal = self.temporal
         res.explicit = self.explicit
         res.definition = self.definition
@@ -961,6 +969,8 @@ class FreshConstantDecl(ConstantDecl):
 class DestructorDecl(ConstantDecl):
     def name(self):
         return 'destructor'
+    def defines(self):
+        return [(c.rep,lineno(c),DestructorDecl) for c in self.args if c.rep not in iu.polymorphic_symbols]
 
 class ConstructorDecl(ConstantDecl):
     def name(self):
@@ -1782,7 +1792,7 @@ def substitute_constants_ast2(ast,subs):
             return res
         return ast
     else:
-        if isinstance(ast,str):
+        if isinstance(ast,str) or ast is None:
             return ast
         new_args = [substitute_constants_ast2(x,subs) for x in ast.args]
         res = ast.clone(new_args)

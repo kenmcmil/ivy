@@ -158,6 +158,12 @@ module array_impl = {
 	        res.close_list();
 	    }
 
+            template <>
+            `t` __lit<`t`>(const char *) {
+                `t` res;
+                return res;
+            }
+
 	    #ifdef Z3PP_H_
 	    template <>
             z3::expr __to_solver(gen& g, const z3::expr& z3val, `t`& val) {

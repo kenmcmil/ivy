@@ -114,6 +114,36 @@ class TraceBase(art.AnalysisGraph):
                             lines.append(arr + callee_name
                                          + (('(' + ','.join(value_to_str(eval_in_state(v),eval_in_state) for v in params) + ')') if params else '')
                                          + '\n')
+                    if isinstance(action,act.DebugAction):
+                        state_hash = dict((x.args[0],x.args[1]) for x in state.clauses.fmlas)
+                        def eval_in_state(param):
+                            if lg.is_app(param):
+                                args = map(eval_in_state,param.args)
+                                args = [x if y is None else y for x,y in zip(param.args,args)]
+                                param = param.clone(args)
+                            return state_hash.get(param,None)
+                        def quote(event):
+                            if not event.startswith('"'):
+                                event = '"' + event + '"'
+                            return event
+                        def print_expr(expr):    
+                            m = {}
+                            for v in lut.variables_ast(expr):
+                                sym = lg.Symbol('@'+v.name,v.sort)
+                                if sym in state_hash:
+                                    m[v.name] = state_hash[sym]
+                                else:
+                                    sym = lg.Symbol('__'+v.name,v.sort)
+                                    if sym in state_hash:
+                                        m[v.name] = state_hash[sym]
+                            expr = lut.substitute_ast(expr,m)
+                            return value_to_str(eval_in_state(expr),eval_in_state)
+                        event = quote(action.args[0].rep)
+                        lines.append("{\n")
+                        lines.append('"event" : {}\n'.format(event))
+                        for eqn in action.args[1:]:
+                            lines.append('{} : {},\n'.format(quote(eqn.args[0].rep),print_expr(eqn.args[1])))
+                        lines.append("}\n")
                 if hasattr(expr,'subgraph'):
                     if option_detailed.get():
                         lines.append(indent * '    ' + '{\n')

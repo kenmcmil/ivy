@@ -905,37 +905,117 @@ module inverse_functional(rel) = {
 
 module set_wrapper(key) = {
 
-    object s = {}
-
     <<< header
 	#include <set>
     >>>
 
-    <<< member
-	std::set<`key`> `s`;
+    <<< header
+    template <class key, class compare_thunk> 
+    struct set_wrapper_less_t {
+        compare_thunk less;
+        bool operator()(const key &x , const key &y) {
+            return less(x,y);
+        }
+        set_wrapper_less_t(compare_thunk less) : less(less) {}
+    };
     >>>
+    type repr_t
+    interpret repr_t -> <<< primitive std::set<`key.t`,std::function<bool(const `key.t` &, const `key.t` &)> >  * >>>
+    var s : repr_t
 
     <<< init
-        `s`.insert(0);
+        auto less = `less`;
+        std::function<bool(const `key.t` &, const `key.t` &)> fun = [less](const `key.t` &x, const `key.t` &y) {return less(x,y);};
+        `s` = new std::set<`key.t`,std::function<bool(const `key.t` &, const `key.t` &)> > (fun);
+    
+//        `s`->insert(`0:key`);
     >>>
 
+    action less(x:key.t,y:key.t) returns (res:bool) = {
+        res := x < y;
+    }
+    
     implement insert(x:key) {
 	<<<
-	    `s`.insert(`x`);
+	    `s`->insert(`x`);
 	>>>
     }
 
-    implement erase(lo:key,hi:key) {
+    implement member(x:key.t) returns (y:bool) {
 	<<<
-            `s`.erase(`s`.lower_bound(`lo`),`s`.upper_bound(`hi`));
+	    auto it = `s`->find(`x`);
+            `y` = it != `s`->end();
 	>>>
     }
 
-    implement get_glb(k:key) returns (res:key) {
+    implement erase(lo:key.iter.t,hi:key.iter.t) {
 	<<<
-            `res` = *(--`s`.upper_bound(`k`));
+	    if (!`lo`.is_end && (`hi`.is_end || `less`(`lo`.val,`hi`.val)))
+              `s`->erase(`lo`.is_end ? `s`->end() : `s`->lower_bound(`lo`.val),
+   	                 `hi`.is_end ? `s`->end() : `s`->lower_bound(`hi`.val));
+
+	>>>
+    }
+
+    implement glb(it:key.iter.t) returns (res:key.iter.t) {
+	<<<
+	    auto __it = `it`.is_end ? `s`->end() : `s`->upper_bound(`it`.val);
+	    `res`.is_end = false;
+            if (__it != `s`->begin())
+                `res`.val = *(--__it);
 	>>>
 	
+    }
+
+        implement lub(it:key.iter.t) returns (res:key.iter.t) {
+	<<<
+	    if (`it`.is_end) {
+	     	`res`.is_end = true;
+	    } else {
+		auto __it = `s`->lower_bound(`it`.val);
+		if (__it == `s`->end()) {
+		    `res`.is_end = true;
+		} else {
+		    `res`.is_end = false;
+		    `res`.val = *__it;
+		}
+	    }
+	>>>
+	
+    }
+
+    implement begin returns (res:key.iter.t) {
+        <<<
+	auto __it = `s`->begin();
+	if (__it == `s`->end()) {
+	    `res`.is_end = true;
+	} else {
+	    `res`.is_end = false;
+	    `res`.val = *__it;
+	}
+        >>>
+    }
+    
+    implement next(inp:key.iter.t) returns (res:key.iter.t) {
+	<<<
+	    auto __it = `s`->upper_bound(`inp`.val);
+	    if (__it == `s`->end()) {
+	        `res`.is_end = true;
+	    } else {
+                `res`.is_end = false;
+	        `res`.val = *__it;
+	    }
+	>>>
+    }
+
+    action show = {
+	<<<
+            std::cout << "{";
+	    for(auto __it = `s`->begin(), __en = `s`->end(); __it != __en; ++__it)
+	        std::cout << *__it << ",";
+            std::cout << "}" << std::endl;
+	>>>
+
     }
 
 
@@ -959,74 +1039,87 @@ module set_wrapper(key) = {
 module ordered_set(key) = {
 
     action insert(nkey:key)
-    action erase(lo:key,hi:key)
-    action get_glb(k:key) returns (res:key)
+    action member(nkey:key) returns (res:bool)
+    action erase(lo:key.iter.t,hi:key.iter.t)
+    # get least iterator >= it
+    action lub(it:key.iter.t) returns (res:key.iter.t)
 
+    # get least iterator >= it
+    action glb(it:key.iter.t) returns (res:key.iter.t)
+
+    # iterator least key > iter or end
+    action next(it:key.iter.t) returns (res:key.iter.t)
+
+    action begin returns (res:key.iter.t)
+    action end returns (res:key.iter.t) = {
+        res := key.iter.end;
+    }
+    
     relation s(K:key)
 
-    instantiate succ : map(key,key,0) # ghost
+#    instantiate succ : map(key,key,0) # ghost
 
-    object spec = {
-	after init {
-            s(K) := K = 0
-        }
-	# insert one element
-	before insert {
-	    s(nkey) := true;
+    # object spec = {
+    #     after init {
+    #         s(K) := K = 0;
+    #     }
+    #     # insert one element
+    #     before insert {
+    #         s(nkey) := true;
 
-	    # following is ghost code to update the successor relation
-	    local v:key {
-		if some lub:key. ~(lub <= nkey) & s(lub) minimizing lub {
-		    v := lub
-		}
-		else {
-		    v := 0
-		};
-		call succ.set_(nkey,v)
-	    };
-	    if some glb:key. ~(nkey <= glb) & s(glb) maximizing glb {
-		call succ.lemma(glb); # instantiate succ(glb)
-		call succ.set_(glb,nkey)
-	    }
-	}
+    #         # following is ghost code to update the successor relation
+    #         local v:key {
+    #     	if some lub:key. ~(lub <= nkey) & s(lub) minimizing lub {
+    #     	    v := lub
+    #     	}
+    #     	else {
+    #     	    v := 0
+    #     	};
+    #     	call succ.set_(nkey,v)
+    #         };
+    #         if some glb:key. ~(nkey <= glb) & s(glb) maximizing glb {
+    #     	call succ.lemma(glb); # instantiate succ(glb)
+    #     	call succ.set_(glb,nkey)
+    #         }
+    #     }
 
-	# erase elements in a closed interval
-	before erase {
-	    s(K) := s(K) & ~(lo <= K & K <= hi)
-	}
+    #     # erase elements in a closed interval
+    #     before erase {
+    #         s(K) := s(K) & ~(lo <= K & K <= hi)
+    #     }
 
-	# the the greatest element <= k
-	after get_glb {
-	    if some glb:key. glb <= k & s(glb) maximizing glb {
-		call succ.lemma(glb); # instantiate succ(glb)
-		assume res = glb
-	    }
-	}
-    }
+    #     # the the greatest element <= k
+    #     after glb {
+    #         if some glb:key. glb <= k & s(glb) maximizing glb {
+    #     	call succ.lemma(glb); # instantiate succ(glb)
+    #     	assume res = glb
+    #         }
+    #     }
+    # }
 
-    # Useful invariants of the "succ" relation. The successor of K is
-    # also in the set, and nothing between K and its successor is in
-    # the set. Here, if L = 0 it means K is the maximim element, so we
-    # have to treat this as a special case.
+    # # Useful invariants of the "succ" relation. The successor of K is
+    # # also in the set, and nothing between K and its successor is in
+    # # the set. Here, if L = 0 it means K is the maximim element, so we
+    # # have to treat this as a special case.
 
-    conjecture s(K) & succ.map(K,L) & L ~= 0 -> ~(L <= K) & s(L)
-    conjecture s(K) & succ.map(K,L) & ~(M <= K) & (L = 0 | ~(L <= M)) -> ~s(M)
+    # conjecture s(K) & succ.map(K,L) & L ~= 0 -> ~(L <= K) & s(L)
+    # conjecture s(K) & succ.map(K,L) & ~(M <= K) & (L = 0 | ~(L <= M)) -> ~s(M)
 
-    instance impl : set_wrapper(key)
+    instance internal : set_wrapper(key)
 
 }
 
 module map_wrapper(key,value) = {
 
-    object s = {}
 
     <<< header
 	#include <map>
     >>>
 
-    <<< member
-	std::map<`key.t`,`value`> `s`;
-    >>>
+    type repr_t
+    interpret repr_t -> <<< primitive std::map<`key.t`,`value`> >>>
+    var s : repr_t
+    
 
     <<< init
     >>>
@@ -1096,7 +1189,8 @@ module map_wrapper(key,value) = {
 	<<<
 	    std::map<`key.t`,`value`>::iterator __it = `it`.is_end ? `s`.end() : `s`.upper_bound(`it`.val);
 	    `res`.is_end = false;
-            `res`.val = (--__it)->first;
+            if (__it != `s`.begin())
+                `res`.val = (--__it)->first;
 	>>>
 	
     }
@@ -1258,7 +1352,8 @@ module ordered_map(key,value) = {
     instance impl : map_wrapper(key,value)
 
     trusted isolate iso = impl,spec
-
+    attribute test=impl
+    
 }
 
 
@@ -1325,7 +1420,8 @@ autoinstance ordered_map[key][value] : ordered_map(key,value)
 
 module keyval(index,key,data) = {
 
-    type t 
+    type this
+    alias t=this 
 
     function end(A:t) : index.t
     relation key_at(A:t, I:index.t, X:key)
@@ -1335,7 +1431,11 @@ module keyval(index,key,data) = {
     action get_key(s:t, i:index.t) returns (k:key)
     action get_value(s:t, i:index.t) returns (d:data)
     action append_pair(s:t, k:key, d:data) returns (s:t)
-
+    action get(s:t,k:key,d:data) returns (d:data)
+    action find(s:t,k:key) returns (i:index.t)
+    action remove(s:t,k:key) returns (s:t)
+    action set(s:t,k:key,d:data) returns (s:t)
+    
     object spec = {
 
         property key_at(A,I,X) -> 0 <= I & I < end(A)
@@ -1394,8 +1494,49 @@ module keyval(index,key,data) = {
             p.p_value := d;
             repr(s) := repr(s).append(p)
         }
+        implement get {
+            var i := repr(s).begin;
+            var end := repr(s).end;
+            while i < end {
+                var v := repr(s).value(i);
+                if v.p_key = k {
+                    d := v.p_value;
+                }
+                i := i.next;
+            }
+        }
+        implement find {
+            i := repr(s).begin;
+            var end := repr(s).end;
+            while i < end & repr(s).value(i).p_key ~= k {
+                i := i.next;
+            }
+        }
+        
+        implement remove {
+            var i := s.find(k);
+            var end := repr(s).end;
+            if i < end {
+                repr(s) := repr(s).set(i,repr(s).value(index.prev(repr(s).end)));
+                repr(s) := repr(s).pop_back();
+            }
+        }
+
+        implement set {
+            var p : pair;
+            p.p_key := k;
+            p.p_value := d;
+            var i := s.find(k);
+            var end := repr(s).end;
+            if i < end {
+                repr(s) := repr(s).set(i,p);
+            } else {
+                repr(s) := repr(s).append(p)
+            }
+        }
     }
     isolate iso = this with index
+    attribute test=impl
 }
 
 # This module allows you to extract and use segments of an array
@@ -1567,6 +1708,28 @@ module unbounded_queue(range) = {
     
 }
 
+# Lexical orders on arrays
+
+module lexord(base,index,arr) = {
+    type comparison = {lt,eq,gt}
+    function compare_base(X:base,Y:base) =
+        lt if X < Y else (eq if X = Y else gt)
+    function compare_step(C:comparison,X:base,Y:base) =
+        compare_base(X,Y) if C=eq else C
+    function compare_foo(C:comparison,X:arr,Y:arr,I:index) =
+    (compare_base(X.value(I),Y.value(I)) if I < X.end & I < Y.end
+    else (lt if I < Y.end else gt)) if C=eq else C
+    function lexord_rec(X:arr,Y:arr,I:index) : comparison
+    definition lexord_rec(x:arr,y:arr,i:index) =
+        eq if i <= 0
+        else compare_foo(lexord_rec(x,y,i-1),x,y,i-1)
+    proof {
+        apply rec[index]
+    }
+    function less(X:arr,Y:arr) : bool
+    definition less(x:arr,y:arr) =
+        lexord_rec(x,y,index.max2(x.end,y.end)) = lt
+}
 
     
     

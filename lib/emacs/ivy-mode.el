@@ -138,6 +138,7 @@
     "field"
     "subclass"
     "template"
+    "constructor"
 ))
 
 (defconst ivy-types '("bool" "int" "bv"))

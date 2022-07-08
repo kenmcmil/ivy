@@ -97,7 +97,7 @@ def fix_attrs(t):
 
 def fix_labels(kwargs):
     if 'label' in kwargs:
-        kwargs['label'] = '"' + kwargs['label'] + '"'
+        kwargs['label'] = '"' + kwargs['label'].replace('"','\\"') + '"'
     return kwargs
 
 class AGraph(object):

@@ -124,11 +124,14 @@ def stack_action_lookup(name,params=0):
     return None,0
 
 def inst_mod(ivy,module,pref,subst,vsubst,modname=None,lineno=None):
+    set_always_clone_with_fresh_id(True)
+    if pref is not None and pref.rep in vsubst:
+        raise iu.IvyError(pref,'instance parameter names must differ from instance name')
     save = ivy.attributes
     ivy.attributes = tuple(x for x in ivy.attributes if x == "common")
     static = module.static.copy()
     for name,dfs in module.defined.iteritems():
-        if any(df[1] is TypeDecl for df in dfs):
+        if any((df[1] is TypeDecl) or (df[1] is DestructorDecl) for df in dfs):
             static.add(name)
     def spaa(decl,subst,pref):
         if modname is not None and pref is not None and isinstance(decl,ModuleDecl):
@@ -164,7 +167,7 @@ def inst_mod(ivy,module,pref,subst,vsubst,modname=None,lineno=None):
         else:
             idecl = spaa(decl,subst,dpref)
         if decl.common is not None:
-            idecl.common = pref.rep if decl.common == 'this' else iu.compose_names(pref.rep,decl.common)
+            idecl.common = (pref.rep if decl.common == 'this' else iu.compose_names(pref.rep,decl.common)) if pref is not None else decl.common
         else:
             idecl.common = None
         if isinstance(idecl,ActionDecl):
@@ -183,6 +186,7 @@ def inst_mod(ivy,module,pref,subst,vsubst,modname=None,lineno=None):
         else:
             ivy.declare(idecl)
     ivy.attributes = save
+    set_always_clone_with_fresh_id(False)
 
 def do_insts(ivy,insts):
     others = []
@@ -879,6 +883,11 @@ def p_symdecl_field_tterms(p):
 if not(iu.get_numeric_version() <= [1,6]):
     def p_symdecl_constructor_tterms(p):
         'symdecl : CONSTRUCTOR tterms'
+        for t in p[2]:
+            if not hasattr(t,'sort'):
+                this = This()
+                this.lineno = get_lineno(p,1)
+                t.sort = this
         p[0] = ConstructorDecl(*p[2])
         p[0].lineno = get_lineno(p,1)
 
@@ -2418,6 +2427,19 @@ else:
         'somefmla : fmla'
         p[0] = p[1]
 
+    def p_somefmla_fmla_assign_fmla(p):
+        'somefmla : fmla ASSIGN fmla'
+        if not (isinstance(p[1],(App,Atom)) and len(p[1].args) == 0):
+            report_error(ParseError(p[2].lineno,p[2].value,"syntax error"))
+        lsyms = [p[1].prefix('loc:')]
+        lsyms[0].sort = p[1].sort
+        subst = dict((x.rep,y.rep) for x,y in zip([p[1]],lsyms))
+        fmla = App('*>',p[3],p[1])
+        fmla.lineno = get_lineno(p,2)
+        fmla = subst_prefix_atoms_ast(fmla,subst,None,None)
+        p[0] = Some(*(lsyms+[fmla]))
+        p[0].lineno = get_lineno(p,2)
+
     def p_bounds_params_dot(p):
         'bounds : params DOT'
         p[0] = p[1]
@@ -2470,7 +2492,7 @@ else:
         p[2] = check_non_temporal(p[2])
         p[0] = IfAction(p[2],fix_if_part(p[2],p[3]),p[5])
         p[0].lineno = get_lineno(p,1)
-
+        
     def p_invariants(p):
         'invariants : '
         p[0] = []

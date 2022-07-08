@@ -809,6 +809,9 @@ def main():
     with im.Module():
         with utl.ErrorPrinter():
             ivy_init.source_file(sys.argv[1],ivy_init.open_read(sys.argv[1]),create_isolate=False)
+            if isinstance(act.checked_assert.get(),iu.LocationTuple) and act.checked_assert.get().filename == 'none.ivy' and act.checked_assert.get().line == 0:
+                print 'NOT CHECKED'
+                exit(0);
             check_module()
     if some_bounded:
         print "BOUNDED"

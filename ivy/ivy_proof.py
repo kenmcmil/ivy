@@ -930,7 +930,7 @@ def match_rhs_vars(match):
     res = set()
     for w in match.values():
         for v in w if isinstance(w,list) else [w]:
-            if isinstance(v,il.UninterpretedSort):
+            if isinstance(v,(il.UninterpretedSort,il.EnumeratedSort)):
                 res.add(v)
             else:
                 res.update(fmla_vocab(v))
@@ -954,7 +954,7 @@ def apply_match_goal(match,x,apply_match,env = None):
             fmla = apply_match(match,fmla,env)
         g = x.clone([x.label,fmla])
         return g
-    if isinstance(x,il.UninterpretedSort):
+    if isinstance(x,(il.UninterpretedSort,il.EnumeratedSort)):
         return apply_match_sort(match,x)
     else:
         return x.clone([apply_match_func_alt(match,x.args[0],env)])

@@ -1,10 +1,15 @@
-#lang ivy1.7
+#lang ivy1.8
 
+include order
 include collections
+include numbers
 
-type t
+instance key_t : iterable
 
-instance foo : map(t,t,0)
 
-isolate iso(m:t) = foo(m)
+instance imap : ordered_map(key_t,nat)
+
+export imap.set
+export imap.get
+export imap.lub
 

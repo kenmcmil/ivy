@@ -234,7 +234,8 @@ These instructions have been tested for macOS 10.12 Sierra up to macOS
         $ sudo port install py27-tkinter
         $ sudo port install git
         $ sudo port install cmake
-
+        $ sudo port install openssl
+        
 5. Install Ivy:
 
         $ git clone --recurse-submodules https://github.com/Microsoft/ivy.git

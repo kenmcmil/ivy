@@ -154,6 +154,9 @@ Symbol.__call__ = lambda self,*args: App(self,*args) if len(args) > 0 or isinsta
 Symbol.is_relation = lambda self: isinstance(self.sort.rng,lg.BooleanSort)
 Symbol.args = property(lambda self : [])
 Symbol.is_numeral  = lambda self : is_numeral_name(self.name)
+Symbol.is_literal_string = lambda self: self.name[0] == '"'
+
+
 Symbol.clone = lambda self,args : self
 Symbol.resort = lambda self,sort : Symbol(self.name,sort)
 

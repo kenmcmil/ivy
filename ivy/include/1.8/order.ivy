@@ -344,6 +344,8 @@ module iterable = {
     instance iter : sequence_iterator(this)
     isolate iso_iter = iter with this
 
+    action random returns (res:this)
+
     implementation {
         interpret t -> {0..max}
         
@@ -356,6 +358,13 @@ module iterable = {
         implement is_max(x:t) returns (r:bool) {
             r := (x = max); 
         }
+
+        implement random {
+            <<<
+            res = ::random() % (`max` + 1);
+            >>>
+        }
+
     }
     
     specification {

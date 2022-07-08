@@ -437,7 +437,7 @@ def assign_refs(self,refs):
             refs.add(n.rep)
             recur(n.args[0])
             for a in n.args[1:]:
-                refs.update(ilu.symbols_ast(a))
+                refs.update(symbols_ast(a))
         else: 
             for a in n.args:
                 refs.update(symbols_ast(a))
@@ -1305,8 +1305,6 @@ def apply_mixin(decl,action1,action2):
     assert  hasattr(action2,'lineno')
     name1,name2 = (a.relname for a in decl.args)
     if len(action1.formal_params) != len(action2.formal_params):
-        print 'foo: {}'.format(action1.formal_params)
-        print 'bar: {}'.format(action2.formal_params)
         raise IvyError(decl,"mixin {} has wrong number of input parameters for {}".format(name1,name2))
     if len(action1.formal_returns) != len(action2.formal_returns):
         raise IvyError(decl,"mixin {} has wrong number of output parameters for {}".format(name1,name2))

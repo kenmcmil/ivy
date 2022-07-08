@@ -1,0 +1,63 @@
+name: Continuous Integration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build - ${{matrix.os}}
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: ['ubuntu-18.04']
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 2.7
+          architecture: x64
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ matrix.os }}
+          max-size: 100M
+
+      - name: use-ccache
+        run: |
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+
+      - run: sudo apt-get -y install python python-pip g++ cmake python-ply python-pygraphviz git python-tk tix pkg-config libssl-dev
+      - run: pip install wheel
+      - run: python build_submodules.py
+      - run: python setup.py bdist_wheel --plat-name manylinux1_x86_64
+      - run: ls -l dist
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ivy-wheels
+          path: dist/
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-18.04
+    steps:
+
+      - uses: actions/download-artifact@v2
+        with:
+          name: ivy-wheels
+          path: dist/
+      - run: ls -l dist
+      - name: Publish package
+#        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository_url: https://test.pypi.org/legacy/      
+          skip_existing: true
+          verbose: true
+          
