@@ -16,19 +16,13 @@ There are two ways to install ivy:
 3. [Install from source on Mac](#macnotes)
 
 
-<a name="source"></a> Installing a binary release
---------------------------------------------
-
-1. [Install from source on Linux](#linuxbinary)
-
-
 <a name="linuxnotes"></a> Installation from source on Linux
 ===========================================================
 
 This describes the steps need to install IVy on Ubuntu 18.04. This may
 also work on other Debian-based distributions.
 
-### Prerequisites
+### <a name="linuxdeps"></a> Prerequisites
 
     $ sudo apt-get install python python-pip g++ cmake python-ply python-pygraphviz git python-tk tix pkg-config libssl-dev libreadline-dev
     $ sudo pip install pyparsing==2.1.4 pexpect
@@ -52,14 +46,10 @@ Install into your local Python like this:
 If you want to run from the source tree for development purposes, do
 this instead:
 
-    $ export PYTHONPATH=~/lib/python2.7/site-packages:$PYTHONPATH
-    $ python setup.py develop --prefix=~
+    $ sudo python setup.py develop
 
-This installs Ivy into your home directory, so you don't need sudo.
-In fact, be careful *not* to use sudo when installing in your home
-directory, as the files will be owned by root. Also put the first
-command in your .profile script, so Python will find Ivy in the
-future.
+It's useful to do this in a Python virtual environment if you don't want to
+alter your current Python setup.
 
 See the [python documentation](https://docs.python.org/2/install/) for
 general instructions on installing python packages.
@@ -194,156 +184,107 @@ Or, if you only want to use Ivy on the command line, test it like this:
     > ivy_check trace=true doc/examples/client_server_example.ivy
     
 
-<a name="macnotes"></a> Installation from source on MacOS High Sierra and Mojave
-================================================================================
+<a name="macnotes"></a> Installation from source on MacOS
+=========================================================
 
-Install using MacPorts
-----------------------
-
-These instructions have been tested for macOS 10.12 Sierra up to macOS
-10.15 Catalina.
+### <a name="macdeps"></a> Mac prerequisites
 
 1. Install Xcode from App Store
 2. Install Xcode command line tools
 
         $ xcode-select --install
+        $ sudo xcodebuild -license
 
-3. Install Xserver
+3. Install Xserver (only if graphical user interface is needed)
 
     - [https://www.xquartz.org](https://www.xquartz.org)
 
-4. Macports
+4. Install dependencies 
 
-        $ sudo xcodebuild -license
+    Needed software can be installed with either MacPorts or Homebrew. For the graphical user interface,
+    you must use MacPorts, as not all of the required packages are available on Homebrew.
 
-   Install Macports from [https://www.macports.org/install.php](https://www.macports.org/install.php). Select
-   the version matching The macOS matching the macOS version running on your
-   machine.  On macOS 10.13 Mojave, make sure you've installed all
-   patches because various steps below were broken until about
-   7/15/2019 patch.
+    To use MacPorts, install it (if needed) from
+    [https://www.macports.org/install.php](https://www.macports.org/install.php). Then
+    use these commands:
 
         $ sudo port install python27
         $ sudo port install py27-pip
         $ sudo port install graphviz
-        $ sudo port select --set python python27
         $ sudo port select --set python2 python27
-        $ sudo port select --set pip pip27
         $ sudo port select --set pip2 pip27
-        $ sudo pip install pyparsing==2.1.4
         $ sudo port install Tix
         $ sudo port install py27-tkinter
-        $ sudo port install git
         $ sudo port install cmake
         $ sudo port install openssl
-        
-5. Install Ivy:
+        # sudo port install readline
 
-        $ git clone --recurse-submodules https://github.com/Microsoft/ivy.git
-        $ cd ivy
-
-    Build the submodules like this (it takes a while):
-
-        $ python build_submodules.py
-
-    Install into your local Python like this
-
-        $ sudo python setup.py install
-        $ sudo ln -s /opt/local/Library/Frameworks/Python.framework/Versions/2.7/bin/ivy* /opt/local/bin
-
-    The second command may not be necessary, but works around a bug in
-    the python setup tools installed by macports.
-
-    If you want to run from the source tree for development purposes, do
-    this instead:
-
-        $ export PYTHONPATH=~/lib/python2.7/site-packages:$PYTHONPATH
-        $ python setup.py develop --prefix=~
-
-    This installs Ivy into your home directory, so you don't need sudo.
-    Also put the first command in your .profile script, so Python will
-    find Ivy in the future.
-
-    See the [python documentation](https://docs.python.org/2/install/) for
-    general instructions on installing python packages.
-
-
-6. running a test
-
-        $ cd doc/examples
-        $ ivy_check diagnose=true client_server_example_new.ivy
-
-    This should fire up a GUI.
-
-Install using HomeBrew
-----------------------
-
-These instruaction have been tested on MacOS 10.15 Catalina and
-install only command-line Ivy.  They work around some broken packages
-in the Python 2.7 repository.
-
-1. Install HomeBrew
+    To use Homebrew, first install it (if needed) with this command:
 
         $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-2. Install dependencies
+    Then install packages with these commands:
 
-        $ brew install cmake
+        $ brew install cmake python@2 openssl@1.1 readline  
         $ sudo easy_install pip==20.2.3
         $ sudo pip install --ignore-installed --force-reinstall pyparsing==2.1.4
 
-3. Install Ivy:
+### Build and install Ivy on Mac
 
-        $ git clone --recurse-submodules https://github.com/Microsoft/ivy.git
-        $ cd ivy
+    $ git clone --recurse-submodules https://github.com/Microsoft/ivy.git
+    $ cd ivy
 
-    Build the submodules like this (it takes a while):
+Build the submodules like this (it takes a while):
 
-        $ python build_submodules.py
+    $ python build_submodules.py
 
-    Install into your local Python like this
+Install into your local Python like this
 
-        $ sudo python setup.py install
+    $ sudo python setup.py install
+    $ sudo ln -s /opt/local/Library/Frameworks/Python.framework/Versions/2.7/bin/ivy* /opt/local/bin
 
-    If you want to run from the source tree for development purposes, do
-    this instead:
+The second command may not be necessary, but works around a bug in
+the python setup tools installed by macports.
 
-        $ export PYTHONPATH=~/lib/python2.7/site-packages:$PYTHONPATH
-        $ python setup.py develop --prefix=~
+If you want to run from the source tree for development purposes, do
+this instead:
 
-    This installs Ivy into your home directory, so you don't need sudo.
-    Also put the first command in your .profile script, so Python will
-    find Ivy in the future.
+    $ sudo python setup.py develop
 
-    See the [python documentation](https://docs.python.org/2/install/) for
-    general instructions on installing python packages.
+It's useful to do this in a Python virtual environment if you don't want to
+alter your current Python setup.
 
+See the [python documentation](https://docs.python.org/2/install/) for
+general instructions on installing python packages.
 
-4. running a test
+Optionally, build the experimental Ivy v2.0 compiler:
 
-        $ cd doc/examples
-        $ ivy_check diagnose=true client_server_example.ivy
+    $ python build_v2_compiler.py
+
+Run a test:
+
+    $ cd doc/examples
+    $ ivy_check trace=true client_server_example_new.ivy
+
+This should output a counterexample. To test the GUI (if you installed all the prerequisites):
+
+    $ ivy_check diagnose=true client_server_example_new.ivy
 
 
 <a name="binary"></a> Binary releases
 --------------------
 
-Ivy is released as a Python package in the PyPI repository.
+Ivy is released as a Python package in the PyPI repository. The release does 
+not install the documentation and example files. You can get
+these from github like this (see the directory `ivy\doc`):
+
+    $ git clone https://github.com/Microsoft/ivy.git
 
 ### <a name="linuxbinary"> Install binary release on Linux
 
-    $ sudo apt-get install python python-pip g++ python-ply python-pygraphviz python-tk tix libssl-dev libreadline-dev
-    $ sudo pip install pyparsing==2.1.4
+First install the [Linux prerequisites](#linuxdeps). Then do:
+
     $ sudo pip install ms-ivy
-
-Note, if you omit `sudo` in the second command, Ivy will be installed
-into `~\.local\bin`, which is probably not what you want, so be
-careful.
-
-This does not install the documentation and example files. You can get
-these from github like this (see the directory `ivy\doc`):
-
-    $ sudo apt-get install git
-    $ git clone https://github.com/Microsoft/ivy.git
 
 
 ### <a name="windowsbinary"> Install binary release on Windows
@@ -360,6 +301,9 @@ source](#windowsnotes).
 
 ### <a name="macbinary"> Install binary release on Mac
 
-Mac binary distributions are not yet available.
+First install the [Mac prerequisites](#macdeps). Then do:
+
+    $ sudo pip install ms-ivy
+
 
  
