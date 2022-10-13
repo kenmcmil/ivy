@@ -1,0 +1,76 @@
+#lang ivy1.7
+
+include service_2
+
+action get (txid:txid_t, bucket : string, key : string) = {
+    var req : _GetObjectRequest;
+    req._Bucket_ := bucket;
+    req._Key_ := key;
+    call _GetObject.request(txid,req);
+}
+
+action put (txid:txid_t, bucket : string, key : string, data : blob) = {
+    var req : _PutObjectRequest;
+    req._Bucket_ := bucket;
+    req._Key_ := key;
+    req._Body_ := req._Body_.append(data);
+    call _PutObject.request(txid,req);
+}
+
+specification {
+
+    relation present(B:string, K:string)
+    function contents(B:string, K:string) : blob
+    relation txid_pending(T:txid_t)
+    
+    var the_bucket : string
+    var the_key : string
+    
+    
+    after init {
+        present(B,K) := false;
+        txid_pending(T) := false;
+        the_bucket := "kenmcm-tmp1";
+        the_key := "testkey";
+    }
+    
+    before get {
+        assert bucket = the_bucket;
+        assert key = the_key;
+        assert present(bucket,key);
+        assert ~txid_pending(txid);
+        txid_pending(txid) := true;
+    }
+        
+    before _GetObject.response_GetObjectOutput(txid:txid_t, res:_GetObjectOutput) {
+        require present(the_bucket,the_key);
+        require contents(the_bucket,the_key) = res._Body_;
+        require txid_pending(txid);
+        txid_pending(txid) := false;
+    }
+
+    before put {
+        assert bucket = the_bucket;
+        assert key = the_key;
+        present(bucket,key) := true;
+        contents(bucket,key) := data;
+        assert ~txid_pending(txid);
+        txid_pending(txid) := true;
+    }
+
+    before _PutObject.response_PutObjectOutput(txid:txid_t, res:_PutObjectOutput) {
+        require txid_pending(txid);
+        txid_pending(txid) := false;
+    }
+}
+
+
+export get
+export put
+import _GetObject.response_GetObjectOutput
+import _PutObject.response_PutObjectOutput
+
+interpret string -> strlit
+
+attribute cppstd = cpp11
+

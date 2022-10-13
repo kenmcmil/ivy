@@ -1,0 +1,29 @@
+#lang ivy1.8
+
+include ip
+include tcp_host
+
+module parser(sock,byte,send) = {
+
+    var buffer : vector[byte]
+    
+    implement sock.recv(src : tcp.endpoint, b : byte)  {
+        if byte = 10 {
+            send(buffer);
+            buffer := vector[byte].empty;
+        } else {
+            buffer := buffer.append(b);
+        }
+    }
+
+}
+
+
+instance tcp_intf : tcp_host(ip.endpoint,vector[byte])
+
+var tcp_endpoint : ip.endpoint
+var tcp_sock : tcp_intf.socket
+
+
+
+

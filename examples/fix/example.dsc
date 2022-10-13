@@ -1,0 +1,1 @@
+{"processes": [{"indices": [], "binary": "example", "params": [{"type": "ip.endpoint", "name": "server_addr"}], "name": "this"}], "test_params": ["iters", "runs", "seed", "delay", "wait", "modelfile"]}

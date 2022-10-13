@@ -1,0 +1,182 @@
+#lang ivy1.7
+
+module unordered_map_wrapper(key,value) = {
+
+    <<< header
+	#include <map>
+    >>>
+
+    interpret t -> <<< std::vector<`range`> >>>
+
+    implement set(s:this, x:key,y:value) returns (s:this) {
+	<<<
+	    `s`[`x`] = `y`;
+	>>>
+    }
+
+    implement get(s:this, x:key,def:value) returns (y:value) {
+	<<<
+	    std::map<`key`,`value`>::iterator it = `s`.find(`x`);
+	    if (it == `s`.end()) {
+	        `y` = `def`;
+	    } else {
+	        `y` = it->second;
+	    }
+	>>>
+    }
+
+    implement erase(s:this, x:key) returns(s:this) {
+	<<<
+              `s`.erase(x:key);
+
+	>>>
+    }
+
+    # implement begin(k:key) returns (res:key.iter.t) {
+    # 	<<<
+    # 	    std::map<`key`,`value`>::iterator __it = `s`.lower_bound(`k`);
+    # 	    if (__it == `s`.end()) {
+    # 	        `res`.is_end = true;
+    # 	        `res`.val = 0;
+    # 	    } else {
+    #             `res`.is_end = false;
+    # 	        `res`.val = __it->first;
+    # 	    }
+    # 	>>>
+	
+    # }
+
+
+    action show = {
+	<<<
+            std::cout << "{";
+	    for(std::map<`key`,`value`>::iterator __it = `s`.begin(), __en = `s`.end(); __it != __en; ++__it)
+	        std::cout << __it->first << ":" << __it->second << ",";
+            std::cout << "}" << std::endl;
+	>>>
+
+    }
+
+	<<< impl
+	    std::ostream &operator <<(std::ostream &s, const `this` &a) {
+	        s << '[';
+		for (auto i = a.begin(); i != a.end(); ++i) {
+		    if (i != a.begin())
+		        s << ',';
+		    s << '[' << i->first << ',' << i->second << ']';
+		}
+	        s << ']';
+		return s;
+            }
+
+	    template <>
+	    `this` _arg<`this`>(std::vector<ivy_value> &args, unsigned idx, long long bound) {
+	        ivy_value &arg = args[idx];
+	        if (arg.atom.size()) 
+	            throw out_of_bounds(idx);
+	        `this` a;
+	        for (unsigned i = 0; i < arg.fields.size(); i++) {
+                    if (arg.fields[i].fields.size() != 2) 
+	                throw out_of_bounds(idx);
+		    a[_arg<`key`>(arg.fields[i].fields,0,0)] = _arg<`value`>(arg.fields[i].fields,1,0);
+	        }
+	        return a;
+	    }
+
+	    template <>
+	    void __deser<`this`>(ivy_deser &inp, `this` &res) {
+	        inp.open_list();
+	        while(inp.open_list_elem()) {
+                    `key` k;
+                    `value` v;
+	            __deser(inp,k);
+	            __deser(inp,v);
+                    res[k] = v;
+		    inp.close_list_elem();
+                }
+		inp.close_list();
+	    }
+
+	    template <>
+	    void __ser<`this`>(ivy_ser &res, const `this` &inp) {
+	        res.open_list(inp.size());
+		for (auto i = inp.begin(); i != inp.end(); ++i) {
+		    res.open_list_elem();
+	            __ser(res,i->first);
+	            __ser(res,i->second);
+		    res.close_list_elem();
+                }
+	        res.close_list();
+	    }
+
+	>>>
+
+
+}
+
+################################################################################
+#
+# Unordered map representation
+#
+# This is intended to be implemented using the STL map template.
+#
+# Ordered maps assume the key type has a total non-strict order, with
+# a least element 0 and iteration.  They provide insertion of
+# key/value pairs (in log time), deletion of ranges of keys (in n
+# log(n) time) and iteration.
+# 
+# For help with proofs, this module also provides an auxiliary map
+# "succ" that gives the successor of every element in the map. The
+# "successor" of the maximal element in the map is 0.
+
+module unordered_map(key,value) = {
+
+    type this
+
+    # set the value of key k
+    action set(s:this, k:key, v:value) returns(s:this)
+
+    # is the key present in the map?
+    action present(s:this, k:key) returns (ans:bool)
+
+    # get the value of key k or zero
+    action get(s:this, k:key,def:value) returns (v:value)
+
+    # remove all leys in range [lo,hi]
+    action erase(s:this, k:key) returns (s:this)
+
+    specification {
+    
+        relation contains(S:this, K:key)
+        relation maps(S:this, K:key, V:value)
+        
+	after set {
+            ensure contains(s,K) <-> (K=k | contains(old s,K));
+            ensure maps(s,K,V) <-> (K=k & V=v | K~=k & maps(old s, K,V))
+	}
+
+	after get {
+            ensure maps(s,k,v) & contains(s,k) | ~contains(s,k) & v = def
+	}
+
+	# erase elements in a closed interval
+	after erase {
+            ensure maps(s,K,V) <-> K~=k & maps(old s, K,V);
+            ensure contains(s,K) <-> K~=k & contains(old s,K)
+	}
+
+    }
+
+
+    implementation {
+        instantiate unordered_map_wrapper(key,value)
+        interpret this -> <<< std::map<`key`,`value`> >>>
+    }
+
+    trusted isolate iso = this
+
+}
+
+
+autoinstance unordered_map[key][value] : unordered_map(key,value)
+

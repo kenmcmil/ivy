@@ -1,0 +1,95 @@
+<h1>Ivy installation</h1>
+
+<ol>
+<li><a href="#linuxbinary">Install on Linux</a></li>
+<li><a href="#macbinary">Install on Mac</a></li>
+<li><a href="#emacsmode">Emacs mode</a></li>
+</ol>
+
+<h2><a name="linuxbinary"> Install binary release on Linux</h2>
+
+<p>On a CS department Linux machine, do the following:</p>
+
+<pre><code>$ virtualenv ivyenv
+$ source ivyenv/bin/activate
+$ pip install ms-ivy
+</code></pre>
+
+<p>The second command above must be executed in every new shell in which you wish to iuse Ivy. On other machines, before doing the above you may need to install some system packages. On Ubuntu, use this command:</p>
+
+<pre><code>$ sudo apt-get install python python-pip g++ python-ply python-pygraphviz python-tk tix libssl-dev libreadline-dev
+</code></pre>
+
+<h2><a name="macbinary"> Install binary release on Mac</h2>
+
+<p>Ivy is currently available for MacOS Catalina. If you have different version of MacOS, please contact the instructor.</p>
+
+<ol>
+<li>Install Xcode from App Store, or just Xcode command-line tools from Apple developer site.</li>
+<li><p>Install Xcode command line tools</p>
+
+<pre><code>$ xcode-select --install
+</code></pre></li>
+<li><p>Install Xserver</p>
+
+<ul>
+<li><a href="https://www.xquartz.org">https://www.xquartz.org</a></li>
+</ul></li>
+<li><p>Macports</p>
+
+<pre><code>$ sudo xcodebuild -license
+</code></pre>
+
+<p>Install Macports from <a href="https://www.macports.org/install.php">https://www.macports.org/install.php</a>. Select
+the version matching The macOS matching the macOS version running on your
+machine. </p>
+
+<pre><code>$ sudo port install python27
+$ sudo port install py27-pip
+$ sudo port install graphviz
+$ sudo port select --set python python27
+$ sudo port select --set python2 python27
+$ sudo port select --set pip pip27
+$ sudo port select --set pip2 pip27
+$ sudo pip install pyparsing==2.1.4
+$ sudo port install Tix
+$ sudo port install py27-tkinter
+</code></pre></li>
+<li><p>Install Ivy</p>
+
+<pre><code>$ sudo pip install ms-ivy
+</code></pre></li>
+</ol>
+
+<h2><a name="emacsmode">  Emacs mode</h2>
+
+<p>An emacs major mode for Ivy is available from github as <a href="https://github.com/kenmcmil/ivy/blob/master/lib/emacs/ivy-mode.el">ivy-mode.el</a>. Put this file
+somewhere in your emacs load path and add the following code to your
+<code>.emacs</code>:</p>
+
+<pre><code>(add-to-list 'auto-mode-alist '("\\.ivy\\'" . ivy-mode))
+(autoload 'ivy-mode  "ivy-mode.el" "Major mode for editing Ivy code" t nil)
+</code></pre>
+
+<p>You can also use <code>flycheck</code> to check your program for errors while editing. Here are the commands you need in your <code>.emacs</code> file:</p>
+
+<pre><code>(require 'package)
+
+(add-to-list 'package-archives
+             '("MELPA Stable" . "https://stable.melpa.org/packages/") t)
+(package-initialize)
+
+(use-package flycheck
+  :ensure t
+  :init (global-flycheck-mode))
+
+(flycheck-define-checker ivy
+  "An Ivy syntax checker using the Ivy compiler."
+  :command ("ivy_check" "assert=none:0" source)
+  :error-patterns
+    ((error line-start (file-name) ": line " line ": error: " (message) line-end)
+     (error line-start (file-name) "(" line "): error: " (message) line-end))
+  :modes ivy-mode)
+
+(add-to-list 'flycheck-checkers 'ivy)
+</code></pre>

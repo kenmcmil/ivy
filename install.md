@@ -30,7 +30,9 @@ also work on other Debian-based distributions.
 
 ### Prerequisites
 
-    $ sudo apt-get install python python-pip g++ cmake python-ply python-pygraphviz git python-tk tix pkg-config libssl-dev
+    $ sudo apt-get install python python-pip g++ cmake python-ply python-pygraphviz git python-tk tix pkg-config libssl-dev libreadline-dev
+    $ sudo pip install pyparsing==2.1.4 pexpect
+
 
 ### Install IVy
 
@@ -195,6 +197,9 @@ Or, if you only want to use Ivy on the command line, test it like this:
 <a name="macnotes"></a> Installation from source on MacOS High Sierra and Mojave
 ================================================================================
 
+Install using MacPorts
+----------------------
+
 These instructions have been tested for macOS 10.12 Sierra up to macOS
 10.15 Catalina.
 
@@ -217,19 +222,76 @@ These instructions have been tested for macOS 10.12 Sierra up to macOS
    patches because various steps below were broken until about
    7/15/2019 patch.
 
-        $ sudo easy_install pip  # required on 10.13 Mojave and/or required by 8/1/2019)
-        $ sudo port install graphviz-gui
+        $ sudo port install python27
+        $ sudo port install py27-pip
+        $ sudo port install graphviz
         $ sudo port select --set python python27
         $ sudo port select --set python2 python27
-        $ sudo pip install pygraphviz --install-option="--include-path=/opt/local/include" --install-option="--library-path=/opt/local/lib"
+        $ sudo port select --set pip pip27
+        $ sudo port select --set pip2 pip27
+        $ sudo pip install pyparsing==2.1.4
         $ sudo port install Tix
-        $ sudo port install py27-ply
-        $ sudo port install py27-ipython
-        $ sudo port install py27-tkinter # for 10.13 Mojave
+        $ sudo port install py27-tkinter
         $ sudo port install git
         $ sudo port install cmake
-
+        $ sudo port install openssl
+        
 5. Install Ivy:
+
+        $ git clone --recurse-submodules https://github.com/Microsoft/ivy.git
+        $ cd ivy
+
+    Build the submodules like this (it takes a while):
+
+        $ python build_submodules.py
+
+    Install into your local Python like this
+
+        $ sudo python setup.py install
+        $ sudo ln -s /opt/local/Library/Frameworks/Python.framework/Versions/2.7/bin/ivy* /opt/local/bin
+
+    The second command may not be necessary, but works around a bug in
+    the python setup tools installed by macports.
+
+    If you want to run from the source tree for development purposes, do
+    this instead:
+
+        $ export PYTHONPATH=~/lib/python2.7/site-packages:$PYTHONPATH
+        $ python setup.py develop --prefix=~
+
+    This installs Ivy into your home directory, so you don't need sudo.
+    Also put the first command in your .profile script, so Python will
+    find Ivy in the future.
+
+    See the [python documentation](https://docs.python.org/2/install/) for
+    general instructions on installing python packages.
+
+
+6. running a test
+
+        $ cd doc/examples
+        $ ivy_check diagnose=true client_server_example_new.ivy
+
+    This should fire up a GUI.
+
+Install using HomeBrew
+----------------------
+
+These instruaction have been tested on MacOS 10.15 Catalina and
+install only command-line Ivy.  They work around some broken packages
+in the Python 2.7 repository.
+
+1. Install HomeBrew
+
+        $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+2. Install dependencies
+
+        $ brew install cmake
+        $ sudo easy_install pip==20.2.3
+        $ sudo pip install --ignore-installed --force-reinstall pyparsing==2.1.4
+
+3. Install Ivy:
 
         $ git clone --recurse-submodules https://github.com/Microsoft/ivy.git
         $ cd ivy
@@ -256,7 +318,7 @@ These instructions have been tested for macOS 10.12 Sierra up to macOS
     general instructions on installing python packages.
 
 
-6. running a test
+4. running a test
 
         $ cd doc/examples
         $ ivy_check diagnose=true client_server_example.ivy
@@ -269,7 +331,8 @@ Ivy is released as a Python package in the PyPI repository.
 
 ### <a name="linuxbinary"> Install binary release on Linux
 
-    $ sudo apt-get install python python-pip g++ python-ply python-pygraphviz python-tk tix libssl-dev
+    $ sudo apt-get install python python-pip g++ python-ply python-pygraphviz python-tk tix libssl-dev libreadline-dev
+    $ sudo pip install pyparsing==2.1.4
     $ sudo pip install ms-ivy
 
 Note, if you omit `sudo` in the second command, Ivy will be installed

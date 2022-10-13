@@ -294,7 +294,7 @@ isolate my_rev = {
         {
             b := b.set(rt.reverse(i,a.end),a.value(i));
             i := i.next;
-        };
+        }
     }
 
     # The isolate needs to uses the properties of the index type and
@@ -530,7 +530,7 @@ isolate my_rev2 = {
                 a := a.set(i,tmp);
                 i := i.next;
                 j := rt.reverse(i,a.end);
-            };
+            }
         }
     }
 

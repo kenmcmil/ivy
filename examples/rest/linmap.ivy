@@ -1,0 +1,260 @@
+#lang ivy1.7
+
+# A specification of linearizability for maps.
+#
+# Takes three parameters:
+#
+# - txid_t : the thype of transaction identifiers
+# - key_t : the type of keys
+# - data_t : the type of values
+#
+# 
+# A map has the following operations:
+#
+# - put(key,data)
+# - get(key) -> data
+#
+# Both actions can fail (i.e., abort) with no effect.
+#
+# Each operations has to corresponding actions: 'begin' and 'end'.
+# the 'begin' action corresponds to the initiation or request for the
+# transaction and contains the input parameters. The 'end' action
+# corresponds to the reutrn or termination of the transaction and
+# contains the joutput parameters, including a flag to indicate
+# successful completion.
+#
+# Each action also has an associated transaction id that allow begin
+# and end actions to be matched. A transaction id may be used only
+# once.
+#
+# The specication requires that the transactions be linearizable, in
+# the sense that each transaction can be assigned a commit point
+# between its 'begin' and 'end' action, the output of all transactions
+# being consitent with the transactions executing atomically at their
+# commit points. The specificaiton fails at the point where all
+# continuations of the action sequence are provably not linearizable
+# (thus it can fail at a point where some transactions are not yet
+# completed).
+#
+# The specification also requires that no data value is put twice.
+# This can be made true by adding a ghost field to the data. The
+# purpose of this requirement is to make the traces unambigous in the
+# sense that the put associated to a get is uniquely determined. This
+# makes checking linearizability tractable.
+
+
+module linmap(txid_t,data_t) = {
+
+    # The begin and end actions
+    
+    action put(txid:txid_t, data:data_t)   
+    action end_put(txid:txid_t, ok:bool)
+    action get(txid:txid_t)
+    action end_get(txid:txid_t, ok:bool, data:data_t)
+
+    # The specification state
+    
+    # The relation hb(T,U) holds when transaction T provably happens
+    # before transaction U in the commit order. 
+    
+    relation hb(T:txid_t, U:txid_t)
+
+    # Predicate pending(T) holds if the 'begin' action of transaction T
+    # has occurred but the 'end' action has not occurred.
+
+    relation pending(T:txid_t)
+
+    # Predicate completed(T) holds if the 'end' action of transaction T
+    # has occurred, and the transaction completed.
+
+    relation completed(T:txid_t)
+
+    # Predicate failed(T) holds if the 'end' action of transaction T
+    # has occurred, and the transaction aborted.
+
+    relation failed(T:txid_t)
+
+    # Relation used(T,U) holds if T is a put, U is a successful get
+    # and U reads the value written by T. Because no two puts write
+    # the same value, there is exactly one put used by each successful
+    # get.
+
+    relation used(T:txid_t,U:txid_t)
+
+    # Predicate is_put(T) holds if transction T is a put operation.
+
+    relation is_put(T:txid_t)
+
+    # Function value(T) gives the value written by transaction T
+    # if T is a put operation.
+
+    function value(T:txid_t) : data_t
+
+
+    # The initial state of the specifion. In the initial state, there
+    # are no transactions.
+
+    after init {
+        hb(T:txid_t, U:txid_t) := false;
+        pending(T:txid_t) := false;
+        completed(T:txid_t) := false;
+        failed(T:txid_t) := false;
+        used(T:txid_t,U:txid_t) := false;
+    }
+
+    #################################
+    # Specification of put operation.
+
+    # The precondion of 'begin' is that the txid has not been used
+    # before and the data value doesn't match any existing put.
+    #
+    # In addition, if the txid type is bounded, it is possible that
+    # a test can deadlock, when all available txid's are used for
+    # concurrent puts. To prvent this deadlock we require that on a put
+    # there is at least one other txid that is not a put.
+    
+    before put {
+        require ~pending(txid) & ~completed(txid) & ~failed(txid);
+        require ~((pending(T) | completed(T)) & is_put(T) & value(T) = data);
+        # Restriction to avoid deadlock:
+        require exists T. T ~= txid & ~((pending(T) | completed(T)) & is_put(T));
+    }
+
+    # A 'begin' action records the transaction's operation type and
+    # input parameters, marking it 'pending'. We also had a 'happens before'
+    # arc from all completed transactions to the new transaction.
+
+    after put {
+        # record the transaction
+        pending(txid) := true;
+        is_put(txid) := true;
+        value(txid) := data;
+        # add a happens-before arc from all completed transactions
+        hb(T,txid) := completed(T);
+    }
+
+    # The precondition for the 'end' action is the transaction is pending and
+    # that, if the transaction has been used by a get, it cannot abort.
+
+    before end_put {
+        require pending(txid);
+        require used(txid,U) -> ok;
+    }
+
+    # The effect of the 'end' action is to mark the transaciotn not pending,
+    # and to mark it completed or failed, depending on the ok parameter.
+
+    after end_put {
+        # record terminatino and completion
+        pending(txid) := false;
+        completed(txid) := ok;
+        failed(txid) := ~ok;
+        call scrub;
+    }
+
+    #################################
+    # Specification of put operation.
+
+    # The precondion of 'begin' is that the txid has not been used
+    # before.
+    
+    before get {
+        require ~pending(txid) & ~completed(txid) & ~failed(txid);
+    }
+
+    # A 'begin' action records the transaction's operation type and
+    # input parameters, marking it 'pending'. We also had a 'happens before'
+    # arc from all completed transactions to the new transaction.
+
+    after get {
+        # record the transaction
+        pending(txid) := true;
+        is_put(txid) := false;
+        # add a happens-before arc from all completed transactions
+        hb(T,txid) := completed(T);
+    }
+
+    # The precondition for the 'end' action is that the transaction is
+    # pending and that, if the transaction is successful, the result
+    # is consistent. We determine this by adding a 'used' arc from the
+    # put the provided the data value. If there is no such put,
+    # consistency fails. Otherwise we update the 'happens before' relation
+    # to take into accoun the new 'used' arc. If the resulting relation has no linearization,
+    # the specification fails.
+
+    before end_get {
+        require pending(txid);
+        if ok {
+            # A used transaction is a pending or completed transaction that
+            # wrote the value that we read. There should be exactly one, since
+            # no two puts write the same value.
+            used(T,txid) := is_put(T) & (pending(T) | completed(T)) & value(T) = data;
+            # Require every get has a corresponding put
+            assert exists T. used(T,txid);
+            # A put happens before any get that uses it.
+            hb(T,txid) := hb(T,txid) | used(T,txid);
+            # After we add a used arc, we need to update the 'happens-before' rules
+            call update_hb
+        }
+    }
+
+    # The effect of the 'end' action is to mark the transaction not pending,
+    # and to mark it completed or failed, depending on the ok parameter.
+
+    after end_get {
+        # record completion
+        pending(txid) := false;
+        completed(txid) := ok;
+        failed(txid) := ~ok;
+        call scrub;
+    }
+
+
+    relation old_hb(T:txid_t,U:txid_t)
+
+    action update_hb_step returns(changed:bool) = {
+        old_hb(T,U) := hb(T,U);
+        # Transitivity rule
+        hb(T,U) := hb(T,U) | exists V. hb(T,V) & hb(V,U);
+        # Use/def rule #1
+        hb(R,Z) := hb(R,Z) | exists W. hb(W,Z) & used(W,R) & is_put(Z) & W ~= Z;
+        # Use/def rule #2
+        hb(Z,W) := hb(Z,W) | exists R. hb(Z,R) & used(W,R) & is_put(Z) & W ~= Z;
+        changed := ~forall T,U. (hb(T,U) <-> old_hb(T,U));
+    }
+
+    action update_hb = {
+        # Update the rules util fixed point
+        var changed := true;
+        while changed {
+            changed := update_hb_step;
+        };
+        assert ~hb(T,T);
+    }
+
+    # A put can be forgotten if it failed or:
+    # - is completed and
+    # - happens before some completed put
+    # - for every pending get there exists an intervening put
+    # A get can be forgotten if it has failed or uses a put that is
+    # completed
+    
+    relation dead(T:txid_t)
+    
+    action scrub = {
+        dead(T) :=
+            failed(T) 
+            | is_put(T) & completed(T)
+              & (forall G. is_put(G) & pending(G) -> hb(T,G))
+              & (exists U. is_put(U) & completed(U) & hb(T,U))
+              & (forall G. ~is_put(G) & pending(G) -> exists U. is_put(U) & completed(U) & hb(T,U) & hb(U,G))
+            | ~is_put(T) & exists U. completed(U) & used(U,T);
+        pending(T) := pending(T) & ~dead(T);
+        completed(T) := completed(T) & ~dead(T);
+        failed(T) := failed(T) & ~dead(T);
+        used(T,U) := used(T,U) & ~dead(T) & ~dead(U);
+        hb(T,U) := hb(T,U) & ~dead(T) & ~dead(U);
+    }
+
+}
+

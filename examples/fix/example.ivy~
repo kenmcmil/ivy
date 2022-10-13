@@ -1,0 +1,129 @@
+#lang ivy1.8
+
+include ip
+include tcp_host
+include collections
+include numbers
+include string
+
+alias byte = uint[8]
+instance str : string(index,byte)
+
+class msg = {
+    method recv
+    method send
+    method to_str returns (res:str)
+}
+
+var pending : bool
+
+after init {
+    pending := false;
+}
+
+subclass ping of msg = {
+    field foo : bool   # need a field to work around Ivy bug
+    method recv = {
+    }
+    method send = {
+    }
+    method to_str returns (res:str) = {
+        res := "ping";
+    }
+    before send {
+        require ~pending;
+        pending := true;
+    }
+    before recv {
+        require false;
+    }
+
+}
+
+subclass pong of msg = {
+    field foo : bool   # need a field to work around Ivy bug
+    method recv = {
+    }
+    method send = {
+    }
+    method to_str returns (res:str) = {
+        res := "pong";
+    }
+    before recv {
+        require pending;
+        pending := false;
+    }
+    before send {
+        require false;
+    }
+}
+
+module msg_reader(intf,send) = {
+
+    var buffer : str
+    
+    implement intf.recv(s : intf.socket, inp : str)  {
+        for idx,b in inp {
+            if b = 10 {
+                handle(buffer);
+                buffer := str.empty;
+            } else {
+                buffer := buffer.append(b);
+            }
+        }
+    }
+
+    action handle(s : str) = {
+        if s = "ping" {
+            var m : ping;
+            send(m);
+        } else if s = "pong" {
+            var m : pong;
+            send(m);
+        }
+    }
+}
+
+module msg_writer(intf) = {
+
+    var buffer : str
+    
+    action write(s : intf.socket, inp : msg) = {
+        var ok := intf.send(s,inp.to_str);
+    }
+}
+
+
+instance tcp_intf : tcp_host(ip.endpoint,str)
+
+var tcp_endpoint : ip.endpoint
+var tcp_sock : tcp_intf.socket
+
+parameter server_addr : ip.endpoint
+
+after init {
+    tcp_sock := tcp_intf.connect(server_addr);
+}
+
+
+instance reader : msg_reader(tcp_intf,handle_msg)
+instance writer : msg_writer(tcp_intf)
+
+action handle_msg(m : msg) = {
+    m.recv;
+}
+
+export ping.send
+export pong.send
+
+implement ping.send(self:ping) {
+    writer.write(tcp_sock,self);
+}
+
+implement pong.send(self:pong) {
+    writer.write(tcp_sock,self);
+}
+
+
+
+

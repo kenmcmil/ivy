@@ -4,7 +4,7 @@ TMPDIR=`mktemp -d /tmp/tmp.XXXXXX`
 echo Checking out sources in $TMPDIR
 
 pushd $TMPDIR
-git clone https://github.com/Microsoft/ivy.git
+git clone https://github.com/kenmcmil/ivy.git
 cd ivy
 git checkout gh-pages
 git rm -r *

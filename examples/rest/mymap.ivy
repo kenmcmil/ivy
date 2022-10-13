@@ -1,0 +1,64 @@
+#lang ivy1.7
+
+
+################################################################################
+#
+# Unordered map representation
+#
+# This is intended to be implemented using the STL map template.
+#
+# Ordered maps assume the key type has a total non-strict order, with
+# a least element 0 and iteration.  They provide insertion of
+# key/value pairs (in log time), deletion of ranges of keys (in n
+# log(n) time) and iteration.
+# 
+# For help with proofs, this module also provides an auxiliary map
+# "succ" that gives the successor of every element in the map. The
+# "successor" of the maximal element in the map is 0.
+
+module unordered_map(key,value_t) = {
+
+    type kvp = struct {
+        first : key,
+        second : value_t
+    }
+    instance index : unbounded_sequence
+    instantiate array(index,kvp)
+    
+    action add(s:this, k:key, v:value_t) returns(s:this)
+
+    # is the key present in the map?
+    action present(s:this, k:key) returns (ans:bool)
+
+    # get the value of key k or zero
+    action find(s:this, k:key, def : value_t) returns (v:value_t)
+
+    # remove all leys in range [lo,hi]
+    action erase(s:this, k:key) returns (s:this)
+
+    specification {
+    
+        relation contains(S:this, K:key)
+        function maps(S:this, K:key) : value_t
+        
+	after add {
+            ensure contains(s,K) <-> (K=k | contains(old s,K));
+            ensure maps(s,K) = (v if K = k else maps(old s, K));
+	}
+
+	after find {
+            ensure maps(s,k) = v & contains(s,k) | ~contains(s,k) & v = def
+	}
+
+	# erase elements in a closed interval
+	after erase {
+            ensure maps(s,K) = 0 if K = k else maps(old s, K);
+            ensure contains(s,K) <-> K~=k & contains(old s,K)
+	}
+
+    }
+}
+
+
+autoinstance unordered_map[key][value] : unordered_map(key,value)
+

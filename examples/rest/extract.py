@@ -143,7 +143,7 @@ def iname(name):
         name = '_' + name
     if name in ivy_words:
         name = '_' + name
-    return name
+    return name.replace('-','_')
 
 def main():
     if len(sys.argv) != 2 or not sys.argv[1].endswith('.json'):
@@ -151,7 +151,9 @@ def main():
         exit(1)
 
     inpname = sys.argv[1]
-    outname = inpname[:-4]+'ivy'
+    outname = iname(inpname[:-5])+'.ivy'
+
+    print outname
 
     try:
         with open(inpname) as inp:

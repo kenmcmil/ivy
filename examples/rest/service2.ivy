@@ -1,0 +1,6209 @@
+#lang ivy1.7
+
+# File generated from service-2.json. Do not edit.
+
+type unit
+type string
+type integer
+type list
+type timestamp
+type blob
+type long
+include collections
+
+object _AbortIncompleteMultipartUpload = {
+    type this = struct {
+        _DaysAfterInitiation_ : integer 
+    }
+}
+
+object _AbortMultipartUploadOutput = {
+    type this = struct {
+        _RequestCharged_ : string 
+    }
+}
+
+object _AbortMultipartUploadRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _UploadId_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _AccelerateConfiguration = {
+    type this = struct {
+        _Status_ : string 
+    }
+}
+
+object _Grantee = {
+    type this = struct {
+        _DisplayName_ : string, 
+        _EmailAddress_ : string, 
+        _ID_ : string, 
+        _Type_ : string, 
+        _URI_ : string 
+    }
+}
+
+object _Grant = {
+    type this = struct {
+        _Grantee_ : _Grantee, 
+        _Permission_ : string 
+    }
+}
+
+object _Owner = {
+    type this = struct {
+        _DisplayName_ : string, 
+        _ID_ : string 
+    }
+}
+
+object _AccessControlPolicy = {
+    type this = struct {
+        _Grants_ : vector[_Grant], 
+        _Owner_ : _Owner 
+    }
+}
+
+object _AccessControlTranslation = {
+    type this = struct {
+        _Owner_ : string 
+    }
+}
+
+object _Tag = {
+    type this = struct {
+        _Key_ : string, 
+        _Value_ : string 
+    }
+}
+
+object _AnalyticsAndOperator = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tags_ : vector[_Tag] 
+    }
+}
+
+object _AnalyticsFilter = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tag_ : _Tag, 
+        _And_ : _AnalyticsAndOperator 
+    }
+}
+
+object _AnalyticsS3BucketDestination = {
+    type this = struct {
+        _Format_ : string, 
+        _BucketAccountId_ : string, 
+        _Bucket_ : string, 
+        _Prefix_ : string 
+    }
+}
+
+object _AnalyticsExportDestination = {
+    type this = struct {
+        _S3BucketDestination_ : _AnalyticsS3BucketDestination 
+    }
+}
+
+object _StorageClassAnalysisDataExport = {
+    type this = struct {
+        _OutputSchemaVersion_ : string, 
+        _Destination_ : _AnalyticsExportDestination 
+    }
+}
+
+object _StorageClassAnalysis = {
+    type this = struct {
+        _DataExport_ : _StorageClassAnalysisDataExport 
+    }
+}
+
+object _AnalyticsConfiguration = {
+    type this = struct {
+        _Id_ : string, 
+        _Filter_ : _AnalyticsFilter, 
+        _StorageClassAnalysis_ : _StorageClassAnalysis 
+    }
+}
+
+object _Bucket = {
+    type this = struct {
+        _Name_ : string, 
+        _CreationDate_ : timestamp 
+    }
+}
+
+object _BucketAlreadyExists = {
+    type this = struct {
+    }
+}
+
+object _BucketAlreadyOwnedByYou = {
+    type this = struct {
+    }
+}
+
+object _LifecycleExpiration = {
+    type this = struct {
+        _Date_ : timestamp, 
+        _Days_ : integer, 
+        _ExpiredObjectDeleteMarker_ : bool 
+    }
+}
+
+object _LifecycleRuleAndOperator = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tags_ : vector[_Tag] 
+    }
+}
+
+object _LifecycleRuleFilter = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tag_ : _Tag, 
+        _And_ : _LifecycleRuleAndOperator 
+    }
+}
+
+object _Transition = {
+    type this = struct {
+        _Date_ : timestamp, 
+        _Days_ : integer, 
+        _StorageClass_ : string 
+    }
+}
+
+object _NoncurrentVersionTransition = {
+    type this = struct {
+        _NoncurrentDays_ : integer, 
+        _StorageClass_ : string 
+    }
+}
+
+object _NoncurrentVersionExpiration = {
+    type this = struct {
+        _NoncurrentDays_ : integer 
+    }
+}
+
+object _LifecycleRule = {
+    type this = struct {
+        _Expiration_ : _LifecycleExpiration, 
+        _ID_ : string, 
+        _Prefix_ : string, 
+        _Filter_ : _LifecycleRuleFilter, 
+        _Status_ : string, 
+        _Transitions_ : vector[_Transition], 
+        _NoncurrentVersionTransitions_ : vector[_NoncurrentVersionTransition], 
+        _NoncurrentVersionExpiration_ : _NoncurrentVersionExpiration, 
+        _AbortIncompleteMultipartUpload_ : _AbortIncompleteMultipartUpload 
+    }
+}
+
+object _BucketLifecycleConfiguration = {
+    type this = struct {
+        _Rules_ : vector[_LifecycleRule] 
+    }
+}
+
+object _TargetGrant = {
+    type this = struct {
+        _Grantee_ : _Grantee, 
+        _Permission_ : string 
+    }
+}
+
+object _LoggingEnabled = {
+    type this = struct {
+        _TargetBucket_ : string, 
+        _TargetGrants_ : vector[_TargetGrant], 
+        _TargetPrefix_ : string 
+    }
+}
+
+object _BucketLoggingStatus = {
+    type this = struct {
+        _LoggingEnabled_ : _LoggingEnabled 
+    }
+}
+
+object _CORSRule = {
+    type this = struct {
+        _ID_ : string, 
+        _AllowedHeaders_ : vector[string], 
+        _AllowedMethods_ : vector[string], 
+        _AllowedOrigins_ : vector[string], 
+        _ExposeHeaders_ : vector[string], 
+        _MaxAgeSeconds_ : integer 
+    }
+}
+
+object _CORSConfiguration = {
+    type this = struct {
+        _CORSRules_ : vector[_CORSRule] 
+    }
+}
+
+object _CSVInput = {
+    type this = struct {
+        _FileHeaderInfo_ : string, 
+        _Comments_ : string, 
+        _QuoteEscapeCharacter_ : string, 
+        _RecordDelimiter_ : string, 
+        _FieldDelimiter_ : string, 
+        _QuoteCharacter_ : string, 
+        _AllowQuotedRecordDelimiter_ : bool 
+    }
+}
+
+object _CSVOutput = {
+    type this = struct {
+        _QuoteFields_ : string, 
+        _QuoteEscapeCharacter_ : string, 
+        _RecordDelimiter_ : string, 
+        _FieldDelimiter_ : string, 
+        _QuoteCharacter_ : string 
+    }
+}
+
+object _CloudFunctionConfiguration = {
+    type this = struct {
+        _Id_ : string, 
+        _Event_ : string, 
+        _Events_ : vector[string], 
+        _CloudFunction_ : string, 
+        _InvocationRole_ : string 
+    }
+}
+
+object _CommonPrefix = {
+    type this = struct {
+        _Prefix_ : string 
+    }
+}
+
+object _CompleteMultipartUploadOutput = {
+    type this = struct {
+        _Location_ : string, 
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _Expiration_ : string, 
+        _ETag_ : string, 
+        _ServerSideEncryption_ : string, 
+        _VersionId_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _CompletedPart = {
+    type this = struct {
+        _ETag_ : string, 
+        _PartNumber_ : integer 
+    }
+}
+
+object _CompletedMultipartUpload = {
+    type this = struct {
+        _Parts_ : vector[_CompletedPart] 
+    }
+}
+
+object _CompleteMultipartUploadRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _MultipartUpload_ : _CompletedMultipartUpload, 
+        _UploadId_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _Condition = {
+    type this = struct {
+        _HttpErrorCodeReturnedEquals_ : string, 
+        _KeyPrefixEquals_ : string 
+    }
+}
+
+object _ContinuationEvent = {
+    type this = struct {
+    }
+}
+
+object _CopyObjectResult = {
+    type this = struct {
+        _ETag_ : string, 
+        _LastModified_ : timestamp 
+    }
+}
+
+object _CopyObjectOutput = {
+    type this = struct {
+        _CopyObjectResult_ : _CopyObjectResult, 
+        _Expiration_ : string, 
+        _CopySourceVersionId_ : string, 
+        _VersionId_ : string, 
+        _ServerSideEncryption_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _SSEKMSEncryptionContext_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _CopyObjectRequest = {
+    type this = struct {
+        _ACL_ : string, 
+        _Bucket_ : string, 
+        _CacheControl_ : string, 
+        _ContentDisposition_ : string, 
+        _ContentEncoding_ : string, 
+        _ContentLanguage_ : string, 
+        _ContentType_ : string, 
+        _CopySource_ : string, 
+        _CopySourceIfMatch_ : string, 
+        _CopySourceIfModifiedSince_ : timestamp, 
+        _CopySourceIfNoneMatch_ : string, 
+        _CopySourceIfUnmodifiedSince_ : timestamp, 
+        _Expires_ : timestamp, 
+        _GrantFullControl_ : string, 
+        _GrantRead_ : string, 
+        _GrantReadACP_ : string, 
+        _GrantWriteACP_ : string, 
+        _Key_ : string, 
+        _Metadata_ : unordered_map[string][string], 
+        _MetadataDirective_ : string, 
+        _TaggingDirective_ : string, 
+        _ServerSideEncryption_ : string, 
+        _StorageClass_ : string, 
+        _WebsiteRedirectLocation_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _SSEKMSEncryptionContext_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _CopySourceSSECustomerAlgorithm_ : string, 
+        _CopySourceSSECustomerKey_ : string, 
+        _CopySourceSSECustomerKeyMD5_ : string, 
+        _RequestPayer_ : string, 
+        _Tagging_ : string, 
+        _ObjectLockMode_ : string, 
+        _ObjectLockRetainUntilDate_ : timestamp, 
+        _ObjectLockLegalHoldStatus_ : string, 
+        _ExpectedBucketOwner_ : string, 
+        _ExpectedSourceBucketOwner_ : string 
+    }
+}
+
+object _CopyPartResult = {
+    type this = struct {
+        _ETag_ : string, 
+        _LastModified_ : timestamp 
+    }
+}
+
+object _CreateBucketConfiguration = {
+    type this = struct {
+        _LocationConstraint_ : string 
+    }
+}
+
+object _CreateBucketOutput = {
+    type this = struct {
+        _Location_ : string 
+    }
+}
+
+object _CreateBucketRequest = {
+    type this = struct {
+        _ACL_ : string, 
+        _Bucket_ : string, 
+        _CreateBucketConfiguration_ : _CreateBucketConfiguration, 
+        _GrantFullControl_ : string, 
+        _GrantRead_ : string, 
+        _GrantReadACP_ : string, 
+        _GrantWrite_ : string, 
+        _GrantWriteACP_ : string, 
+        _ObjectLockEnabledForBucket_ : bool 
+    }
+}
+
+object _CreateMultipartUploadOutput = {
+    type this = struct {
+        _AbortDate_ : timestamp, 
+        _AbortRuleId_ : string, 
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _UploadId_ : string, 
+        _ServerSideEncryption_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _SSEKMSEncryptionContext_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _CreateMultipartUploadRequest = {
+    type this = struct {
+        _ACL_ : string, 
+        _Bucket_ : string, 
+        _CacheControl_ : string, 
+        _ContentDisposition_ : string, 
+        _ContentEncoding_ : string, 
+        _ContentLanguage_ : string, 
+        _ContentType_ : string, 
+        _Expires_ : timestamp, 
+        _GrantFullControl_ : string, 
+        _GrantRead_ : string, 
+        _GrantReadACP_ : string, 
+        _GrantWriteACP_ : string, 
+        _Key_ : string, 
+        _Metadata_ : unordered_map[string][string], 
+        _ServerSideEncryption_ : string, 
+        _StorageClass_ : string, 
+        _WebsiteRedirectLocation_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _SSEKMSEncryptionContext_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestPayer_ : string, 
+        _Tagging_ : string, 
+        _ObjectLockMode_ : string, 
+        _ObjectLockRetainUntilDate_ : timestamp, 
+        _ObjectLockLegalHoldStatus_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DefaultRetention = {
+    type this = struct {
+        _Mode_ : string, 
+        _Days_ : integer, 
+        _Years_ : integer 
+    }
+}
+
+object _ObjectIdentifier = {
+    type this = struct {
+        _Key_ : string, 
+        _VersionId_ : string 
+    }
+}
+
+object _Delete = {
+    type this = struct {
+        _Objects_ : vector[_ObjectIdentifier], 
+        _Quiet_ : bool 
+    }
+}
+
+object _DeleteBucketAnalyticsConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketCorsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketEncryptionRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketIntelligentTieringConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string 
+    }
+}
+
+object _DeleteBucketInventoryConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketLifecycleRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketMetricsConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketOwnershipControlsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketPolicyRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketReplicationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketTaggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteBucketWebsiteRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteMarkerEntry = {
+    type this = struct {
+        _Owner_ : _Owner, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _IsLatest_ : bool, 
+        _LastModified_ : timestamp 
+    }
+}
+
+object _DeleteMarkerReplication = {
+    type this = struct {
+        _Status_ : string 
+    }
+}
+
+object _DeleteObjectOutput = {
+    type this = struct {
+        _DeleteMarker_ : bool, 
+        _VersionId_ : string, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _DeleteObjectRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _MFA_ : string, 
+        _VersionId_ : string, 
+        _RequestPayer_ : string, 
+        _BypassGovernanceRetention_ : bool, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeleteObjectTaggingOutput = {
+    type this = struct {
+        _VersionId_ : string 
+    }
+}
+
+object _DeleteObjectTaggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeletedObject = {
+    type this = struct {
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _DeleteMarker_ : bool, 
+        _DeleteMarkerVersionId_ : string 
+    }
+}
+
+object _Error = {
+    type this = struct {
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _Code_ : string, 
+        _Message_ : string 
+    }
+}
+
+object _DeleteObjectsOutput = {
+    type this = struct {
+        _Deleted_ : vector[_DeletedObject], 
+        _RequestCharged_ : string, 
+        _Errors_ : vector[_Error] 
+    }
+}
+
+object _DeleteObjectsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Delete_ : _Delete, 
+        _MFA_ : string, 
+        _RequestPayer_ : string, 
+        _BypassGovernanceRetention_ : bool, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _DeletePublicAccessBlockRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _EncryptionConfiguration = {
+    type this = struct {
+        _ReplicaKmsKeyID_ : string 
+    }
+}
+
+object _ReplicationTimeValue = {
+    type this = struct {
+        _Minutes_ : integer 
+    }
+}
+
+object _ReplicationTime = {
+    type this = struct {
+        _Status_ : string, 
+        _Time_ : _ReplicationTimeValue 
+    }
+}
+
+object _Metrics = {
+    type this = struct {
+        _Status_ : string, 
+        _EventThreshold_ : _ReplicationTimeValue 
+    }
+}
+
+object _Destination = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Account_ : string, 
+        _StorageClass_ : string, 
+        _AccessControlTranslation_ : _AccessControlTranslation, 
+        _EncryptionConfiguration_ : _EncryptionConfiguration, 
+        _ReplicationTime_ : _ReplicationTime, 
+        _Metrics_ : _Metrics 
+    }
+}
+
+object _Encryption = {
+    type this = struct {
+        _EncryptionType_ : string, 
+        _KMSKeyId_ : string, 
+        _KMSContext_ : string 
+    }
+}
+
+object _EndEvent = {
+    type this = struct {
+    }
+}
+
+object _ErrorDocument = {
+    type this = struct {
+        _Key_ : string 
+    }
+}
+
+object _ExistingObjectReplication = {
+    type this = struct {
+        _Status_ : string 
+    }
+}
+
+object _FilterRule = {
+    type this = struct {
+        _Name_ : string, 
+        _Value_ : string 
+    }
+}
+
+object _GetBucketAccelerateConfigurationOutput = {
+    type this = struct {
+        _Status_ : string 
+    }
+}
+
+object _GetBucketAccelerateConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketAclOutput = {
+    type this = struct {
+        _Owner_ : _Owner, 
+        _Grants_ : vector[_Grant] 
+    }
+}
+
+object _GetBucketAclRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketAnalyticsConfigurationOutput = {
+    type this = struct {
+        _AnalyticsConfiguration_ : _AnalyticsConfiguration 
+    }
+}
+
+object _GetBucketAnalyticsConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketCorsOutput = {
+    type this = struct {
+        _CORSRules_ : vector[_CORSRule] 
+    }
+}
+
+object _GetBucketCorsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ServerSideEncryptionByDefault = {
+    type this = struct {
+        _SSEAlgorithm_ : string, 
+        _KMSMasterKeyID_ : string 
+    }
+}
+
+object _ServerSideEncryptionRule = {
+    type this = struct {
+        _ApplyServerSideEncryptionByDefault_ : _ServerSideEncryptionByDefault, 
+        _BucketKeyEnabled_ : bool 
+    }
+}
+
+object _ServerSideEncryptionConfiguration = {
+    type this = struct {
+        _Rules_ : vector[_ServerSideEncryptionRule] 
+    }
+}
+
+object _GetBucketEncryptionOutput = {
+    type this = struct {
+        _ServerSideEncryptionConfiguration_ : _ServerSideEncryptionConfiguration 
+    }
+}
+
+object _GetBucketEncryptionRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _IntelligentTieringAndOperator = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tags_ : vector[_Tag] 
+    }
+}
+
+object _IntelligentTieringFilter = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tag_ : _Tag, 
+        _And_ : _IntelligentTieringAndOperator 
+    }
+}
+
+object _Tiering = {
+    type this = struct {
+        _Days_ : integer, 
+        _AccessTier_ : string 
+    }
+}
+
+object _IntelligentTieringConfiguration = {
+    type this = struct {
+        _Id_ : string, 
+        _Filter_ : _IntelligentTieringFilter, 
+        _Status_ : string, 
+        _Tierings_ : vector[_Tiering] 
+    }
+}
+
+object _GetBucketIntelligentTieringConfigurationOutput = {
+    type this = struct {
+        _IntelligentTieringConfiguration_ : _IntelligentTieringConfiguration 
+    }
+}
+
+object _GetBucketIntelligentTieringConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string 
+    }
+}
+
+object _SSES3 = {
+    type this = struct {
+    }
+}
+
+object _SSEKMS = {
+    type this = struct {
+        _KeyId_ : string 
+    }
+}
+
+object _InventoryEncryption = {
+    type this = struct {
+        _SSES3_ : _SSES3, 
+        _SSEKMS_ : _SSEKMS 
+    }
+}
+
+object _InventoryS3BucketDestination = {
+    type this = struct {
+        _AccountId_ : string, 
+        _Bucket_ : string, 
+        _Format_ : string, 
+        _Prefix_ : string, 
+        _Encryption_ : _InventoryEncryption 
+    }
+}
+
+object _InventoryDestination = {
+    type this = struct {
+        _S3BucketDestination_ : _InventoryS3BucketDestination 
+    }
+}
+
+object _InventoryFilter = {
+    type this = struct {
+        _Prefix_ : string 
+    }
+}
+
+object _InventorySchedule = {
+    type this = struct {
+        _Frequency_ : string 
+    }
+}
+
+object _InventoryConfiguration = {
+    type this = struct {
+        _Destination_ : _InventoryDestination, 
+        _IsEnabled_ : bool, 
+        _Filter_ : _InventoryFilter, 
+        _Id_ : string, 
+        _IncludedObjectVersions_ : string, 
+        _OptionalFields_ : vector[string], 
+        _Schedule_ : _InventorySchedule 
+    }
+}
+
+object _GetBucketInventoryConfigurationOutput = {
+    type this = struct {
+        _InventoryConfiguration_ : _InventoryConfiguration 
+    }
+}
+
+object _GetBucketInventoryConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketLifecycleConfigurationOutput = {
+    type this = struct {
+        _Rules_ : vector[_LifecycleRule] 
+    }
+}
+
+object _GetBucketLifecycleConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _Rule = {
+    type this = struct {
+        _Expiration_ : _LifecycleExpiration, 
+        _ID_ : string, 
+        _Prefix_ : string, 
+        _Status_ : string, 
+        _Transition_ : _Transition, 
+        _NoncurrentVersionTransition_ : _NoncurrentVersionTransition, 
+        _NoncurrentVersionExpiration_ : _NoncurrentVersionExpiration, 
+        _AbortIncompleteMultipartUpload_ : _AbortIncompleteMultipartUpload 
+    }
+}
+
+object _GetBucketLifecycleOutput = {
+    type this = struct {
+        _Rules_ : vector[_Rule] 
+    }
+}
+
+object _GetBucketLifecycleRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketLocationOutput = {
+    type this = struct {
+        _LocationConstraint_ : string 
+    }
+}
+
+object _GetBucketLocationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketLoggingOutput = {
+    type this = struct {
+        _LoggingEnabled_ : _LoggingEnabled 
+    }
+}
+
+object _GetBucketLoggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _MetricsAndOperator = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tags_ : vector[_Tag] 
+    }
+}
+
+object _MetricsFilter = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tag_ : _Tag, 
+        _And_ : _MetricsAndOperator 
+    }
+}
+
+object _MetricsConfiguration = {
+    type this = struct {
+        _Id_ : string, 
+        _Filter_ : _MetricsFilter 
+    }
+}
+
+object _GetBucketMetricsConfigurationOutput = {
+    type this = struct {
+        _MetricsConfiguration_ : _MetricsConfiguration 
+    }
+}
+
+object _GetBucketMetricsConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketNotificationConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _OwnershipControlsRule = {
+    type this = struct {
+        _ObjectOwnership_ : string 
+    }
+}
+
+object _OwnershipControls = {
+    type this = struct {
+        _Rules_ : vector[_OwnershipControlsRule] 
+    }
+}
+
+object _GetBucketOwnershipControlsOutput = {
+    type this = struct {
+        _OwnershipControls_ : _OwnershipControls 
+    }
+}
+
+object _GetBucketOwnershipControlsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketPolicyOutput = {
+    type this = struct {
+        _Policy_ : string 
+    }
+}
+
+object _GetBucketPolicyRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PolicyStatus = {
+    type this = struct {
+        _IsPublic_ : bool 
+    }
+}
+
+object _GetBucketPolicyStatusOutput = {
+    type this = struct {
+        _PolicyStatus_ : _PolicyStatus 
+    }
+}
+
+object _GetBucketPolicyStatusRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ReplicationRuleAndOperator = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tags_ : vector[_Tag] 
+    }
+}
+
+object _ReplicationRuleFilter = {
+    type this = struct {
+        _Prefix_ : string, 
+        _Tag_ : _Tag, 
+        _And_ : _ReplicationRuleAndOperator 
+    }
+}
+
+object _SseKmsEncryptedObjects = {
+    type this = struct {
+        _Status_ : string 
+    }
+}
+
+object _ReplicaModifications = {
+    type this = struct {
+        _Status_ : string 
+    }
+}
+
+object _SourceSelectionCriteria = {
+    type this = struct {
+        _SseKmsEncryptedObjects_ : _SseKmsEncryptedObjects, 
+        _ReplicaModifications_ : _ReplicaModifications 
+    }
+}
+
+object _ReplicationRule = {
+    type this = struct {
+        _ID_ : string, 
+        _Priority_ : integer, 
+        _Prefix_ : string, 
+        _Filter_ : _ReplicationRuleFilter, 
+        _Status_ : string, 
+        _SourceSelectionCriteria_ : _SourceSelectionCriteria, 
+        _ExistingObjectReplication_ : _ExistingObjectReplication, 
+        _Destination_ : _Destination, 
+        _DeleteMarkerReplication_ : _DeleteMarkerReplication 
+    }
+}
+
+object _ReplicationConfiguration = {
+    type this = struct {
+        _Role_ : string, 
+        _Rules_ : vector[_ReplicationRule] 
+    }
+}
+
+object _GetBucketReplicationOutput = {
+    type this = struct {
+        _ReplicationConfiguration_ : _ReplicationConfiguration 
+    }
+}
+
+object _GetBucketReplicationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketRequestPaymentOutput = {
+    type this = struct {
+        _Payer_ : string 
+    }
+}
+
+object _GetBucketRequestPaymentRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketTaggingOutput = {
+    type this = struct {
+        _TagSet_ : vector[_Tag] 
+    }
+}
+
+object _GetBucketTaggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetBucketVersioningOutput = {
+    type this = struct {
+        _Status_ : string, 
+        _MFADelete_ : string 
+    }
+}
+
+object _GetBucketVersioningRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _RedirectAllRequestsTo = {
+    type this = struct {
+        _HostName_ : string, 
+        _Protocol_ : string 
+    }
+}
+
+object _IndexDocument = {
+    type this = struct {
+        _Suffix_ : string 
+    }
+}
+
+object _Redirect = {
+    type this = struct {
+        _HostName_ : string, 
+        _HttpRedirectCode_ : string, 
+        _Protocol_ : string, 
+        _ReplaceKeyPrefixWith_ : string, 
+        _ReplaceKeyWith_ : string 
+    }
+}
+
+object _RoutingRule = {
+    type this = struct {
+        _Condition_ : _Condition, 
+        _Redirect_ : _Redirect 
+    }
+}
+
+object _GetBucketWebsiteOutput = {
+    type this = struct {
+        _RedirectAllRequestsTo_ : _RedirectAllRequestsTo, 
+        _IndexDocument_ : _IndexDocument, 
+        _ErrorDocument_ : _ErrorDocument, 
+        _RoutingRules_ : vector[_RoutingRule] 
+    }
+}
+
+object _GetBucketWebsiteRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetObjectAclOutput = {
+    type this = struct {
+        _Owner_ : _Owner, 
+        _Grants_ : vector[_Grant], 
+        _RequestCharged_ : string 
+    }
+}
+
+object _GetObjectAclRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ObjectLockLegalHold = {
+    type this = struct {
+        _Status_ : string 
+    }
+}
+
+object _GetObjectLegalHoldOutput = {
+    type this = struct {
+        _LegalHold_ : _ObjectLockLegalHold 
+    }
+}
+
+object _GetObjectLegalHoldRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ObjectLockRule = {
+    type this = struct {
+        _DefaultRetention_ : _DefaultRetention 
+    }
+}
+
+object _ObjectLockConfiguration = {
+    type this = struct {
+        _ObjectLockEnabled_ : string, 
+        _Rule_ : _ObjectLockRule 
+    }
+}
+
+object _GetObjectLockConfigurationOutput = {
+    type this = struct {
+        _ObjectLockConfiguration_ : _ObjectLockConfiguration 
+    }
+}
+
+object _GetObjectLockConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetObjectOutput = {
+    type this = struct {
+        _Body_ : blob, 
+        _DeleteMarker_ : bool, 
+        _AcceptRanges_ : string, 
+        _Expiration_ : string, 
+        _Restore_ : string, 
+        _LastModified_ : timestamp, 
+        _ContentLength_ : long, 
+        _ETag_ : string, 
+        _MissingMeta_ : integer, 
+        _VersionId_ : string, 
+        _CacheControl_ : string, 
+        _ContentDisposition_ : string, 
+        _ContentEncoding_ : string, 
+        _ContentLanguage_ : string, 
+        _ContentRange_ : string, 
+        _ContentType_ : string, 
+        _Expires_ : timestamp, 
+        _WebsiteRedirectLocation_ : string, 
+        _ServerSideEncryption_ : string, 
+        _Metadata_ : unordered_map[string][string], 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _StorageClass_ : string, 
+        _RequestCharged_ : string, 
+        _ReplicationStatus_ : string, 
+        _PartsCount_ : integer, 
+        _TagCount_ : integer, 
+        _ObjectLockMode_ : string, 
+        _ObjectLockRetainUntilDate_ : timestamp, 
+        _ObjectLockLegalHoldStatus_ : string 
+    }
+}
+
+object _GetObjectRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _IfMatch_ : string, 
+        _IfModifiedSince_ : timestamp, 
+        _IfNoneMatch_ : string, 
+        _IfUnmodifiedSince_ : timestamp, 
+        _Key_ : string, 
+        _Range_ : string, 
+        _ResponseCacheControl_ : string, 
+        _ResponseContentDisposition_ : string, 
+        _ResponseContentEncoding_ : string, 
+        _ResponseContentLanguage_ : string, 
+        _ResponseContentType_ : string, 
+        _ResponseExpires_ : timestamp, 
+        _VersionId_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _RequestPayer_ : string, 
+        _PartNumber_ : integer, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ObjectLockRetention = {
+    type this = struct {
+        _Mode_ : string, 
+        _RetainUntilDate_ : timestamp 
+    }
+}
+
+object _GetObjectRetentionOutput = {
+    type this = struct {
+        _Retention_ : _ObjectLockRetention 
+    }
+}
+
+object _GetObjectRetentionRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GetObjectTaggingOutput = {
+    type this = struct {
+        _VersionId_ : string, 
+        _TagSet_ : vector[_Tag] 
+    }
+}
+
+object _GetObjectTaggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _ExpectedBucketOwner_ : string, 
+        _RequestPayer_ : string 
+    }
+}
+
+object _GetObjectTorrentOutput = {
+    type this = struct {
+        _Body_ : blob, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _GetObjectTorrentRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PublicAccessBlockConfiguration = {
+    type this = struct {
+        _BlockPublicAcls_ : bool, 
+        _IgnorePublicAcls_ : bool, 
+        _BlockPublicPolicy_ : bool, 
+        _RestrictPublicBuckets_ : bool 
+    }
+}
+
+object _GetPublicAccessBlockOutput = {
+    type this = struct {
+        _PublicAccessBlockConfiguration_ : _PublicAccessBlockConfiguration 
+    }
+}
+
+object _GetPublicAccessBlockRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _GlacierJobParameters = {
+    type this = struct {
+        _Tier_ : string 
+    }
+}
+
+object _HeadBucketRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _HeadObjectOutput = {
+    type this = struct {
+        _DeleteMarker_ : bool, 
+        _AcceptRanges_ : string, 
+        _Expiration_ : string, 
+        _Restore_ : string, 
+        _ArchiveStatus_ : string, 
+        _LastModified_ : timestamp, 
+        _ContentLength_ : long, 
+        _ETag_ : string, 
+        _MissingMeta_ : integer, 
+        _VersionId_ : string, 
+        _CacheControl_ : string, 
+        _ContentDisposition_ : string, 
+        _ContentEncoding_ : string, 
+        _ContentLanguage_ : string, 
+        _ContentType_ : string, 
+        _Expires_ : timestamp, 
+        _WebsiteRedirectLocation_ : string, 
+        _ServerSideEncryption_ : string, 
+        _Metadata_ : unordered_map[string][string], 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _StorageClass_ : string, 
+        _RequestCharged_ : string, 
+        _ReplicationStatus_ : string, 
+        _PartsCount_ : integer, 
+        _ObjectLockMode_ : string, 
+        _ObjectLockRetainUntilDate_ : timestamp, 
+        _ObjectLockLegalHoldStatus_ : string 
+    }
+}
+
+object _HeadObjectRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _IfMatch_ : string, 
+        _IfModifiedSince_ : timestamp, 
+        _IfNoneMatch_ : string, 
+        _IfUnmodifiedSince_ : timestamp, 
+        _Key_ : string, 
+        _Range_ : string, 
+        _VersionId_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _RequestPayer_ : string, 
+        _PartNumber_ : integer, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _Initiator = {
+    type this = struct {
+        _ID_ : string, 
+        _DisplayName_ : string 
+    }
+}
+
+object _JSONInput = {
+    type this = struct {
+        _Type_ : string 
+    }
+}
+
+object _ParquetInput = {
+    type this = struct {
+    }
+}
+
+object _InputSerialization = {
+    type this = struct {
+        _CSV_ : _CSVInput, 
+        _CompressionType_ : string, 
+        _JSON_ : _JSONInput, 
+        _Parquet_ : _ParquetInput 
+    }
+}
+
+object _InvalidObjectState = {
+    type this = struct {
+        _StorageClass_ : string, 
+        _AccessTier_ : string 
+    }
+}
+
+object _JSONOutput = {
+    type this = struct {
+        _RecordDelimiter_ : string 
+    }
+}
+
+object _S3KeyFilter = {
+    type this = struct {
+        _FilterRules_ : vector[_FilterRule] 
+    }
+}
+
+object _NotificationConfigurationFilter = {
+    type this = struct {
+        _Key_ : _S3KeyFilter 
+    }
+}
+
+object _LambdaFunctionConfiguration = {
+    type this = struct {
+        _Id_ : string, 
+        _LambdaFunctionArn_ : string, 
+        _Events_ : vector[string], 
+        _Filter_ : _NotificationConfigurationFilter 
+    }
+}
+
+object _LifecycleConfiguration = {
+    type this = struct {
+        _Rules_ : vector[_Rule] 
+    }
+}
+
+object _ListBucketAnalyticsConfigurationsOutput = {
+    type this = struct {
+        _IsTruncated_ : bool, 
+        _ContinuationToken_ : string, 
+        _NextContinuationToken_ : string, 
+        _AnalyticsConfigurationList_ : vector[_AnalyticsConfiguration] 
+    }
+}
+
+object _ListBucketAnalyticsConfigurationsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContinuationToken_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ListBucketIntelligentTieringConfigurationsOutput = {
+    type this = struct {
+        _IsTruncated_ : bool, 
+        _ContinuationToken_ : string, 
+        _NextContinuationToken_ : string, 
+        _IntelligentTieringConfigurationList_ : vector[_IntelligentTieringConfiguration] 
+    }
+}
+
+object _ListBucketIntelligentTieringConfigurationsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContinuationToken_ : string 
+    }
+}
+
+object _ListBucketInventoryConfigurationsOutput = {
+    type this = struct {
+        _ContinuationToken_ : string, 
+        _InventoryConfigurationList_ : vector[_InventoryConfiguration], 
+        _IsTruncated_ : bool, 
+        _NextContinuationToken_ : string 
+    }
+}
+
+object _ListBucketInventoryConfigurationsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContinuationToken_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ListBucketMetricsConfigurationsOutput = {
+    type this = struct {
+        _IsTruncated_ : bool, 
+        _ContinuationToken_ : string, 
+        _NextContinuationToken_ : string, 
+        _MetricsConfigurationList_ : vector[_MetricsConfiguration] 
+    }
+}
+
+object _ListBucketMetricsConfigurationsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContinuationToken_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ListBucketsOutput = {
+    type this = struct {
+        _Buckets_ : vector[_Bucket], 
+        _Owner_ : _Owner 
+    }
+}
+
+object _MultipartUpload = {
+    type this = struct {
+        _UploadId_ : string, 
+        _Key_ : string, 
+        _Initiated_ : timestamp, 
+        _StorageClass_ : string, 
+        _Owner_ : _Owner, 
+        _Initiator_ : _Initiator 
+    }
+}
+
+object _ListMultipartUploadsOutput = {
+    type this = struct {
+        _Bucket_ : string, 
+        _KeyMarker_ : string, 
+        _UploadIdMarker_ : string, 
+        _NextKeyMarker_ : string, 
+        _Prefix_ : string, 
+        _Delimiter_ : string, 
+        _NextUploadIdMarker_ : string, 
+        _MaxUploads_ : integer, 
+        _IsTruncated_ : bool, 
+        _Uploads_ : vector[_MultipartUpload], 
+        _CommonPrefixes_ : vector[_CommonPrefix], 
+        _EncodingType_ : string 
+    }
+}
+
+object _ListMultipartUploadsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Delimiter_ : string, 
+        _EncodingType_ : string, 
+        _KeyMarker_ : string, 
+        _MaxUploads_ : integer, 
+        _Prefix_ : string, 
+        _UploadIdMarker_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ObjectVersion = {
+    type this = struct {
+        _ETag_ : string, 
+        _Size_ : integer, 
+        _StorageClass_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _IsLatest_ : bool, 
+        _LastModified_ : timestamp, 
+        _Owner_ : _Owner 
+    }
+}
+
+object _ListObjectVersionsOutput = {
+    type this = struct {
+        _IsTruncated_ : bool, 
+        _KeyMarker_ : string, 
+        _VersionIdMarker_ : string, 
+        _NextKeyMarker_ : string, 
+        _NextVersionIdMarker_ : string, 
+        _Versions_ : vector[_ObjectVersion], 
+        _DeleteMarkers_ : vector[_DeleteMarkerEntry], 
+        _Name_ : string, 
+        _Prefix_ : string, 
+        _Delimiter_ : string, 
+        _MaxKeys_ : integer, 
+        _CommonPrefixes_ : vector[_CommonPrefix], 
+        _EncodingType_ : string 
+    }
+}
+
+object _ListObjectVersionsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Delimiter_ : string, 
+        _EncodingType_ : string, 
+        _KeyMarker_ : string, 
+        _MaxKeys_ : integer, 
+        _Prefix_ : string, 
+        _VersionIdMarker_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _Object = {
+    type this = struct {
+        _Key_ : string, 
+        _LastModified_ : timestamp, 
+        _ETag_ : string, 
+        _Size_ : integer, 
+        _StorageClass_ : string, 
+        _Owner_ : _Owner 
+    }
+}
+
+object _ListObjectsOutput = {
+    type this = struct {
+        _IsTruncated_ : bool, 
+        _Marker_ : string, 
+        _NextMarker_ : string, 
+        _Contents_ : vector[_Object], 
+        _Name_ : string, 
+        _Prefix_ : string, 
+        _Delimiter_ : string, 
+        _MaxKeys_ : integer, 
+        _CommonPrefixes_ : vector[_CommonPrefix], 
+        _EncodingType_ : string 
+    }
+}
+
+object _ListObjectsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Delimiter_ : string, 
+        _EncodingType_ : string, 
+        _Marker_ : string, 
+        _MaxKeys_ : integer, 
+        _Prefix_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ListObjectsV2Output = {
+    type this = struct {
+        _IsTruncated_ : bool, 
+        _Contents_ : vector[_Object], 
+        _Name_ : string, 
+        _Prefix_ : string, 
+        _Delimiter_ : string, 
+        _MaxKeys_ : integer, 
+        _CommonPrefixes_ : vector[_CommonPrefix], 
+        _EncodingType_ : string, 
+        _KeyCount_ : integer, 
+        _ContinuationToken_ : string, 
+        _NextContinuationToken_ : string, 
+        _StartAfter_ : string 
+    }
+}
+
+object _ListObjectsV2Request = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Delimiter_ : string, 
+        _EncodingType_ : string, 
+        _MaxKeys_ : integer, 
+        _Prefix_ : string, 
+        _ContinuationToken_ : string, 
+        _FetchOwner_ : bool, 
+        _StartAfter_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _Part = {
+    type this = struct {
+        _PartNumber_ : integer, 
+        _LastModified_ : timestamp, 
+        _ETag_ : string, 
+        _Size_ : integer 
+    }
+}
+
+object _ListPartsOutput = {
+    type this = struct {
+        _AbortDate_ : timestamp, 
+        _AbortRuleId_ : string, 
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _UploadId_ : string, 
+        _PartNumberMarker_ : integer, 
+        _NextPartNumberMarker_ : integer, 
+        _MaxParts_ : integer, 
+        _IsTruncated_ : bool, 
+        _Parts_ : vector[_Part], 
+        _Initiator_ : _Initiator, 
+        _Owner_ : _Owner, 
+        _StorageClass_ : string, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _ListPartsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _MaxParts_ : integer, 
+        _PartNumberMarker_ : integer, 
+        _UploadId_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _MetadataEntry = {
+    type this = struct {
+        _Name_ : string, 
+        _Value_ : string 
+    }
+}
+
+object _NoSuchBucket = {
+    type this = struct {
+    }
+}
+
+object _NoSuchKey = {
+    type this = struct {
+    }
+}
+
+object _NoSuchUpload = {
+    type this = struct {
+    }
+}
+
+object _TopicConfiguration = {
+    type this = struct {
+        _Id_ : string, 
+        _TopicArn_ : string, 
+        _Events_ : vector[string], 
+        _Filter_ : _NotificationConfigurationFilter 
+    }
+}
+
+object _QueueConfiguration = {
+    type this = struct {
+        _Id_ : string, 
+        _QueueArn_ : string, 
+        _Events_ : vector[string], 
+        _Filter_ : _NotificationConfigurationFilter 
+    }
+}
+
+object _NotificationConfiguration = {
+    type this = struct {
+        _TopicConfigurations_ : vector[_TopicConfiguration], 
+        _QueueConfigurations_ : vector[_QueueConfiguration], 
+        _LambdaFunctionConfigurations_ : vector[_LambdaFunctionConfiguration] 
+    }
+}
+
+object _TopicConfigurationDeprecated = {
+    type this = struct {
+        _Id_ : string, 
+        _Events_ : vector[string], 
+        _Event_ : string, 
+        _Topic_ : string 
+    }
+}
+
+object _QueueConfigurationDeprecated = {
+    type this = struct {
+        _Id_ : string, 
+        _Event_ : string, 
+        _Events_ : vector[string], 
+        _Queue_ : string 
+    }
+}
+
+object _NotificationConfigurationDeprecated = {
+    type this = struct {
+        _TopicConfiguration_ : _TopicConfigurationDeprecated, 
+        _QueueConfiguration_ : _QueueConfigurationDeprecated, 
+        _CloudFunctionConfiguration_ : _CloudFunctionConfiguration 
+    }
+}
+
+object _ObjectAlreadyInActiveTierError = {
+    type this = struct {
+    }
+}
+
+object _ObjectNotInActiveTierError = {
+    type this = struct {
+    }
+}
+
+object _Tagging = {
+    type this = struct {
+        _TagSet_ : vector[_Tag] 
+    }
+}
+
+object _S3Location = {
+    type this = struct {
+        _BucketName_ : string, 
+        _Prefix_ : string, 
+        _Encryption_ : _Encryption, 
+        _CannedACL_ : string, 
+        _AccessControlList_ : vector[_Grant], 
+        _Tagging_ : _Tagging, 
+        _UserMetadata_ : vector[_MetadataEntry], 
+        _StorageClass_ : string 
+    }
+}
+
+object _OutputLocation = {
+    type this = struct {
+        _S3_ : _S3Location 
+    }
+}
+
+object _OutputSerialization = {
+    type this = struct {
+        _CSV_ : _CSVOutput, 
+        _JSON_ : _JSONOutput 
+    }
+}
+
+object _Progress = {
+    type this = struct {
+        _BytesScanned_ : long, 
+        _BytesProcessed_ : long, 
+        _BytesReturned_ : long 
+    }
+}
+
+object _ProgressEvent = {
+    type this = struct {
+        _Details_ : _Progress 
+    }
+}
+
+object _PutBucketAccelerateConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _AccelerateConfiguration_ : _AccelerateConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketAclRequest = {
+    type this = struct {
+        _ACL_ : string, 
+        _AccessControlPolicy_ : _AccessControlPolicy, 
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _GrantFullControl_ : string, 
+        _GrantRead_ : string, 
+        _GrantReadACP_ : string, 
+        _GrantWrite_ : string, 
+        _GrantWriteACP_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketAnalyticsConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _AnalyticsConfiguration_ : _AnalyticsConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketCorsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _CORSConfiguration_ : _CORSConfiguration, 
+        _ContentMD5_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketEncryptionRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _ServerSideEncryptionConfiguration_ : _ServerSideEncryptionConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketIntelligentTieringConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _IntelligentTieringConfiguration_ : _IntelligentTieringConfiguration 
+    }
+}
+
+object _PutBucketInventoryConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _InventoryConfiguration_ : _InventoryConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketLifecycleConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _LifecycleConfiguration_ : _BucketLifecycleConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketLifecycleRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _LifecycleConfiguration_ : _LifecycleConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketLoggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _BucketLoggingStatus_ : _BucketLoggingStatus, 
+        _ContentMD5_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketMetricsConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Id_ : string, 
+        _MetricsConfiguration_ : _MetricsConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketNotificationConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _NotificationConfiguration_ : _NotificationConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketNotificationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _NotificationConfiguration_ : _NotificationConfigurationDeprecated, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketOwnershipControlsRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _ExpectedBucketOwner_ : string, 
+        _OwnershipControls_ : _OwnershipControls 
+    }
+}
+
+object _PutBucketPolicyRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _ConfirmRemoveSelfBucketAccess_ : bool, 
+        _Policy_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketReplicationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _ReplicationConfiguration_ : _ReplicationConfiguration, 
+        _Token_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _RequestPaymentConfiguration = {
+    type this = struct {
+        _Payer_ : string 
+    }
+}
+
+object _PutBucketRequestPaymentRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _RequestPaymentConfiguration_ : _RequestPaymentConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutBucketTaggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _Tagging_ : _Tagging, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _VersioningConfiguration = {
+    type this = struct {
+        _MFADelete_ : string, 
+        _Status_ : string 
+    }
+}
+
+object _PutBucketVersioningRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _MFA_ : string, 
+        _VersioningConfiguration_ : _VersioningConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _WebsiteConfiguration = {
+    type this = struct {
+        _ErrorDocument_ : _ErrorDocument, 
+        _IndexDocument_ : _IndexDocument, 
+        _RedirectAllRequestsTo_ : _RedirectAllRequestsTo, 
+        _RoutingRules_ : vector[_RoutingRule] 
+    }
+}
+
+object _PutBucketWebsiteRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _WebsiteConfiguration_ : _WebsiteConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutObjectAclOutput = {
+    type this = struct {
+        _RequestCharged_ : string 
+    }
+}
+
+object _PutObjectAclRequest = {
+    type this = struct {
+        _ACL_ : string, 
+        _AccessControlPolicy_ : _AccessControlPolicy, 
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _GrantFullControl_ : string, 
+        _GrantRead_ : string, 
+        _GrantReadACP_ : string, 
+        _GrantWrite_ : string, 
+        _GrantWriteACP_ : string, 
+        _Key_ : string, 
+        _RequestPayer_ : string, 
+        _VersionId_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutObjectLegalHoldOutput = {
+    type this = struct {
+        _RequestCharged_ : string 
+    }
+}
+
+object _PutObjectLegalHoldRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _LegalHold_ : _ObjectLockLegalHold, 
+        _RequestPayer_ : string, 
+        _VersionId_ : string, 
+        _ContentMD5_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutObjectLockConfigurationOutput = {
+    type this = struct {
+        _RequestCharged_ : string 
+    }
+}
+
+object _PutObjectLockConfigurationRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ObjectLockConfiguration_ : _ObjectLockConfiguration, 
+        _RequestPayer_ : string, 
+        _Token_ : string, 
+        _ContentMD5_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutObjectOutput = {
+    type this = struct {
+        _Expiration_ : string, 
+        _ETag_ : string, 
+        _ServerSideEncryption_ : string, 
+        _VersionId_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _SSEKMSEncryptionContext_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _PutObjectRequest = {
+    type this = struct {
+        _ACL_ : string, 
+        _Body_ : blob, 
+        _Bucket_ : string, 
+        _CacheControl_ : string, 
+        _ContentDisposition_ : string, 
+        _ContentEncoding_ : string, 
+        _ContentLanguage_ : string, 
+        _ContentLength_ : long, 
+        _ContentMD5_ : string, 
+        _ContentType_ : string, 
+        _Expires_ : timestamp, 
+        _GrantFullControl_ : string, 
+        _GrantRead_ : string, 
+        _GrantReadACP_ : string, 
+        _GrantWriteACP_ : string, 
+        _Key_ : string, 
+        _Metadata_ : unordered_map[string][string], 
+        _ServerSideEncryption_ : string, 
+        _StorageClass_ : string, 
+        _WebsiteRedirectLocation_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _SSEKMSEncryptionContext_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestPayer_ : string, 
+        _Tagging_ : string, 
+        _ObjectLockMode_ : string, 
+        _ObjectLockRetainUntilDate_ : timestamp, 
+        _ObjectLockLegalHoldStatus_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutObjectRetentionOutput = {
+    type this = struct {
+        _RequestCharged_ : string 
+    }
+}
+
+object _PutObjectRetentionRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _Retention_ : _ObjectLockRetention, 
+        _RequestPayer_ : string, 
+        _VersionId_ : string, 
+        _BypassGovernanceRetention_ : bool, 
+        _ContentMD5_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _PutObjectTaggingOutput = {
+    type this = struct {
+        _VersionId_ : string 
+    }
+}
+
+object _PutObjectTaggingRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _ContentMD5_ : string, 
+        _Tagging_ : _Tagging, 
+        _ExpectedBucketOwner_ : string, 
+        _RequestPayer_ : string 
+    }
+}
+
+object _PutPublicAccessBlockRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _ContentMD5_ : string, 
+        _PublicAccessBlockConfiguration_ : _PublicAccessBlockConfiguration, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _RecordsEvent = {
+    type this = struct {
+        _Payload_ : blob 
+    }
+}
+
+object _RequestProgress = {
+    type this = struct {
+        _Enabled_ : bool 
+    }
+}
+
+object _RestoreObjectOutput = {
+    type this = struct {
+        _RequestCharged_ : string, 
+        _RestoreOutputPath_ : string 
+    }
+}
+
+object _SelectParameters = {
+    type this = struct {
+        _InputSerialization_ : _InputSerialization, 
+        _ExpressionType_ : string, 
+        _Expression_ : string, 
+        _OutputSerialization_ : _OutputSerialization 
+    }
+}
+
+object _RestoreRequest = {
+    type this = struct {
+        _Days_ : integer, 
+        _GlacierJobParameters_ : _GlacierJobParameters, 
+        _Type_ : string, 
+        _Tier_ : string, 
+        _Description_ : string, 
+        _SelectParameters_ : _SelectParameters, 
+        _OutputLocation_ : _OutputLocation 
+    }
+}
+
+object _RestoreObjectRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _VersionId_ : string, 
+        _RestoreRequest_ : _RestoreRequest, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _ScanRange = {
+    type this = struct {
+        _Start_ : long, 
+        _End_ : long 
+    }
+}
+
+object _Stats = {
+    type this = struct {
+        _BytesScanned_ : long, 
+        _BytesProcessed_ : long, 
+        _BytesReturned_ : long 
+    }
+}
+
+object _StatsEvent = {
+    type this = struct {
+        _Details_ : _Stats 
+    }
+}
+
+object _SelectObjectContentEventStream = {
+    type this = struct {
+        _Records_ : _RecordsEvent, 
+        _Stats_ : _StatsEvent, 
+        _Progress_ : _ProgressEvent, 
+        _Cont_ : _ContinuationEvent, 
+        _End_ : _EndEvent 
+    }
+}
+
+object _SelectObjectContentOutput = {
+    type this = struct {
+        _Payload_ : _SelectObjectContentEventStream 
+    }
+}
+
+object _SelectObjectContentRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _Key_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _Expression_ : string, 
+        _ExpressionType_ : string, 
+        _RequestProgress_ : _RequestProgress, 
+        _InputSerialization_ : _InputSerialization, 
+        _OutputSerialization_ : _OutputSerialization, 
+        _ScanRange_ : _ScanRange, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _UploadPartCopyOutput = {
+    type this = struct {
+        _CopySourceVersionId_ : string, 
+        _CopyPartResult_ : _CopyPartResult, 
+        _ServerSideEncryption_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _UploadPartCopyRequest = {
+    type this = struct {
+        _Bucket_ : string, 
+        _CopySource_ : string, 
+        _CopySourceIfMatch_ : string, 
+        _CopySourceIfModifiedSince_ : timestamp, 
+        _CopySourceIfNoneMatch_ : string, 
+        _CopySourceIfUnmodifiedSince_ : timestamp, 
+        _CopySourceRange_ : string, 
+        _Key_ : string, 
+        _PartNumber_ : integer, 
+        _UploadId_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _CopySourceSSECustomerAlgorithm_ : string, 
+        _CopySourceSSECustomerKey_ : string, 
+        _CopySourceSSECustomerKeyMD5_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string, 
+        _ExpectedSourceBucketOwner_ : string 
+    }
+}
+
+object _UploadPartOutput = {
+    type this = struct {
+        _ServerSideEncryption_ : string, 
+        _ETag_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _BucketKeyEnabled_ : bool, 
+        _RequestCharged_ : string 
+    }
+}
+
+object _UploadPartRequest = {
+    type this = struct {
+        _Body_ : blob, 
+        _Bucket_ : string, 
+        _ContentLength_ : long, 
+        _ContentMD5_ : string, 
+        _Key_ : string, 
+        _PartNumber_ : integer, 
+        _UploadId_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSECustomerKey_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _RequestPayer_ : string, 
+        _ExpectedBucketOwner_ : string 
+    }
+}
+
+object _WriteGetObjectResponseRequest = {
+    type this = struct {
+        _RequestRoute_ : string, 
+        _RequestToken_ : string, 
+        _Body_ : blob, 
+        _StatusCode_ : integer, 
+        _ErrorCode_ : string, 
+        _ErrorMessage_ : string, 
+        _AcceptRanges_ : string, 
+        _CacheControl_ : string, 
+        _ContentDisposition_ : string, 
+        _ContentEncoding_ : string, 
+        _ContentLanguage_ : string, 
+        _ContentLength_ : long, 
+        _ContentRange_ : string, 
+        _ContentType_ : string, 
+        _DeleteMarker_ : bool, 
+        _ETag_ : string, 
+        _Expires_ : timestamp, 
+        _Expiration_ : string, 
+        _LastModified_ : timestamp, 
+        _MissingMeta_ : integer, 
+        _Metadata_ : unordered_map[string][string], 
+        _ObjectLockMode_ : string, 
+        _ObjectLockLegalHoldStatus_ : string, 
+        _ObjectLockRetainUntilDate_ : timestamp, 
+        _PartsCount_ : integer, 
+        _ReplicationStatus_ : string, 
+        _RequestCharged_ : string, 
+        _Restore_ : string, 
+        _ServerSideEncryption_ : string, 
+        _SSECustomerAlgorithm_ : string, 
+        _SSEKMSKeyId_ : string, 
+        _SSECustomerKeyMD5_ : string, 
+        _StorageClass_ : string, 
+        _TagCount_ : integer, 
+        _VersionId_ : string, 
+        _BucketKeyEnabled_ : bool 
+    }
+}
+
+# operation: AbortMultipartUpload
+object _AbortMultipartUpload = {
+
+    action request(
+        input : _AbortMultipartUploadRequest
+    )
+
+    action response_AbortMultipartUploadOutput(val:_AbortMultipartUploadOutput)
+
+    action response_NoSuchUpload(val:_NoSuchUpload)
+}
+
+# operation: CompleteMultipartUpload
+object _CompleteMultipartUpload = {
+
+    action request(
+        input : _CompleteMultipartUploadRequest
+    )
+
+    action response_CompleteMultipartUploadOutput(val:_CompleteMultipartUploadOutput)
+}
+
+# operation: CopyObject
+object _CopyObject = {
+
+    action request(
+        input : _CopyObjectRequest
+    )
+
+    action response_CopyObjectOutput(val:_CopyObjectOutput)
+
+    action response_ObjectNotInActiveTierError(val:_ObjectNotInActiveTierError)
+}
+
+# operation: CreateBucket
+object _CreateBucket = {
+
+    action request(
+        input : _CreateBucketRequest
+    )
+
+    action response_CreateBucketOutput(val:_CreateBucketOutput)
+
+    action response_BucketAlreadyExists(val:_BucketAlreadyExists)
+
+    action response_BucketAlreadyOwnedByYou(val:_BucketAlreadyOwnedByYou)
+}
+
+# operation: CreateMultipartUpload
+object _CreateMultipartUpload = {
+
+    action request(
+        input : _CreateMultipartUploadRequest
+    )
+
+    action response_CreateMultipartUploadOutput(val:_CreateMultipartUploadOutput)
+}
+
+# operation: DeleteBucket
+object _DeleteBucket = {
+
+    action request(
+        input : _DeleteBucketRequest
+    )
+}
+
+# operation: DeleteBucketAnalyticsConfiguration
+object _DeleteBucketAnalyticsConfiguration = {
+
+    action request(
+        input : _DeleteBucketAnalyticsConfigurationRequest
+    )
+}
+
+# operation: DeleteBucketCors
+object _DeleteBucketCors = {
+
+    action request(
+        input : _DeleteBucketCorsRequest
+    )
+}
+
+# operation: DeleteBucketEncryption
+object _DeleteBucketEncryption = {
+
+    action request(
+        input : _DeleteBucketEncryptionRequest
+    )
+}
+
+# operation: DeleteBucketIntelligentTieringConfiguration
+object _DeleteBucketIntelligentTieringConfiguration = {
+
+    action request(
+        input : _DeleteBucketIntelligentTieringConfigurationRequest
+    )
+}
+
+# operation: DeleteBucketInventoryConfiguration
+object _DeleteBucketInventoryConfiguration = {
+
+    action request(
+        input : _DeleteBucketInventoryConfigurationRequest
+    )
+}
+
+# operation: DeleteBucketLifecycle
+object _DeleteBucketLifecycle = {
+
+    action request(
+        input : _DeleteBucketLifecycleRequest
+    )
+}
+
+# operation: DeleteBucketMetricsConfiguration
+object _DeleteBucketMetricsConfiguration = {
+
+    action request(
+        input : _DeleteBucketMetricsConfigurationRequest
+    )
+}
+
+# operation: DeleteBucketOwnershipControls
+object _DeleteBucketOwnershipControls = {
+
+    action request(
+        input : _DeleteBucketOwnershipControlsRequest
+    )
+}
+
+# operation: DeleteBucketPolicy
+object _DeleteBucketPolicy = {
+
+    action request(
+        input : _DeleteBucketPolicyRequest
+    )
+}
+
+# operation: DeleteBucketReplication
+object _DeleteBucketReplication = {
+
+    action request(
+        input : _DeleteBucketReplicationRequest
+    )
+}
+
+# operation: DeleteBucketTagging
+object _DeleteBucketTagging = {
+
+    action request(
+        input : _DeleteBucketTaggingRequest
+    )
+}
+
+# operation: DeleteBucketWebsite
+object _DeleteBucketWebsite = {
+
+    action request(
+        input : _DeleteBucketWebsiteRequest
+    )
+}
+
+# operation: DeleteObject
+object _DeleteObject = {
+
+    action request(
+        input : _DeleteObjectRequest
+    )
+
+    action response_DeleteObjectOutput(val:_DeleteObjectOutput)
+}
+
+# operation: DeleteObjectTagging
+object _DeleteObjectTagging = {
+
+    action request(
+        input : _DeleteObjectTaggingRequest
+    )
+
+    action response_DeleteObjectTaggingOutput(val:_DeleteObjectTaggingOutput)
+}
+
+# operation: DeleteObjects
+object _DeleteObjects = {
+
+    action request(
+        input : _DeleteObjectsRequest
+    )
+
+    action response_DeleteObjectsOutput(val:_DeleteObjectsOutput)
+}
+
+# operation: DeletePublicAccessBlock
+object _DeletePublicAccessBlock = {
+
+    action request(
+        input : _DeletePublicAccessBlockRequest
+    )
+}
+
+# operation: GetBucketAccelerateConfiguration
+object _GetBucketAccelerateConfiguration = {
+
+    action request(
+        input : _GetBucketAccelerateConfigurationRequest
+    )
+
+    action response_GetBucketAccelerateConfigurationOutput(val:_GetBucketAccelerateConfigurationOutput)
+}
+
+# operation: GetBucketAcl
+object _GetBucketAcl = {
+
+    action request(
+        input : _GetBucketAclRequest
+    )
+
+    action response_GetBucketAclOutput(val:_GetBucketAclOutput)
+}
+
+# operation: GetBucketAnalyticsConfiguration
+object _GetBucketAnalyticsConfiguration = {
+
+    action request(
+        input : _GetBucketAnalyticsConfigurationRequest
+    )
+
+    action response_GetBucketAnalyticsConfigurationOutput(val:_GetBucketAnalyticsConfigurationOutput)
+}
+
+# operation: GetBucketCors
+object _GetBucketCors = {
+
+    action request(
+        input : _GetBucketCorsRequest
+    )
+
+    action response_GetBucketCorsOutput(val:_GetBucketCorsOutput)
+}
+
+# operation: GetBucketEncryption
+object _GetBucketEncryption = {
+
+    action request(
+        input : _GetBucketEncryptionRequest
+    )
+
+    action response_GetBucketEncryptionOutput(val:_GetBucketEncryptionOutput)
+}
+
+# operation: GetBucketIntelligentTieringConfiguration
+object _GetBucketIntelligentTieringConfiguration = {
+
+    action request(
+        input : _GetBucketIntelligentTieringConfigurationRequest
+    )
+
+    action response_GetBucketIntelligentTieringConfigurationOutput(val:_GetBucketIntelligentTieringConfigurationOutput)
+}
+
+# operation: GetBucketInventoryConfiguration
+object _GetBucketInventoryConfiguration = {
+
+    action request(
+        input : _GetBucketInventoryConfigurationRequest
+    )
+
+    action response_GetBucketInventoryConfigurationOutput(val:_GetBucketInventoryConfigurationOutput)
+}
+
+# operation: GetBucketLifecycle
+object _GetBucketLifecycle = {
+
+    action request(
+        input : _GetBucketLifecycleRequest
+    )
+
+    action response_GetBucketLifecycleOutput(val:_GetBucketLifecycleOutput)
+}
+
+# operation: GetBucketLifecycleConfiguration
+object _GetBucketLifecycleConfiguration = {
+
+    action request(
+        input : _GetBucketLifecycleConfigurationRequest
+    )
+
+    action response_GetBucketLifecycleConfigurationOutput(val:_GetBucketLifecycleConfigurationOutput)
+}
+
+# operation: GetBucketLocation
+object _GetBucketLocation = {
+
+    action request(
+        input : _GetBucketLocationRequest
+    )
+
+    action response_GetBucketLocationOutput(val:_GetBucketLocationOutput)
+}
+
+# operation: GetBucketLogging
+object _GetBucketLogging = {
+
+    action request(
+        input : _GetBucketLoggingRequest
+    )
+
+    action response_GetBucketLoggingOutput(val:_GetBucketLoggingOutput)
+}
+
+# operation: GetBucketMetricsConfiguration
+object _GetBucketMetricsConfiguration = {
+
+    action request(
+        input : _GetBucketMetricsConfigurationRequest
+    )
+
+    action response_GetBucketMetricsConfigurationOutput(val:_GetBucketMetricsConfigurationOutput)
+}
+
+# operation: GetBucketNotification
+object _GetBucketNotification = {
+
+    action request(
+        input : _GetBucketNotificationConfigurationRequest
+    )
+
+    action response_NotificationConfigurationDeprecated(val:_NotificationConfigurationDeprecated)
+}
+
+# operation: GetBucketNotificationConfiguration
+object _GetBucketNotificationConfiguration = {
+
+    action request(
+        input : _GetBucketNotificationConfigurationRequest
+    )
+
+    action response_NotificationConfiguration(val:_NotificationConfiguration)
+}
+
+# operation: GetBucketOwnershipControls
+object _GetBucketOwnershipControls = {
+
+    action request(
+        input : _GetBucketOwnershipControlsRequest
+    )
+
+    action response_GetBucketOwnershipControlsOutput(val:_GetBucketOwnershipControlsOutput)
+}
+
+# operation: GetBucketPolicy
+object _GetBucketPolicy = {
+
+    action request(
+        input : _GetBucketPolicyRequest
+    )
+
+    action response_GetBucketPolicyOutput(val:_GetBucketPolicyOutput)
+}
+
+# operation: GetBucketPolicyStatus
+object _GetBucketPolicyStatus = {
+
+    action request(
+        input : _GetBucketPolicyStatusRequest
+    )
+
+    action response_GetBucketPolicyStatusOutput(val:_GetBucketPolicyStatusOutput)
+}
+
+# operation: GetBucketReplication
+object _GetBucketReplication = {
+
+    action request(
+        input : _GetBucketReplicationRequest
+    )
+
+    action response_GetBucketReplicationOutput(val:_GetBucketReplicationOutput)
+}
+
+# operation: GetBucketRequestPayment
+object _GetBucketRequestPayment = {
+
+    action request(
+        input : _GetBucketRequestPaymentRequest
+    )
+
+    action response_GetBucketRequestPaymentOutput(val:_GetBucketRequestPaymentOutput)
+}
+
+# operation: GetBucketTagging
+object _GetBucketTagging = {
+
+    action request(
+        input : _GetBucketTaggingRequest
+    )
+
+    action response_GetBucketTaggingOutput(val:_GetBucketTaggingOutput)
+}
+
+# operation: GetBucketVersioning
+object _GetBucketVersioning = {
+
+    action request(
+        input : _GetBucketVersioningRequest
+    )
+
+    action response_GetBucketVersioningOutput(val:_GetBucketVersioningOutput)
+}
+
+# operation: GetBucketWebsite
+object _GetBucketWebsite = {
+
+    action request(
+        input : _GetBucketWebsiteRequest
+    )
+
+    action response_GetBucketWebsiteOutput(val:_GetBucketWebsiteOutput)
+}
+
+# operation: GetObject
+object _GetObject = {
+
+    action request(
+        input : _GetObjectRequest
+    )
+
+    action response_GetObjectOutput(val:_GetObjectOutput)
+
+    action response_NoSuchKey(val:_NoSuchKey)
+
+    action response_InvalidObjectState(val:_InvalidObjectState)
+}
+
+# operation: GetObjectAcl
+object _GetObjectAcl = {
+
+    action request(
+        input : _GetObjectAclRequest
+    )
+
+    action response_GetObjectAclOutput(val:_GetObjectAclOutput)
+
+    action response_NoSuchKey(val:_NoSuchKey)
+}
+
+# operation: GetObjectLegalHold
+object _GetObjectLegalHold = {
+
+    action request(
+        input : _GetObjectLegalHoldRequest
+    )
+
+    action response_GetObjectLegalHoldOutput(val:_GetObjectLegalHoldOutput)
+}
+
+# operation: GetObjectLockConfiguration
+object _GetObjectLockConfiguration = {
+
+    action request(
+        input : _GetObjectLockConfigurationRequest
+    )
+
+    action response_GetObjectLockConfigurationOutput(val:_GetObjectLockConfigurationOutput)
+}
+
+# operation: GetObjectRetention
+object _GetObjectRetention = {
+
+    action request(
+        input : _GetObjectRetentionRequest
+    )
+
+    action response_GetObjectRetentionOutput(val:_GetObjectRetentionOutput)
+}
+
+# operation: GetObjectTagging
+object _GetObjectTagging = {
+
+    action request(
+        input : _GetObjectTaggingRequest
+    )
+
+    action response_GetObjectTaggingOutput(val:_GetObjectTaggingOutput)
+}
+
+# operation: GetObjectTorrent
+object _GetObjectTorrent = {
+
+    action request(
+        input : _GetObjectTorrentRequest
+    )
+
+    action response_GetObjectTorrentOutput(val:_GetObjectTorrentOutput)
+}
+
+# operation: GetPublicAccessBlock
+object _GetPublicAccessBlock = {
+
+    action request(
+        input : _GetPublicAccessBlockRequest
+    )
+
+    action response_GetPublicAccessBlockOutput(val:_GetPublicAccessBlockOutput)
+}
+
+# operation: HeadBucket
+object _HeadBucket = {
+
+    action request(
+        input : _HeadBucketRequest
+    )
+
+    action response_NoSuchBucket(val:_NoSuchBucket)
+}
+
+# operation: HeadObject
+object _HeadObject = {
+
+    action request(
+        input : _HeadObjectRequest
+    )
+
+    action response_HeadObjectOutput(val:_HeadObjectOutput)
+
+    action response_NoSuchKey(val:_NoSuchKey)
+}
+
+# operation: ListBucketAnalyticsConfigurations
+object _ListBucketAnalyticsConfigurations = {
+
+    action request(
+        input : _ListBucketAnalyticsConfigurationsRequest
+    )
+
+    action response_ListBucketAnalyticsConfigurationsOutput(val:_ListBucketAnalyticsConfigurationsOutput)
+}
+
+# operation: ListBucketIntelligentTieringConfigurations
+object _ListBucketIntelligentTieringConfigurations = {
+
+    action request(
+        input : _ListBucketIntelligentTieringConfigurationsRequest
+    )
+
+    action response_ListBucketIntelligentTieringConfigurationsOutput(val:_ListBucketIntelligentTieringConfigurationsOutput)
+}
+
+# operation: ListBucketInventoryConfigurations
+object _ListBucketInventoryConfigurations = {
+
+    action request(
+        input : _ListBucketInventoryConfigurationsRequest
+    )
+
+    action response_ListBucketInventoryConfigurationsOutput(val:_ListBucketInventoryConfigurationsOutput)
+}
+
+# operation: ListBucketMetricsConfigurations
+object _ListBucketMetricsConfigurations = {
+
+    action request(
+        input : _ListBucketMetricsConfigurationsRequest
+    )
+
+    action response_ListBucketMetricsConfigurationsOutput(val:_ListBucketMetricsConfigurationsOutput)
+}
+
+# operation: ListBuckets
+object _ListBuckets = {
+
+    action request
+
+    action response_ListBucketsOutput(val:_ListBucketsOutput)
+}
+
+# operation: ListMultipartUploads
+object _ListMultipartUploads = {
+
+    action request(
+        input : _ListMultipartUploadsRequest
+    )
+
+    action response_ListMultipartUploadsOutput(val:_ListMultipartUploadsOutput)
+}
+
+# operation: ListObjectVersions
+object _ListObjectVersions = {
+
+    action request(
+        input : _ListObjectVersionsRequest
+    )
+
+    action response_ListObjectVersionsOutput(val:_ListObjectVersionsOutput)
+}
+
+# operation: ListObjects
+object _ListObjects = {
+
+    action request(
+        input : _ListObjectsRequest
+    )
+
+    action response_ListObjectsOutput(val:_ListObjectsOutput)
+
+    action response_NoSuchBucket(val:_NoSuchBucket)
+}
+
+# operation: ListObjectsV2
+object _ListObjectsV2 = {
+
+    action request(
+        input : _ListObjectsV2Request
+    )
+
+    action response_ListObjectsV2Output(val:_ListObjectsV2Output)
+
+    action response_NoSuchBucket(val:_NoSuchBucket)
+}
+
+# operation: ListParts
+object _ListParts = {
+
+    action request(
+        input : _ListPartsRequest
+    )
+
+    action response_ListPartsOutput(val:_ListPartsOutput)
+}
+
+# operation: PutBucketAccelerateConfiguration
+object _PutBucketAccelerateConfiguration = {
+
+    action request(
+        input : _PutBucketAccelerateConfigurationRequest
+    )
+}
+
+# operation: PutBucketAcl
+object _PutBucketAcl = {
+
+    action request(
+        input : _PutBucketAclRequest
+    )
+}
+
+# operation: PutBucketAnalyticsConfiguration
+object _PutBucketAnalyticsConfiguration = {
+
+    action request(
+        input : _PutBucketAnalyticsConfigurationRequest
+    )
+}
+
+# operation: PutBucketCors
+object _PutBucketCors = {
+
+    action request(
+        input : _PutBucketCorsRequest
+    )
+}
+
+# operation: PutBucketEncryption
+object _PutBucketEncryption = {
+
+    action request(
+        input : _PutBucketEncryptionRequest
+    )
+}
+
+# operation: PutBucketIntelligentTieringConfiguration
+object _PutBucketIntelligentTieringConfiguration = {
+
+    action request(
+        input : _PutBucketIntelligentTieringConfigurationRequest
+    )
+}
+
+# operation: PutBucketInventoryConfiguration
+object _PutBucketInventoryConfiguration = {
+
+    action request(
+        input : _PutBucketInventoryConfigurationRequest
+    )
+}
+
+# operation: PutBucketLifecycle
+object _PutBucketLifecycle = {
+
+    action request(
+        input : _PutBucketLifecycleRequest
+    )
+}
+
+# operation: PutBucketLifecycleConfiguration
+object _PutBucketLifecycleConfiguration = {
+
+    action request(
+        input : _PutBucketLifecycleConfigurationRequest
+    )
+}
+
+# operation: PutBucketLogging
+object _PutBucketLogging = {
+
+    action request(
+        input : _PutBucketLoggingRequest
+    )
+}
+
+# operation: PutBucketMetricsConfiguration
+object _PutBucketMetricsConfiguration = {
+
+    action request(
+        input : _PutBucketMetricsConfigurationRequest
+    )
+}
+
+# operation: PutBucketNotification
+object _PutBucketNotification = {
+
+    action request(
+        input : _PutBucketNotificationRequest
+    )
+}
+
+# operation: PutBucketNotificationConfiguration
+object _PutBucketNotificationConfiguration = {
+
+    action request(
+        input : _PutBucketNotificationConfigurationRequest
+    )
+}
+
+# operation: PutBucketOwnershipControls
+object _PutBucketOwnershipControls = {
+
+    action request(
+        input : _PutBucketOwnershipControlsRequest
+    )
+}
+
+# operation: PutBucketPolicy
+object _PutBucketPolicy = {
+
+    action request(
+        input : _PutBucketPolicyRequest
+    )
+}
+
+# operation: PutBucketReplication
+object _PutBucketReplication = {
+
+    action request(
+        input : _PutBucketReplicationRequest
+    )
+}
+
+# operation: PutBucketRequestPayment
+object _PutBucketRequestPayment = {
+
+    action request(
+        input : _PutBucketRequestPaymentRequest
+    )
+}
+
+# operation: PutBucketTagging
+object _PutBucketTagging = {
+
+    action request(
+        input : _PutBucketTaggingRequest
+    )
+}
+
+# operation: PutBucketVersioning
+object _PutBucketVersioning = {
+
+    action request(
+        input : _PutBucketVersioningRequest
+    )
+}
+
+# operation: PutBucketWebsite
+object _PutBucketWebsite = {
+
+    action request(
+        input : _PutBucketWebsiteRequest
+    )
+}
+
+# operation: PutObject
+object _PutObject = {
+
+    action request(
+        input : _PutObjectRequest
+    )
+
+    action response_PutObjectOutput(val:_PutObjectOutput)
+}
+
+# operation: PutObjectAcl
+object _PutObjectAcl = {
+
+    action request(
+        input : _PutObjectAclRequest
+    )
+
+    action response_PutObjectAclOutput(val:_PutObjectAclOutput)
+
+    action response_NoSuchKey(val:_NoSuchKey)
+}
+
+# operation: PutObjectLegalHold
+object _PutObjectLegalHold = {
+
+    action request(
+        input : _PutObjectLegalHoldRequest
+    )
+
+    action response_PutObjectLegalHoldOutput(val:_PutObjectLegalHoldOutput)
+}
+
+# operation: PutObjectLockConfiguration
+object _PutObjectLockConfiguration = {
+
+    action request(
+        input : _PutObjectLockConfigurationRequest
+    )
+
+    action response_PutObjectLockConfigurationOutput(val:_PutObjectLockConfigurationOutput)
+}
+
+# operation: PutObjectRetention
+object _PutObjectRetention = {
+
+    action request(
+        input : _PutObjectRetentionRequest
+    )
+
+    action response_PutObjectRetentionOutput(val:_PutObjectRetentionOutput)
+}
+
+# operation: PutObjectTagging
+object _PutObjectTagging = {
+
+    action request(
+        input : _PutObjectTaggingRequest
+    )
+
+    action response_PutObjectTaggingOutput(val:_PutObjectTaggingOutput)
+}
+
+# operation: PutPublicAccessBlock
+object _PutPublicAccessBlock = {
+
+    action request(
+        input : _PutPublicAccessBlockRequest
+    )
+}
+
+# operation: RestoreObject
+object _RestoreObject = {
+
+    action request(
+        input : _RestoreObjectRequest
+    )
+
+    action response_RestoreObjectOutput(val:_RestoreObjectOutput)
+
+    action response_ObjectAlreadyInActiveTierError(val:_ObjectAlreadyInActiveTierError)
+}
+
+# operation: SelectObjectContent
+object _SelectObjectContent = {
+
+    action request(
+        input : _SelectObjectContentRequest
+    )
+
+    action response_SelectObjectContentOutput(val:_SelectObjectContentOutput)
+}
+
+# operation: UploadPart
+object _UploadPart = {
+
+    action request(
+        input : _UploadPartRequest
+    )
+
+    action response_UploadPartOutput(val:_UploadPartOutput)
+}
+
+# operation: UploadPartCopy
+object _UploadPartCopy = {
+
+    action request(
+        input : _UploadPartCopyRequest
+    )
+
+    action response_UploadPartCopyOutput(val:_UploadPartCopyOutput)
+}
+
+# operation: WriteGetObjectResponse
+object _WriteGetObjectResponse = {
+
+    action request(
+        input : _WriteGetObjectResponseRequest
+    )
+}
+
+<<< impl
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/GetObjectRequest.h>
+>>>
+<<< init 
+{
+    Aws::SDKOptions options;
+    Aws::InitAPI(options);
+}
+>>>
+
+
+<<< impl
+#include <aws/s3/model/AbortMultipartUpload.h>
+>>>
+
+
+implement _AbortMultipartUpload.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::AbortMultipartUploadRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetUploadId(input._UploadId);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_AbortMultipartUploadOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._UploadId = result.GetUploadId();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_AbortMultipartUpload.response_AbortMultipartUploadOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/CompleteMultipartUpload.h>
+>>>
+
+
+implement _CompleteMultipartUpload.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::CompleteMultipartUploadRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetMultipartUpload(input._MultipartUpload);
+    request.SetUploadId(input._UploadId);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_CompleteMultipartUploadOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._MultipartUpload = result.GetMultipartUpload();
+        res._UploadId = result.GetUploadId();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_CompleteMultipartUpload.response_CompleteMultipartUploadOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/CopyObject.h>
+>>>
+
+
+implement _CopyObject.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::CopyObjectRequest request;
+    request.SetACL(input._ACL);
+    request.SetBucket(input._Bucket);
+    request.SetCacheControl(input._CacheControl);
+    request.SetContentDisposition(input._ContentDisposition);
+    request.SetContentEncoding(input._ContentEncoding);
+    request.SetContentLanguage(input._ContentLanguage);
+    request.SetContentType(input._ContentType);
+    request.SetCopySource(input._CopySource);
+    request.SetCopySourceIfMatch(input._CopySourceIfMatch);
+    request.SetCopySourceIfModifiedSince(input._CopySourceIfModifiedSince);
+    request.SetCopySourceIfNoneMatch(input._CopySourceIfNoneMatch);
+    request.SetCopySourceIfUnmodifiedSince(input._CopySourceIfUnmodifiedSince);
+    request.SetExpires(input._Expires);
+    request.SetGrantFullControl(input._GrantFullControl);
+    request.SetGrantRead(input._GrantRead);
+    request.SetGrantReadACP(input._GrantReadACP);
+    request.SetGrantWriteACP(input._GrantWriteACP);
+    request.SetKey(input._Key);
+    request.SetMetadata(input._Metadata);
+    request.SetMetadataDirective(input._MetadataDirective);
+    request.SetTaggingDirective(input._TaggingDirective);
+    request.SetServerSideEncryption(input._ServerSideEncryption);
+    request.SetStorageClass(input._StorageClass);
+    request.SetWebsiteRedirectLocation(input._WebsiteRedirectLocation);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetSSEKMSKeyId(input._SSEKMSKeyId);
+    request.SetSSEKMSEncryptionContext(input._SSEKMSEncryptionContext);
+    request.SetBucketKeyEnabled(input._BucketKeyEnabled);
+    request.SetCopySourceSSECustomerAlgorithm(input._CopySourceSSECustomerAlgorithm);
+    request.SetCopySourceSSECustomerKey(input._CopySourceSSECustomerKey);
+    request.SetCopySourceSSECustomerKeyMD5(input._CopySourceSSECustomerKeyMD5);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetTagging(input._Tagging);
+    request.SetObjectLockMode(input._ObjectLockMode);
+    request.SetObjectLockRetainUntilDate(input._ObjectLockRetainUntilDate);
+    request.SetObjectLockLegalHoldStatus(input._ObjectLockLegalHoldStatus);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    request.SetExpectedSourceBucketOwner(input._ExpectedSourceBucketOwner);
+    Aws::S3::Model::ExpectedSourceBucketOwnerOutcome outcome = s3_client.ExpectedSourceBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_CopyObjectOutput` res;
+        res._ACL = result.GetACL();
+        res._Bucket = result.GetBucket();
+        res._CacheControl = result.GetCacheControl();
+        res._ContentDisposition = result.GetContentDisposition();
+        res._ContentEncoding = result.GetContentEncoding();
+        res._ContentLanguage = result.GetContentLanguage();
+        res._ContentType = result.GetContentType();
+        res._CopySource = result.GetCopySource();
+        res._CopySourceIfMatch = result.GetCopySourceIfMatch();
+        res._CopySourceIfModifiedSince = result.GetCopySourceIfModifiedSince();
+        res._CopySourceIfNoneMatch = result.GetCopySourceIfNoneMatch();
+        res._CopySourceIfUnmodifiedSince = result.GetCopySourceIfUnmodifiedSince();
+        res._Expires = result.GetExpires();
+        res._GrantFullControl = result.GetGrantFullControl();
+        res._GrantRead = result.GetGrantRead();
+        res._GrantReadACP = result.GetGrantReadACP();
+        res._GrantWriteACP = result.GetGrantWriteACP();
+        res._Key = result.GetKey();
+        res._Metadata = result.GetMetadata();
+        res._MetadataDirective = result.GetMetadataDirective();
+        res._TaggingDirective = result.GetTaggingDirective();
+        res._ServerSideEncryption = result.GetServerSideEncryption();
+        res._StorageClass = result.GetStorageClass();
+        res._WebsiteRedirectLocation = result.GetWebsiteRedirectLocation();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._SSEKMSKeyId = result.GetSSEKMSKeyId();
+        res._SSEKMSEncryptionContext = result.GetSSEKMSEncryptionContext();
+        res._BucketKeyEnabled = result.GetBucketKeyEnabled();
+        res._CopySourceSSECustomerAlgorithm = result.GetCopySourceSSECustomerAlgorithm();
+        res._CopySourceSSECustomerKey = result.GetCopySourceSSECustomerKey();
+        res._CopySourceSSECustomerKeyMD5 = result.GetCopySourceSSECustomerKeyMD5();
+        res._RequestPayer = result.GetRequestPayer();
+        res._Tagging = result.GetTagging();
+        res._ObjectLockMode = result.GetObjectLockMode();
+        res._ObjectLockRetainUntilDate = result.GetObjectLockRetainUntilDate();
+        res._ObjectLockLegalHoldStatus = result.GetObjectLockLegalHoldStatus();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        res._ExpectedSourceBucketOwner = result.GetExpectedSourceBucketOwner();
+        `_CopyObject.response_CopyObjectOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/CreateBucket.h>
+>>>
+
+
+implement _CreateBucket.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::CreateBucketRequest request;
+    request.SetACL(input._ACL);
+    request.SetBucket(input._Bucket);
+    request.SetCreateBucketConfiguration(input._CreateBucketConfiguration);
+    request.SetGrantFullControl(input._GrantFullControl);
+    request.SetGrantRead(input._GrantRead);
+    request.SetGrantReadACP(input._GrantReadACP);
+    request.SetGrantWrite(input._GrantWrite);
+    request.SetGrantWriteACP(input._GrantWriteACP);
+    request.SetObjectLockEnabledForBucket(input._ObjectLockEnabledForBucket);
+    Aws::S3::Model::ObjectLockEnabledForBucketOutcome outcome = s3_client.ObjectLockEnabledForBucket(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_CreateBucketOutput` res;
+        res._ACL = result.GetACL();
+        res._Bucket = result.GetBucket();
+        res._CreateBucketConfiguration = result.GetCreateBucketConfiguration();
+        res._GrantFullControl = result.GetGrantFullControl();
+        res._GrantRead = result.GetGrantRead();
+        res._GrantReadACP = result.GetGrantReadACP();
+        res._GrantWrite = result.GetGrantWrite();
+        res._GrantWriteACP = result.GetGrantWriteACP();
+        res._ObjectLockEnabledForBucket = result.GetObjectLockEnabledForBucket();
+        `_CreateBucket.response_CreateBucketOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/CreateMultipartUpload.h>
+>>>
+
+
+implement _CreateMultipartUpload.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::CreateMultipartUploadRequest request;
+    request.SetACL(input._ACL);
+    request.SetBucket(input._Bucket);
+    request.SetCacheControl(input._CacheControl);
+    request.SetContentDisposition(input._ContentDisposition);
+    request.SetContentEncoding(input._ContentEncoding);
+    request.SetContentLanguage(input._ContentLanguage);
+    request.SetContentType(input._ContentType);
+    request.SetExpires(input._Expires);
+    request.SetGrantFullControl(input._GrantFullControl);
+    request.SetGrantRead(input._GrantRead);
+    request.SetGrantReadACP(input._GrantReadACP);
+    request.SetGrantWriteACP(input._GrantWriteACP);
+    request.SetKey(input._Key);
+    request.SetMetadata(input._Metadata);
+    request.SetServerSideEncryption(input._ServerSideEncryption);
+    request.SetStorageClass(input._StorageClass);
+    request.SetWebsiteRedirectLocation(input._WebsiteRedirectLocation);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetSSEKMSKeyId(input._SSEKMSKeyId);
+    request.SetSSEKMSEncryptionContext(input._SSEKMSEncryptionContext);
+    request.SetBucketKeyEnabled(input._BucketKeyEnabled);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetTagging(input._Tagging);
+    request.SetObjectLockMode(input._ObjectLockMode);
+    request.SetObjectLockRetainUntilDate(input._ObjectLockRetainUntilDate);
+    request.SetObjectLockLegalHoldStatus(input._ObjectLockLegalHoldStatus);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_CreateMultipartUploadOutput` res;
+        res._ACL = result.GetACL();
+        res._Bucket = result.GetBucket();
+        res._CacheControl = result.GetCacheControl();
+        res._ContentDisposition = result.GetContentDisposition();
+        res._ContentEncoding = result.GetContentEncoding();
+        res._ContentLanguage = result.GetContentLanguage();
+        res._ContentType = result.GetContentType();
+        res._Expires = result.GetExpires();
+        res._GrantFullControl = result.GetGrantFullControl();
+        res._GrantRead = result.GetGrantRead();
+        res._GrantReadACP = result.GetGrantReadACP();
+        res._GrantWriteACP = result.GetGrantWriteACP();
+        res._Key = result.GetKey();
+        res._Metadata = result.GetMetadata();
+        res._ServerSideEncryption = result.GetServerSideEncryption();
+        res._StorageClass = result.GetStorageClass();
+        res._WebsiteRedirectLocation = result.GetWebsiteRedirectLocation();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._SSEKMSKeyId = result.GetSSEKMSKeyId();
+        res._SSEKMSEncryptionContext = result.GetSSEKMSEncryptionContext();
+        res._BucketKeyEnabled = result.GetBucketKeyEnabled();
+        res._RequestPayer = result.GetRequestPayer();
+        res._Tagging = result.GetTagging();
+        res._ObjectLockMode = result.GetObjectLockMode();
+        res._ObjectLockRetainUntilDate = result.GetObjectLockRetainUntilDate();
+        res._ObjectLockLegalHoldStatus = result.GetObjectLockLegalHoldStatus();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_CreateMultipartUpload.response_CreateMultipartUploadOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucket.h>
+>>>
+
+
+implement _DeleteBucket.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketAnalyticsConfiguration.h>
+>>>
+
+
+implement _DeleteBucketAnalyticsConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketAnalyticsConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketCors.h>
+>>>
+
+
+implement _DeleteBucketCors.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketCorsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketEncryption.h>
+>>>
+
+
+implement _DeleteBucketEncryption.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketEncryptionRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketIntelligentTieringConfiguration.h>
+>>>
+
+
+implement _DeleteBucketIntelligentTieringConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketIntelligentTieringConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    Aws::S3::Model::IdOutcome outcome = s3_client.Id(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketInventoryConfiguration.h>
+>>>
+
+
+implement _DeleteBucketInventoryConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketInventoryConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketLifecycle.h>
+>>>
+
+
+implement _DeleteBucketLifecycle.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketLifecycleRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketMetricsConfiguration.h>
+>>>
+
+
+implement _DeleteBucketMetricsConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketMetricsConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketOwnershipControls.h>
+>>>
+
+
+implement _DeleteBucketOwnershipControls.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketOwnershipControlsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketPolicy.h>
+>>>
+
+
+implement _DeleteBucketPolicy.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketPolicyRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketReplication.h>
+>>>
+
+
+implement _DeleteBucketReplication.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketReplicationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketTagging.h>
+>>>
+
+
+implement _DeleteBucketTagging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketTaggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteBucketWebsite.h>
+>>>
+
+
+implement _DeleteBucketWebsite.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteBucketWebsiteRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteObject.h>
+>>>
+
+
+implement _DeleteObject.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteObjectRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetMFA(input._MFA);
+    request.SetVersionId(input._VersionId);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetBypassGovernanceRetention(input._BypassGovernanceRetention);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_DeleteObjectOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._MFA = result.GetMFA();
+        res._VersionId = result.GetVersionId();
+        res._RequestPayer = result.GetRequestPayer();
+        res._BypassGovernanceRetention = result.GetBypassGovernanceRetention();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_DeleteObject.response_DeleteObjectOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteObjectTagging.h>
+>>>
+
+
+implement _DeleteObjectTagging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteObjectTaggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetVersionId(input._VersionId);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_DeleteObjectTaggingOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._VersionId = result.GetVersionId();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_DeleteObjectTagging.response_DeleteObjectTaggingOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeleteObjects.h>
+>>>
+
+
+implement _DeleteObjects.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeleteObjectsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetDelete(input._Delete);
+    request.SetMFA(input._MFA);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetBypassGovernanceRetention(input._BypassGovernanceRetention);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_DeleteObjectsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Delete = result.GetDelete();
+        res._MFA = result.GetMFA();
+        res._RequestPayer = result.GetRequestPayer();
+        res._BypassGovernanceRetention = result.GetBypassGovernanceRetention();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_DeleteObjects.response_DeleteObjectsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/DeletePublicAccessBlock.h>
+>>>
+
+
+implement _DeletePublicAccessBlock.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::DeletePublicAccessBlockRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketAccelerateConfiguration.h>
+>>>
+
+
+implement _GetBucketAccelerateConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketAccelerateConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketAccelerateConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketAccelerateConfiguration.response_GetBucketAccelerateConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketAcl.h>
+>>>
+
+
+implement _GetBucketAcl.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketAclRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketAclOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketAcl.response_GetBucketAclOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketAnalyticsConfiguration.h>
+>>>
+
+
+implement _GetBucketAnalyticsConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketAnalyticsConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketAnalyticsConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Id = result.GetId();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketAnalyticsConfiguration.response_GetBucketAnalyticsConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketCors.h>
+>>>
+
+
+implement _GetBucketCors.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketCorsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketCorsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketCors.response_GetBucketCorsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketEncryption.h>
+>>>
+
+
+implement _GetBucketEncryption.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketEncryptionRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketEncryptionOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketEncryption.response_GetBucketEncryptionOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketIntelligentTieringConfiguration.h>
+>>>
+
+
+implement _GetBucketIntelligentTieringConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketIntelligentTieringConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    Aws::S3::Model::IdOutcome outcome = s3_client.Id(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketIntelligentTieringConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Id = result.GetId();
+        `_GetBucketIntelligentTieringConfiguration.response_GetBucketIntelligentTieringConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketInventoryConfiguration.h>
+>>>
+
+
+implement _GetBucketInventoryConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketInventoryConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketInventoryConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Id = result.GetId();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketInventoryConfiguration.response_GetBucketInventoryConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketLifecycle.h>
+>>>
+
+
+implement _GetBucketLifecycle.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketLifecycleRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketLifecycleOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketLifecycle.response_GetBucketLifecycleOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketLifecycleConfiguration.h>
+>>>
+
+
+implement _GetBucketLifecycleConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketLifecycleConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketLifecycleConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketLifecycleConfiguration.response_GetBucketLifecycleConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketLocation.h>
+>>>
+
+
+implement _GetBucketLocation.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketLocationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketLocationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketLocation.response_GetBucketLocationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketLogging.h>
+>>>
+
+
+implement _GetBucketLogging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketLoggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketLoggingOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketLogging.response_GetBucketLoggingOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketMetricsConfiguration.h>
+>>>
+
+
+implement _GetBucketMetricsConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketMetricsConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketMetricsConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Id = result.GetId();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketMetricsConfiguration.response_GetBucketMetricsConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketNotification.h>
+>>>
+
+
+implement _GetBucketNotification.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketNotificationConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_NotificationConfigurationDeprecated` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketNotification.response_NotificationConfigurationDeprecated`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketNotificationConfiguration.h>
+>>>
+
+
+implement _GetBucketNotificationConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketNotificationConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_NotificationConfiguration` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketNotificationConfiguration.response_NotificationConfiguration`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketOwnershipControls.h>
+>>>
+
+
+implement _GetBucketOwnershipControls.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketOwnershipControlsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketOwnershipControlsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketOwnershipControls.response_GetBucketOwnershipControlsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketPolicy.h>
+>>>
+
+
+implement _GetBucketPolicy.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketPolicyRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketPolicyOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketPolicy.response_GetBucketPolicyOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketPolicyStatus.h>
+>>>
+
+
+implement _GetBucketPolicyStatus.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketPolicyStatusRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketPolicyStatusOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketPolicyStatus.response_GetBucketPolicyStatusOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketReplication.h>
+>>>
+
+
+implement _GetBucketReplication.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketReplicationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketReplicationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketReplication.response_GetBucketReplicationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketRequestPayment.h>
+>>>
+
+
+implement _GetBucketRequestPayment.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketRequestPaymentRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketRequestPaymentOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketRequestPayment.response_GetBucketRequestPaymentOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketTagging.h>
+>>>
+
+
+implement _GetBucketTagging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketTaggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketTaggingOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketTagging.response_GetBucketTaggingOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketVersioning.h>
+>>>
+
+
+implement _GetBucketVersioning.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketVersioningRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketVersioningOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketVersioning.response_GetBucketVersioningOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetBucketWebsite.h>
+>>>
+
+
+implement _GetBucketWebsite.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetBucketWebsiteRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetBucketWebsiteOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetBucketWebsite.response_GetBucketWebsiteOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetObject.h>
+>>>
+
+
+implement _GetObject.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetObjectRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetIfMatch(input._IfMatch);
+    request.SetIfModifiedSince(input._IfModifiedSince);
+    request.SetIfNoneMatch(input._IfNoneMatch);
+    request.SetIfUnmodifiedSince(input._IfUnmodifiedSince);
+    request.SetKey(input._Key);
+    request.SetRange(input._Range);
+    request.SetResponseCacheControl(input._ResponseCacheControl);
+    request.SetResponseContentDisposition(input._ResponseContentDisposition);
+    request.SetResponseContentEncoding(input._ResponseContentEncoding);
+    request.SetResponseContentLanguage(input._ResponseContentLanguage);
+    request.SetResponseContentType(input._ResponseContentType);
+    request.SetResponseExpires(input._ResponseExpires);
+    request.SetVersionId(input._VersionId);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetPartNumber(input._PartNumber);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetObjectOutput` res;
+        res._Bucket = result.GetBucket();
+        res._IfMatch = result.GetIfMatch();
+        res._IfModifiedSince = result.GetIfModifiedSince();
+        res._IfNoneMatch = result.GetIfNoneMatch();
+        res._IfUnmodifiedSince = result.GetIfUnmodifiedSince();
+        res._Key = result.GetKey();
+        res._Range = result.GetRange();
+        res._ResponseCacheControl = result.GetResponseCacheControl();
+        res._ResponseContentDisposition = result.GetResponseContentDisposition();
+        res._ResponseContentEncoding = result.GetResponseContentEncoding();
+        res._ResponseContentLanguage = result.GetResponseContentLanguage();
+        res._ResponseContentType = result.GetResponseContentType();
+        res._ResponseExpires = result.GetResponseExpires();
+        res._VersionId = result.GetVersionId();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._RequestPayer = result.GetRequestPayer();
+        res._PartNumber = result.GetPartNumber();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetObject.response_GetObjectOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetObjectAcl.h>
+>>>
+
+
+implement _GetObjectAcl.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetObjectAclRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetVersionId(input._VersionId);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetObjectAclOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._VersionId = result.GetVersionId();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetObjectAcl.response_GetObjectAclOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetObjectLegalHold.h>
+>>>
+
+
+implement _GetObjectLegalHold.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetObjectLegalHoldRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetVersionId(input._VersionId);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetObjectLegalHoldOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._VersionId = result.GetVersionId();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetObjectLegalHold.response_GetObjectLegalHoldOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetObjectLockConfiguration.h>
+>>>
+
+
+implement _GetObjectLockConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetObjectLockConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetObjectLockConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetObjectLockConfiguration.response_GetObjectLockConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetObjectRetention.h>
+>>>
+
+
+implement _GetObjectRetention.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetObjectRetentionRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetVersionId(input._VersionId);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetObjectRetentionOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._VersionId = result.GetVersionId();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetObjectRetention.response_GetObjectRetentionOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetObjectTagging.h>
+>>>
+
+
+implement _GetObjectTagging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetObjectTaggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetVersionId(input._VersionId);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    request.SetRequestPayer(input._RequestPayer);
+    Aws::S3::Model::RequestPayerOutcome outcome = s3_client.RequestPayer(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetObjectTaggingOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._VersionId = result.GetVersionId();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        res._RequestPayer = result.GetRequestPayer();
+        `_GetObjectTagging.response_GetObjectTaggingOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetObjectTorrent.h>
+>>>
+
+
+implement _GetObjectTorrent.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetObjectTorrentRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetObjectTorrentOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetObjectTorrent.response_GetObjectTorrentOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/GetPublicAccessBlock.h>
+>>>
+
+
+implement _GetPublicAccessBlock.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::GetPublicAccessBlockRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_GetPublicAccessBlockOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_GetPublicAccessBlock.response_GetPublicAccessBlockOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/HeadBucket.h>
+>>>
+
+
+implement _HeadBucket.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::HeadBucketRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/HeadObject.h>
+>>>
+
+
+implement _HeadObject.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::HeadObjectRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetIfMatch(input._IfMatch);
+    request.SetIfModifiedSince(input._IfModifiedSince);
+    request.SetIfNoneMatch(input._IfNoneMatch);
+    request.SetIfUnmodifiedSince(input._IfUnmodifiedSince);
+    request.SetKey(input._Key);
+    request.SetRange(input._Range);
+    request.SetVersionId(input._VersionId);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetPartNumber(input._PartNumber);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_HeadObjectOutput` res;
+        res._Bucket = result.GetBucket();
+        res._IfMatch = result.GetIfMatch();
+        res._IfModifiedSince = result.GetIfModifiedSince();
+        res._IfNoneMatch = result.GetIfNoneMatch();
+        res._IfUnmodifiedSince = result.GetIfUnmodifiedSince();
+        res._Key = result.GetKey();
+        res._Range = result.GetRange();
+        res._VersionId = result.GetVersionId();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._RequestPayer = result.GetRequestPayer();
+        res._PartNumber = result.GetPartNumber();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_HeadObject.response_HeadObjectOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListBucketAnalyticsConfigurations.h>
+>>>
+
+
+implement _ListBucketAnalyticsConfigurations.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListBucketAnalyticsConfigurationsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContinuationToken(input._ContinuationToken);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListBucketAnalyticsConfigurationsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ContinuationToken = result.GetContinuationToken();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListBucketAnalyticsConfigurations.response_ListBucketAnalyticsConfigurationsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListBucketIntelligentTieringConfigurations.h>
+>>>
+
+
+implement _ListBucketIntelligentTieringConfigurations.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListBucketIntelligentTieringConfigurationsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContinuationToken(input._ContinuationToken);
+    Aws::S3::Model::ContinuationTokenOutcome outcome = s3_client.ContinuationToken(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListBucketIntelligentTieringConfigurationsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ContinuationToken = result.GetContinuationToken();
+        `_ListBucketIntelligentTieringConfigurations.response_ListBucketIntelligentTieringConfigurationsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListBucketInventoryConfigurations.h>
+>>>
+
+
+implement _ListBucketInventoryConfigurations.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListBucketInventoryConfigurationsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContinuationToken(input._ContinuationToken);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListBucketInventoryConfigurationsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ContinuationToken = result.GetContinuationToken();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListBucketInventoryConfigurations.response_ListBucketInventoryConfigurationsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListBucketMetricsConfigurations.h>
+>>>
+
+
+implement _ListBucketMetricsConfigurations.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListBucketMetricsConfigurationsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContinuationToken(input._ContinuationToken);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListBucketMetricsConfigurationsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ContinuationToken = result.GetContinuationToken();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListBucketMetricsConfigurations.response_ListBucketMetricsConfigurationsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListBuckets.h>
+>>>
+
+
+implement _ListBuckets.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+        Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner();
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListBucketsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ContinuationToken = result.GetContinuationToken();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListBuckets.response_ListBucketsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListMultipartUploads.h>
+>>>
+
+
+implement _ListMultipartUploads.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListMultipartUploadsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetDelimiter(input._Delimiter);
+    request.SetEncodingType(input._EncodingType);
+    request.SetKeyMarker(input._KeyMarker);
+    request.SetMaxUploads(input._MaxUploads);
+    request.SetPrefix(input._Prefix);
+    request.SetUploadIdMarker(input._UploadIdMarker);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListMultipartUploadsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Delimiter = result.GetDelimiter();
+        res._EncodingType = result.GetEncodingType();
+        res._KeyMarker = result.GetKeyMarker();
+        res._MaxUploads = result.GetMaxUploads();
+        res._Prefix = result.GetPrefix();
+        res._UploadIdMarker = result.GetUploadIdMarker();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListMultipartUploads.response_ListMultipartUploadsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListObjectVersions.h>
+>>>
+
+
+implement _ListObjectVersions.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListObjectVersionsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetDelimiter(input._Delimiter);
+    request.SetEncodingType(input._EncodingType);
+    request.SetKeyMarker(input._KeyMarker);
+    request.SetMaxKeys(input._MaxKeys);
+    request.SetPrefix(input._Prefix);
+    request.SetVersionIdMarker(input._VersionIdMarker);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListObjectVersionsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Delimiter = result.GetDelimiter();
+        res._EncodingType = result.GetEncodingType();
+        res._KeyMarker = result.GetKeyMarker();
+        res._MaxKeys = result.GetMaxKeys();
+        res._Prefix = result.GetPrefix();
+        res._VersionIdMarker = result.GetVersionIdMarker();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListObjectVersions.response_ListObjectVersionsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListObjects.h>
+>>>
+
+
+implement _ListObjects.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListObjectsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetDelimiter(input._Delimiter);
+    request.SetEncodingType(input._EncodingType);
+    request.SetMarker(input._Marker);
+    request.SetMaxKeys(input._MaxKeys);
+    request.SetPrefix(input._Prefix);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListObjectsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Delimiter = result.GetDelimiter();
+        res._EncodingType = result.GetEncodingType();
+        res._Marker = result.GetMarker();
+        res._MaxKeys = result.GetMaxKeys();
+        res._Prefix = result.GetPrefix();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListObjects.response_ListObjectsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListObjectsV2.h>
+>>>
+
+
+implement _ListObjectsV2.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListObjectsV2Request request;
+    request.SetBucket(input._Bucket);
+    request.SetDelimiter(input._Delimiter);
+    request.SetEncodingType(input._EncodingType);
+    request.SetMaxKeys(input._MaxKeys);
+    request.SetPrefix(input._Prefix);
+    request.SetContinuationToken(input._ContinuationToken);
+    request.SetFetchOwner(input._FetchOwner);
+    request.SetStartAfter(input._StartAfter);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListObjectsV2Output` res;
+        res._Bucket = result.GetBucket();
+        res._Delimiter = result.GetDelimiter();
+        res._EncodingType = result.GetEncodingType();
+        res._MaxKeys = result.GetMaxKeys();
+        res._Prefix = result.GetPrefix();
+        res._ContinuationToken = result.GetContinuationToken();
+        res._FetchOwner = result.GetFetchOwner();
+        res._StartAfter = result.GetStartAfter();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListObjectsV2.response_ListObjectsV2Output`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/ListParts.h>
+>>>
+
+
+implement _ListParts.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::ListPartsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetMaxParts(input._MaxParts);
+    request.SetPartNumberMarker(input._PartNumberMarker);
+    request.SetUploadId(input._UploadId);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_ListPartsOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._MaxParts = result.GetMaxParts();
+        res._PartNumberMarker = result.GetPartNumberMarker();
+        res._UploadId = result.GetUploadId();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_ListParts.response_ListPartsOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketAccelerateConfiguration.h>
+>>>
+
+
+implement _PutBucketAccelerateConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketAccelerateConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetAccelerateConfiguration(input._AccelerateConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketAcl.h>
+>>>
+
+
+implement _PutBucketAcl.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketAclRequest request;
+    request.SetACL(input._ACL);
+    request.SetAccessControlPolicy(input._AccessControlPolicy);
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetGrantFullControl(input._GrantFullControl);
+    request.SetGrantRead(input._GrantRead);
+    request.SetGrantReadACP(input._GrantReadACP);
+    request.SetGrantWrite(input._GrantWrite);
+    request.SetGrantWriteACP(input._GrantWriteACP);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketAnalyticsConfiguration.h>
+>>>
+
+
+implement _PutBucketAnalyticsConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketAnalyticsConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetAnalyticsConfiguration(input._AnalyticsConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketCors.h>
+>>>
+
+
+implement _PutBucketCors.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketCorsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetCORSConfiguration(input._CORSConfiguration);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketEncryption.h>
+>>>
+
+
+implement _PutBucketEncryption.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketEncryptionRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetServerSideEncryptionConfiguration(input._ServerSideEncryptionConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketIntelligentTieringConfiguration.h>
+>>>
+
+
+implement _PutBucketIntelligentTieringConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketIntelligentTieringConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetIntelligentTieringConfiguration(input._IntelligentTieringConfiguration);
+    Aws::S3::Model::IntelligentTieringConfigurationOutcome outcome = s3_client.IntelligentTieringConfiguration(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketInventoryConfiguration.h>
+>>>
+
+
+implement _PutBucketInventoryConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketInventoryConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetInventoryConfiguration(input._InventoryConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketLifecycle.h>
+>>>
+
+
+implement _PutBucketLifecycle.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketLifecycleRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetLifecycleConfiguration(input._LifecycleConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketLifecycleConfiguration.h>
+>>>
+
+
+implement _PutBucketLifecycleConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketLifecycleConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetLifecycleConfiguration(input._LifecycleConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketLogging.h>
+>>>
+
+
+implement _PutBucketLogging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketLoggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetBucketLoggingStatus(input._BucketLoggingStatus);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketMetricsConfiguration.h>
+>>>
+
+
+implement _PutBucketMetricsConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketMetricsConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetId(input._Id);
+    request.SetMetricsConfiguration(input._MetricsConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketNotification.h>
+>>>
+
+
+implement _PutBucketNotification.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketNotificationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetNotificationConfiguration(input._NotificationConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketNotificationConfiguration.h>
+>>>
+
+
+implement _PutBucketNotificationConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketNotificationConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetNotificationConfiguration(input._NotificationConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketOwnershipControls.h>
+>>>
+
+
+implement _PutBucketOwnershipControls.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketOwnershipControlsRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    request.SetOwnershipControls(input._OwnershipControls);
+    Aws::S3::Model::OwnershipControlsOutcome outcome = s3_client.OwnershipControls(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketPolicy.h>
+>>>
+
+
+implement _PutBucketPolicy.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketPolicyRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetConfirmRemoveSelfBucketAccess(input._ConfirmRemoveSelfBucketAccess);
+    request.SetPolicy(input._Policy);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketReplication.h>
+>>>
+
+
+implement _PutBucketReplication.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketReplicationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetReplicationConfiguration(input._ReplicationConfiguration);
+    request.SetToken(input._Token);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketRequestPayment.h>
+>>>
+
+
+implement _PutBucketRequestPayment.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketRequestPaymentRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetRequestPaymentConfiguration(input._RequestPaymentConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketTagging.h>
+>>>
+
+
+implement _PutBucketTagging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketTaggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetTagging(input._Tagging);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketVersioning.h>
+>>>
+
+
+implement _PutBucketVersioning.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketVersioningRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetMFA(input._MFA);
+    request.SetVersioningConfiguration(input._VersioningConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutBucketWebsite.h>
+>>>
+
+
+implement _PutBucketWebsite.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutBucketWebsiteRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetWebsiteConfiguration(input._WebsiteConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutObject.h>
+>>>
+
+
+implement _PutObject.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutObjectRequest request;
+    request.SetACL(input._ACL);
+    request.SetBody(input._Body);
+    request.SetBucket(input._Bucket);
+    request.SetCacheControl(input._CacheControl);
+    request.SetContentDisposition(input._ContentDisposition);
+    request.SetContentEncoding(input._ContentEncoding);
+    request.SetContentLanguage(input._ContentLanguage);
+    request.SetContentLength(input._ContentLength);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetContentType(input._ContentType);
+    request.SetExpires(input._Expires);
+    request.SetGrantFullControl(input._GrantFullControl);
+    request.SetGrantRead(input._GrantRead);
+    request.SetGrantReadACP(input._GrantReadACP);
+    request.SetGrantWriteACP(input._GrantWriteACP);
+    request.SetKey(input._Key);
+    request.SetMetadata(input._Metadata);
+    request.SetServerSideEncryption(input._ServerSideEncryption);
+    request.SetStorageClass(input._StorageClass);
+    request.SetWebsiteRedirectLocation(input._WebsiteRedirectLocation);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetSSEKMSKeyId(input._SSEKMSKeyId);
+    request.SetSSEKMSEncryptionContext(input._SSEKMSEncryptionContext);
+    request.SetBucketKeyEnabled(input._BucketKeyEnabled);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetTagging(input._Tagging);
+    request.SetObjectLockMode(input._ObjectLockMode);
+    request.SetObjectLockRetainUntilDate(input._ObjectLockRetainUntilDate);
+    request.SetObjectLockLegalHoldStatus(input._ObjectLockLegalHoldStatus);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_PutObjectOutput` res;
+        res._ACL = result.GetACL();
+        res._Body = result.GetBody();
+        res._Bucket = result.GetBucket();
+        res._CacheControl = result.GetCacheControl();
+        res._ContentDisposition = result.GetContentDisposition();
+        res._ContentEncoding = result.GetContentEncoding();
+        res._ContentLanguage = result.GetContentLanguage();
+        res._ContentLength = result.GetContentLength();
+        res._ContentMD5 = result.GetContentMD5();
+        res._ContentType = result.GetContentType();
+        res._Expires = result.GetExpires();
+        res._GrantFullControl = result.GetGrantFullControl();
+        res._GrantRead = result.GetGrantRead();
+        res._GrantReadACP = result.GetGrantReadACP();
+        res._GrantWriteACP = result.GetGrantWriteACP();
+        res._Key = result.GetKey();
+        res._Metadata = result.GetMetadata();
+        res._ServerSideEncryption = result.GetServerSideEncryption();
+        res._StorageClass = result.GetStorageClass();
+        res._WebsiteRedirectLocation = result.GetWebsiteRedirectLocation();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._SSEKMSKeyId = result.GetSSEKMSKeyId();
+        res._SSEKMSEncryptionContext = result.GetSSEKMSEncryptionContext();
+        res._BucketKeyEnabled = result.GetBucketKeyEnabled();
+        res._RequestPayer = result.GetRequestPayer();
+        res._Tagging = result.GetTagging();
+        res._ObjectLockMode = result.GetObjectLockMode();
+        res._ObjectLockRetainUntilDate = result.GetObjectLockRetainUntilDate();
+        res._ObjectLockLegalHoldStatus = result.GetObjectLockLegalHoldStatus();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_PutObject.response_PutObjectOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutObjectAcl.h>
+>>>
+
+
+implement _PutObjectAcl.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutObjectAclRequest request;
+    request.SetACL(input._ACL);
+    request.SetAccessControlPolicy(input._AccessControlPolicy);
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetGrantFullControl(input._GrantFullControl);
+    request.SetGrantRead(input._GrantRead);
+    request.SetGrantReadACP(input._GrantReadACP);
+    request.SetGrantWrite(input._GrantWrite);
+    request.SetGrantWriteACP(input._GrantWriteACP);
+    request.SetKey(input._Key);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetVersionId(input._VersionId);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_PutObjectAclOutput` res;
+        res._ACL = result.GetACL();
+        res._AccessControlPolicy = result.GetAccessControlPolicy();
+        res._Bucket = result.GetBucket();
+        res._ContentMD5 = result.GetContentMD5();
+        res._GrantFullControl = result.GetGrantFullControl();
+        res._GrantRead = result.GetGrantRead();
+        res._GrantReadACP = result.GetGrantReadACP();
+        res._GrantWrite = result.GetGrantWrite();
+        res._GrantWriteACP = result.GetGrantWriteACP();
+        res._Key = result.GetKey();
+        res._RequestPayer = result.GetRequestPayer();
+        res._VersionId = result.GetVersionId();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_PutObjectAcl.response_PutObjectAclOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutObjectLegalHold.h>
+>>>
+
+
+implement _PutObjectLegalHold.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutObjectLegalHoldRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetLegalHold(input._LegalHold);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetVersionId(input._VersionId);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_PutObjectLegalHoldOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._LegalHold = result.GetLegalHold();
+        res._RequestPayer = result.GetRequestPayer();
+        res._VersionId = result.GetVersionId();
+        res._ContentMD5 = result.GetContentMD5();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_PutObjectLegalHold.response_PutObjectLegalHoldOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutObjectLockConfiguration.h>
+>>>
+
+
+implement _PutObjectLockConfiguration.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutObjectLockConfigurationRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetObjectLockConfiguration(input._ObjectLockConfiguration);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetToken(input._Token);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_PutObjectLockConfigurationOutput` res;
+        res._Bucket = result.GetBucket();
+        res._ObjectLockConfiguration = result.GetObjectLockConfiguration();
+        res._RequestPayer = result.GetRequestPayer();
+        res._Token = result.GetToken();
+        res._ContentMD5 = result.GetContentMD5();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_PutObjectLockConfiguration.response_PutObjectLockConfigurationOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutObjectRetention.h>
+>>>
+
+
+implement _PutObjectRetention.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutObjectRetentionRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetRetention(input._Retention);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetVersionId(input._VersionId);
+    request.SetBypassGovernanceRetention(input._BypassGovernanceRetention);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_PutObjectRetentionOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._Retention = result.GetRetention();
+        res._RequestPayer = result.GetRequestPayer();
+        res._VersionId = result.GetVersionId();
+        res._BypassGovernanceRetention = result.GetBypassGovernanceRetention();
+        res._ContentMD5 = result.GetContentMD5();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_PutObjectRetention.response_PutObjectRetentionOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutObjectTagging.h>
+>>>
+
+
+implement _PutObjectTagging.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutObjectTaggingRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetVersionId(input._VersionId);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetTagging(input._Tagging);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    request.SetRequestPayer(input._RequestPayer);
+    Aws::S3::Model::RequestPayerOutcome outcome = s3_client.RequestPayer(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_PutObjectTaggingOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._VersionId = result.GetVersionId();
+        res._ContentMD5 = result.GetContentMD5();
+        res._Tagging = result.GetTagging();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        res._RequestPayer = result.GetRequestPayer();
+        `_PutObjectTagging.response_PutObjectTaggingOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/PutPublicAccessBlock.h>
+>>>
+
+
+implement _PutPublicAccessBlock.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::PutPublicAccessBlockRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetPublicAccessBlockConfiguration(input._PublicAccessBlockConfiguration);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/RestoreObject.h>
+>>>
+
+
+implement _RestoreObject.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::RestoreObjectRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetVersionId(input._VersionId);
+    request.SetRestoreRequest(input._RestoreRequest);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_RestoreObjectOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._VersionId = result.GetVersionId();
+        res._RestoreRequest = result.GetRestoreRequest();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_RestoreObject.response_RestoreObjectOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/SelectObjectContent.h>
+>>>
+
+
+implement _SelectObjectContent.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::SelectObjectContentRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetKey(input._Key);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetExpression(input._Expression);
+    request.SetExpressionType(input._ExpressionType);
+    request.SetRequestProgress(input._RequestProgress);
+    request.SetInputSerialization(input._InputSerialization);
+    request.SetOutputSerialization(input._OutputSerialization);
+    request.SetScanRange(input._ScanRange);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_SelectObjectContentOutput` res;
+        res._Bucket = result.GetBucket();
+        res._Key = result.GetKey();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._Expression = result.GetExpression();
+        res._ExpressionType = result.GetExpressionType();
+        res._RequestProgress = result.GetRequestProgress();
+        res._InputSerialization = result.GetInputSerialization();
+        res._OutputSerialization = result.GetOutputSerialization();
+        res._ScanRange = result.GetScanRange();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_SelectObjectContent.response_SelectObjectContentOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/UploadPart.h>
+>>>
+
+
+implement _UploadPart.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::UploadPartRequest request;
+    request.SetBody(input._Body);
+    request.SetBucket(input._Bucket);
+    request.SetContentLength(input._ContentLength);
+    request.SetContentMD5(input._ContentMD5);
+    request.SetKey(input._Key);
+    request.SetPartNumber(input._PartNumber);
+    request.SetUploadId(input._UploadId);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    Aws::S3::Model::ExpectedBucketOwnerOutcome outcome = s3_client.ExpectedBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_UploadPartOutput` res;
+        res._Body = result.GetBody();
+        res._Bucket = result.GetBucket();
+        res._ContentLength = result.GetContentLength();
+        res._ContentMD5 = result.GetContentMD5();
+        res._Key = result.GetKey();
+        res._PartNumber = result.GetPartNumber();
+        res._UploadId = result.GetUploadId();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        `_UploadPart.response_UploadPartOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/UploadPartCopy.h>
+>>>
+
+
+implement _UploadPartCopy.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::UploadPartCopyRequest request;
+    request.SetBucket(input._Bucket);
+    request.SetCopySource(input._CopySource);
+    request.SetCopySourceIfMatch(input._CopySourceIfMatch);
+    request.SetCopySourceIfModifiedSince(input._CopySourceIfModifiedSince);
+    request.SetCopySourceIfNoneMatch(input._CopySourceIfNoneMatch);
+    request.SetCopySourceIfUnmodifiedSince(input._CopySourceIfUnmodifiedSince);
+    request.SetCopySourceRange(input._CopySourceRange);
+    request.SetKey(input._Key);
+    request.SetPartNumber(input._PartNumber);
+    request.SetUploadId(input._UploadId);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSECustomerKey(input._SSECustomerKey);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetCopySourceSSECustomerAlgorithm(input._CopySourceSSECustomerAlgorithm);
+    request.SetCopySourceSSECustomerKey(input._CopySourceSSECustomerKey);
+    request.SetCopySourceSSECustomerKeyMD5(input._CopySourceSSECustomerKeyMD5);
+    request.SetRequestPayer(input._RequestPayer);
+    request.SetExpectedBucketOwner(input._ExpectedBucketOwner);
+    request.SetExpectedSourceBucketOwner(input._ExpectedSourceBucketOwner);
+    Aws::S3::Model::ExpectedSourceBucketOwnerOutcome outcome = s3_client.ExpectedSourceBucketOwner(request);
+    if (outcome.IsSuccess()) {
+        auto result = outcome.GetResultWithOwnership();
+        `_UploadPartCopyOutput` res;
+        res._Bucket = result.GetBucket();
+        res._CopySource = result.GetCopySource();
+        res._CopySourceIfMatch = result.GetCopySourceIfMatch();
+        res._CopySourceIfModifiedSince = result.GetCopySourceIfModifiedSince();
+        res._CopySourceIfNoneMatch = result.GetCopySourceIfNoneMatch();
+        res._CopySourceIfUnmodifiedSince = result.GetCopySourceIfUnmodifiedSince();
+        res._CopySourceRange = result.GetCopySourceRange();
+        res._Key = result.GetKey();
+        res._PartNumber = result.GetPartNumber();
+        res._UploadId = result.GetUploadId();
+        res._SSECustomerAlgorithm = result.GetSSECustomerAlgorithm();
+        res._SSECustomerKey = result.GetSSECustomerKey();
+        res._SSECustomerKeyMD5 = result.GetSSECustomerKeyMD5();
+        res._CopySourceSSECustomerAlgorithm = result.GetCopySourceSSECustomerAlgorithm();
+        res._CopySourceSSECustomerKey = result.GetCopySourceSSECustomerKey();
+        res._CopySourceSSECustomerKeyMD5 = result.GetCopySourceSSECustomerKeyMD5();
+        res._RequestPayer = result.GetRequestPayer();
+        res._ExpectedBucketOwner = result.GetExpectedBucketOwner();
+        res._ExpectedSourceBucketOwner = result.GetExpectedSourceBucketOwner();
+        `_UploadPartCopy.response_UploadPartCopyOutput`(res);
+    }
+    >>>
+}
+
+
+<<< impl
+#include <aws/s3/model/WriteGetObjectResponse.h>
+>>>
+
+
+implement _WriteGetObjectResponse.request {
+    <<<
+    Aws::Client::ClientConfiguration config;
+    Aws::S3::S3Client s3_client(config);
+    Aws::S3::Model::WriteGetObjectResponseRequest request;
+    request.SetRequestRoute(input._RequestRoute);
+    request.SetRequestToken(input._RequestToken);
+    request.SetBody(input._Body);
+    request.SetStatusCode(input._StatusCode);
+    request.SetErrorCode(input._ErrorCode);
+    request.SetErrorMessage(input._ErrorMessage);
+    request.SetAcceptRanges(input._AcceptRanges);
+    request.SetCacheControl(input._CacheControl);
+    request.SetContentDisposition(input._ContentDisposition);
+    request.SetContentEncoding(input._ContentEncoding);
+    request.SetContentLanguage(input._ContentLanguage);
+    request.SetContentLength(input._ContentLength);
+    request.SetContentRange(input._ContentRange);
+    request.SetContentType(input._ContentType);
+    request.SetDeleteMarker(input._DeleteMarker);
+    request.SetETag(input._ETag);
+    request.SetExpires(input._Expires);
+    request.SetExpiration(input._Expiration);
+    request.SetLastModified(input._LastModified);
+    request.SetMissingMeta(input._MissingMeta);
+    request.SetMetadata(input._Metadata);
+    request.SetObjectLockMode(input._ObjectLockMode);
+    request.SetObjectLockLegalHoldStatus(input._ObjectLockLegalHoldStatus);
+    request.SetObjectLockRetainUntilDate(input._ObjectLockRetainUntilDate);
+    request.SetPartsCount(input._PartsCount);
+    request.SetReplicationStatus(input._ReplicationStatus);
+    request.SetRequestCharged(input._RequestCharged);
+    request.SetRestore(input._Restore);
+    request.SetServerSideEncryption(input._ServerSideEncryption);
+    request.SetSSECustomerAlgorithm(input._SSECustomerAlgorithm);
+    request.SetSSEKMSKeyId(input._SSEKMSKeyId);
+    request.SetSSECustomerKeyMD5(input._SSECustomerKeyMD5);
+    request.SetStorageClass(input._StorageClass);
+    request.SetTagCount(input._TagCount);
+    request.SetVersionId(input._VersionId);
+    request.SetBucketKeyEnabled(input._BucketKeyEnabled);
+    Aws::S3::Model::BucketKeyEnabledOutcome outcome = s3_client.BucketKeyEnabled(request);
+    >>>
+}

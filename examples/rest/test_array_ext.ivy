@@ -1,0 +1,24 @@
+#lang ivy1.7
+
+include collections
+type byte
+interpret byte->bv[8]
+instance blob : vector(byte)
+
+var last : blob
+
+axiom blob.end(X) = blob.end(Y) & (forall I. 0 <= I & I < blob.end(X) -> blob.value(X,I) = blob.value(Y,I)) -> X = Y
+
+axiom blob.end(X) = 0 & blob.end(Y) = 0 -> X = Y
+
+export action put(b:blob) = {
+    last := b;
+}
+
+before put {
+    assume blob.end(X) = 0 & blob.end(Y) = 0 -> X = Y;
+    require b ~= last;
+}
+
+
+

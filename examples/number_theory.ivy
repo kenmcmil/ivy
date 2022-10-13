@@ -606,6 +606,9 @@ proof {
 # 
 # Proof. By Bezout's lemma, we have `gcd(T,P) = A*T - B*P`. Now assume
 # that `P*_Z=N*M`. It follows that `P*(A*_Z-B*M) = M`.
+#
+# We had to add lem1 a below, since Z3 couldn't handle the resulting
+# non-linear proof goal.
 
 theorem [coprime_product] {
     property N:nat > 0 & P:nat > 0 & M:nat > 0
@@ -620,6 +623,7 @@ proof {
     unfold with dvds_alt
     tactic skolemize
     instantiate with Z = _A * _Z - _B * M
+    property [lem1] _A * _Z * P - _B * M * P = M
 }
 
 # Also, using Bezout's lemma, we can show the following.
