@@ -299,8 +299,8 @@ class Action(AST):
         for a in self.args:
             if isinstance(a,Action):
                 a.get_references(refs)
-    def erase_unrefed(self,refs):
-        args = [a.erase_unrefed(refs) if isinstance(a,Action) else a for a in self.args]
+    def erase_unrefed(self,refs,ref_names):
+        args = [a.erase_unrefed(refs,ref_names) if isinstance(a,Action) else a for a in self.args]
         res = self.clone(args)
         self.copy_formals(res)
         return res
@@ -460,8 +460,8 @@ class AssignAction(Action):
     def references(self,refs):
         refs.update(symbols_ast(self.args[1]))
         assign_refs(self,refs)
-    def erase_unrefed(self,refs):
-        if self.modifies()[0] not in refs:
+    def erase_unrefed(self,refs,ref_names):
+        if self.modifies()[0] not in refs and self.modifies()[0].name not in ref_names:
             res = Sequence()
             ivy_ast.copy_attributes_ast(self,res)
             self.copy_formals(res)
@@ -627,8 +627,8 @@ class HavocAction(Action):
         return [n.rep]
     def references(self,refs):
         assign_refs(self,refs)
-    def erase_unrefed(self,refs):
-        if self.modifies()[0] not in refs:
+    def erase_unrefed(self,refs,ref_names):
+        if self.modifies()[0] not in refs and self.modifies()[0].name not in ref_names:
             res = Sequence()
             ivy_ast.copy_attributes_ast(self,res)
             self.copy_formals(res)

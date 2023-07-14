@@ -25,4 +25,4 @@ The Windows binary distribution is in the form of a zip archive. Download the fi
 
 ## Further Reading
 
-For further information on IVy, see [the IVy web site](http://microsoft.github.io/ivy/).
+For further information on IVy, see [the IVy web site](http://kenmcmil.github.io/ivy/).

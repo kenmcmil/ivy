@@ -1192,9 +1192,16 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
         for sym in list(all_syms):
             collect_relevant_destructors(sym,all_syms,set())
 
+    # Tricky: some symbols in proofs are not compiled. Keep
+    # the symbols whose names are referred to.
+    
+    all_names = set()
+    for x in mod.proofs:
+        x[1].vocab(all_names)
+
     # erase assignments to unreferenced variables
 
-    new_actions = dict((actname,action.erase_unrefed(all_syms)) for actname,action in new_actions.iteritems())
+    new_actions = dict((actname,action.erase_unrefed(all_syms,all_names)) for actname,action in new_actions.iteritems())
 
     # check that any dropped axioms do not refer to the isolate's signature
 
@@ -1268,13 +1275,6 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
         asts.extend(tmp.args[2:])
     # in case a symbol is used only in a proof
     asts.extend(x[1] for x in mod.proofs)
-
-    # Tricky: some symbols in proofs are not compiled. Keep
-    # the symbols whose names are referred to.
-    
-    all_names = set()
-    for x in mod.proofs:
-        x[1].vocab(all_names)
     
     all_syms = set(lu.used_symbols_asts(asts))
 

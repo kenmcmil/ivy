@@ -375,7 +375,7 @@ def enumerated_to_numeral(term):
     raise iu.IvyError(None,'Cannot interpret enumerated type "{}" as a native sort (not yet supported)'.format(term.sort.name))
 
 def term_to_z3(term):
-    if ivy_logic.is_boolean(term):
+    if ivy_logic.is_boolean(term) and not ivy_logic.is_variable(term):
         return formula_to_z3_int(term)
     if not term.args:
         if isinstance(term,ivy_logic.Variable):
@@ -578,7 +578,7 @@ def formula_to_z3_int(fmla):
         res =  q(variables, [term_to_z3(v) for v in variables], args[0])
 #        print "res = {}".format(res)
         return res
-    if ivy_logic.is_individual(fmla):
+    if ivy_logic.is_individual(fmla) or ivy_logic.is_variable(fmla):
         return term_to_z3(fmla)
     print "bad fmla: {!r}".format(fmla)
     assert False
@@ -779,7 +779,7 @@ class HerbrandModel(object):
             fun = z3.Function
             self.model[order.to_z3()]
 #            print "sorting..."
-            elems = sorted(elems,SortOrder(z3_vs,order_atom,self.model))
+            elems = sorted(elems,key=functools.cmp_to_key(SortOrder(z3_vs,order_atom,self.model)))
         except IndexError:
             pass
 #        print "elems: {}".format(map(str,elems))
