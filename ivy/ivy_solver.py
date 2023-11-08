@@ -130,7 +130,8 @@ def sorts(name):
         if p is None:
             return p
         dom,rng = p
-        return z3.ArraySort(sort_name_to_z3(dom),sort_name_to_z3(rng))
+        return z3.DeclareSort(f"Arr-{dom}-{rng}")
+        #return z3.ArraySort(sort_name_to_z3(dom),sort_name_to_z3(rng))
     if name.startswith('strbv[') and name.endswith(']'):
         width = int(name[6:-1])
         return z3.BitVecSort(width)
@@ -145,8 +146,10 @@ def sorts(name):
         return z3.IntSort()
     if name == 'strlit':
         return z3.StringSort()
+    if name == "bool":
+        return z3.BoolSort()
     return None
-        
+
 #sorts = {}
 #sorts = {"S":S,
 #         "Int":z3.IntSort()}
@@ -157,16 +160,39 @@ def parse_int_params(name):
     if not all(t.endswith(']') for t in things):
         raise SyntaxError()
     return [int(t[:-1]) for t in things]
-    
+
 
 def is_solver_sort(name):
     return name.startswith('bv[') and name.endswith(']') or name == 'int' or name == 'nat' or name == 'real' or name == 'strlit' or name.startswith('strbv[') or name.startswith('intbv[') or name.startswith('arr[')
+
+def get_dom_and_rng_sorts(arr_sort):
+    arr_sort_name = arr_sort.name()
+    dom_str, rng_str = arr_sort_name.split("-")[1:]
+    dom_sort = z3_sorts.get(dom_str, None)
+    rng_sort = z3_sorts.get(rng_str, None)
+    if dom_sort is None:
+        dom_sort = sorts(dom_str)
+    if rng_sort is None:
+        rng_sort = sorts(rng_str)
+    return dom_sort, rng_sort
+
+def arrsel(x, y):
+    dom_sort, rng_sort = get_dom_and_rng_sorts(x.sort())
+    sel_func = z3.Function(f"Read{x.sort().name()}", x.sort(), dom_sort, rng_sort)
+    return sel_func(x, y)
+
+def arrupd(x, y, z):
+    dom_sort, rng_sort = get_dom_and_rng_sorts(x.sort())
+    upd_func = z3.Function(f"Write{x.sort().name()}", x.sort(), dom_sort, rng_sort, x.sort())
+    return upd_func(x, y, z)
+
 
 relations_dict = {'<':(lambda x,y: z3.ULT(x, y) if z3.is_bv(x) else x < y),
              '<=':(lambda x,y: z3.ULE(x, y) if z3.is_bv(x) else x <= y),
              '>':(lambda x,y: z3.UGT(x, y) if z3.is_bv(x) else x > y),
              '>=':(lambda x,y: z3.UGE(x, y) if z3.is_bv(x) else x >= y),
-             "arrsel":(lambda x,y: z3.Select(x,y)),
+             #"arrsel":(lambda x,y: z3.Select(x,y)),
+             "arrsel": arrsel
              }
 
 def relations(name):
@@ -180,8 +206,10 @@ functions_dict = {"+":(lambda x,y: x + y),
              "bvand":(lambda x,y: x & y),
              "bvor":(lambda x,y: x | y),
              "bvnot":(lambda x: ~x),
-             "arrsel":(lambda x,y: z3.Select(x,y)),
-             "arrupd":(lambda x,y,z: z3.Update(x,y,z)),
+             "arrsel": arrsel,
+             "arrupd": arrupd,
+             #"arrsel":(lambda x,y: z3.Select(x,y)),
+             #"arrupd":(lambda x,y,z: z3.Update(x,y,z)),
              }
 
 def bfe_to_z3(sym):
@@ -309,7 +337,11 @@ def lookup_native(thing,table,kind):
         if thing.name == 'arrcst':
             sort = thing.sort.rng
             if sort.name in ivy_logic.sig.interp:
-                return lambda x: z3.K(sort.to_z3().domain(),x)
+                z3_sort = sort.to_z3()
+                dom_sort, rng_sort = get_dom_and_rng_sorts(z3_sort)
+                const_func = z3.Function(f"Const{z3_sort.name()}", rng_sort, z3_sort)
+                return lambda x: const_func(x)
+                #return lambda x: z3.K(sort.to_z3().domain(),x)
         if thing.name in iu.polymorphic_symbols:
             sort = thing.sort.domain[0].name
             if sort in ivy_logic.sig.interp and not isinstance(ivy_logic.sig.interp[sort],ivy_logic.EnumeratedSort):

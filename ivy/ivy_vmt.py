@@ -193,6 +193,12 @@ def herbrandize_property_vars(prop_z3_fm):
         return var_strs, trans
     raise Exception("Don't support non-universally quantified properties")
 
+def get_dom_and_rng(sort_name):
+    dom, rng = sort_name.split("-")[1:]
+    if rng == "bool":
+        rng = "Bool"
+    return dom, rng
+
 def check_isolate(method="mc"):
     mod = im.module
 
@@ -295,6 +301,7 @@ def check_isolate(method="mc"):
                 vmt_var_defs(decl.sexpr())
 
     vmt_sort_defs = []
+    vmt_func_defs = []
     # must declare sorts that are not built-in
     for sort in sorts:
         sort_name = sort.name()
@@ -302,10 +309,16 @@ def check_isolate(method="mc"):
             continue
         if "Bool" == sort_name:
             continue
-        else:
-            print(f"Need to define sort: {sort_name}")
-            sort_str = f"(declare-sort {sort_name} 0)"
-            vmt_sort_defs.insert(0, sort_str)
+        if sort_name.startswith("Arr"):
+            dom, rng = get_dom_and_rng(sort_name)
+            read = f"(declare-fun Read{sort_name} ({sort_name} {dom}) {rng})"
+            write = f"(declare-fun Write{sort_name} ({sort_name} {dom} {rng}) {sort_name})"
+            const = f"(declare-fun Const{sort_name} ({rng}) {sort_name})"
+            vmt_func_defs.append(read)
+            vmt_func_defs.append(write)
+            vmt_func_defs.append(const)
+        sort_str = f"(declare-sort {sort_name} 0)"
+        vmt_sort_defs.append(sort_str)
 
     for sym in ilu.used_symbols_asts([init,trans]):
         if tr.is_new(sym):
@@ -317,7 +330,6 @@ def check_isolate(method="mc"):
             full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
 
-
     props = []
     herbrand_trans = [] # List[str]
     for i, lf in enumerate(conjs):
@@ -327,7 +339,6 @@ def check_isolate(method="mc"):
         prop_formula = normalize_prop(slvr.formula_to_z3(lf.formula))
         props.append(f'(define-fun property () Bool (! {prop_formula} :invar-property {i}))')
 
-    breakpoint()
     init_formula_str = simplify(slvr.formula_to_z3(init)).sexpr()
     trans_formula_str = simplify(slvr.formula_to_z3(trans)).sexpr()
     vmt_formula_defs = []
@@ -341,7 +352,7 @@ def check_isolate(method="mc"):
     vmt_formula_defs.extend(props)
 
     with open("ivy.vmt", "w") as f:
-        vmt_str = vmt_sort_defs + vmt_var_defs + vmt_formula_defs
+        vmt_str = vmt_sort_defs + vmt_func_defs + vmt_var_defs + vmt_formula_defs
         f.write("\n".join(vmt_str))
 
     print('output written to ivy.vmt')
