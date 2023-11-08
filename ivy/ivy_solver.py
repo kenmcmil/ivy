@@ -27,8 +27,21 @@ import sys
 
 # Following accounts for Z3 API symbols that are hidden as of Z3-4.5.0
 
-z3_to_ast_array = z3._to_ast_array if '_to_ast_array' in z3.__dict__ else z3.z3._to_ast_array
-z3_to_expr_ref = z3._to_expr_ref if '_to_expr_ref' in z3.__dict__ else z3.z3._to_expr_ref
+try:
+    z3_to_ast_array = z3._to_ast_array
+    z3_to_expr_ref = z3._to_expr_ref
+except AttributeError:
+    try:
+        z3_to_ast_array = z3.z3._to_ast_array
+        z3_to_expr_ref = z3.z3._to_expr_ref
+    except AttributeError:
+        import importlib
+        z3z3 = importlib.import_module("z3.z3", package="z3")
+        z3_to_ast_array = z3z3._to_ast_array
+        z3_to_expr_ref = z3z3._to_expr_ref
+
+#z3_to_ast_array = z3._to_ast_array if '_to_ast_array' in z3.__dict__ else z3.z3._to_ast_array
+#z3_to_expr_ref = z3._to_expr_ref if '_to_expr_ref' in z3.__dict__ else z3.z3._to_expr_ref
 
 use_z3_enums = True
 
@@ -238,14 +251,19 @@ clear()
 z3_sorts_inv = {}
 
 def uninterpretedsort(us):
-    s = z3_sorts.get(us.rep,None)
-    if s is not None: return s
-    s = lookup_native(us,sorts,"sort")
-    if s == None:
-        s = z3.DeclareSort(us.rep)
-    z3_sorts[us.rep] = s
-    z3_sorts_inv[get_id(s)] = us
-    return s
+    sort = z3_sorts.get(us.rep,None)
+    if sort is not None: return sort
+    new_sort = lookup_native(us,sorts,"sort")
+    if new_sort is None:
+        arr_sort = sorts(us.name)
+        if arr_sort is None:
+            new_sort = z3.DeclareSort(us.rep)
+        else:
+            new_sort = arr
+    z3_sorts[us.rep] = new_sort
+    z3_sorts_inv[get_id(new_sort)] = us
+    return new_sort
+
 
 def functionsort(fs):
 #    print "fs.rng = {!r}".format(fs.rng)
