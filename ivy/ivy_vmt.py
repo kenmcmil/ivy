@@ -329,6 +329,14 @@ def check_isolate(method="mc"):
             sort = cur_sym.sort().sexpr()
             full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
+        elif "fml:" in sym.name:
+            next_sym_str = f"|new_{sym.name}|"
+            cur_sym_str = f"{sym.name}"
+            sort = slvr.symbol_to_z3(sym).sort().sexpr()
+            next_fml_def = f"(declare-fun {next_sym_str} () {sort})"
+            vmt_var_defs.append(next_fml_def)
+            full_str = f"(define-fun |.{cur_sym_str}| () {sort} (! |{cur_sym_str}| :next {next_sym_str}))"
+            vmt_var_defs.append(full_str)
 
     props = []
     herbrand_trans = [] # List[str]
