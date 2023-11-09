@@ -330,7 +330,7 @@ def check_isolate(method="mc"):
             full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
         elif "fml:" in sym.name:
-            next_sym_str = f"|new_{sym.name}|"
+            next_sym_str = f"new_{sym.name.replace(':', '')}"
             cur_sym_str = f"|{sym.name}|"
             sort = slvr.symbol_to_z3(sym).sort().sexpr()
             next_fml_def = f"(declare-fun {next_sym_str} () {sort})"
