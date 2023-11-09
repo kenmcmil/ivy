@@ -331,11 +331,12 @@ def check_isolate(method="mc"):
             vmt_var_defs.append(full_str)
         elif "fml:" in sym.name:
             next_sym_str = f"|new_{sym.name}|"
-            cur_sym_str = f"{sym.name}"
+            cur_sym_str = f"|{sym.name}|"
             sort = slvr.symbol_to_z3(sym).sort().sexpr()
             next_fml_def = f"(declare-fun {next_sym_str} () {sort})"
             vmt_var_defs.append(next_fml_def)
-            full_str = f"(define-fun |.{cur_sym_str}| () {sort} (! |{cur_sym_str}| :next {next_sym_str}))"
+            define_fun_str = cur_sym_str.replace("|", "").replace(":", "")
+            full_str = f"(define-fun .{define_fun_str} () {sort} (! {cur_sym_str} :next {next_sym_str}))"
             vmt_var_defs.append(full_str)
 
     props = []
