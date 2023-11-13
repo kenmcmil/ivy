@@ -1866,4 +1866,4 @@ def pretty_precedence(e: Expr) -> int:
     elif isinstance(e, Let):
         return PREC_TOP
     else:
-        assert False
+        assert False, "Unknown expression type %s: %s" % (type(e), repr(e))
