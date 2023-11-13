@@ -17,6 +17,11 @@ verbose = False
 # but mypyvy doesn't allow dots in names, so we replace
 # them with this string
 DOT_REPLACEMENT = "_"
+BRACE_REPLACEMENT = 'i'
+
+# This is how Ivy internally represents true and false
+_true = lg.And()
+_false = lg.Or()
 
 class Translation:
     '''Helper class for translating Ivy expressions to mypyvy expressions.'''
@@ -44,7 +49,10 @@ class Translation:
 
     def to_pyv_name(ivy_name):
         if isinstance(ivy_name, str):
-            return ivy_name.replace(".", DOT_REPLACEMENT)
+            name = ivy_name.replace(".", DOT_REPLACEMENT)
+            name = name.replace('[', BRACE_REPLACEMENT)
+            name = name.replace(']', BRACE_REPLACEMENT)
+            return name
         raise Exception("cannot translate non-string name {} to mypyvy ".format(repr(ivy_name)))
 
     def translate_logic_fmla(fmla) -> pyv.Expr:
@@ -70,9 +78,13 @@ class Translation:
             return pyv.IfThenElse(Translation.translate_logic_fmla(fmla.cond), Translation.translate_logic_fmla(fmla.t_then), Translation.translate_logic_fmla(fmla.t_else))
         elif isinstance(fmla, lg.And):
             # fmla.terms
+            if len(fmla.terms) == 0:
+                return pyv.TrueExpr
             return pyv.And(*tuple([Translation.translate_logic_fmla(x) for x in fmla.terms]))
         elif isinstance(fmla, lg.Or):
             # fmla.terms
+            if len(fmla.terms) == 0:
+                return pyv.FalseExpr
             return pyv.Or(*tuple([Translation.translate_logic_fmla(x) for x in fmla.terms]))
         elif isinstance(fmla, lg.Eq):
             # fmla.t1 & fmla.t2
@@ -95,6 +107,29 @@ class Translation:
         else:
             raise NotImplementedError("translating logic formula {} to mypyvy ".format(repr(fmla)))
 
+    def globals_in_fmla(fmla) -> set[str]:
+        '''Returns the set of global names that appear in a formula.
+        We use this to mark constants/relations/functions as immutable
+        if they appear in axioms.'''
+        if isinstance(fmla, lg.ForAll) or isinstance(fmla, lg.Exists):
+            return Translation.globals_in_fmla(fmla.body)
+        elif isinstance(fmla, lg.Ite):
+            return Translation.globals_in_fmla(fmla.cond) | Translation.globals_in_fmla(fmla.t_then) | Translation.globals_in_fmla(fmla.t_else)
+        elif isinstance(fmla, lg.And) or isinstance(fmla, lg.Or):
+            return set.union(*[Translation.globals_in_fmla(x) for x in fmla.terms])
+        elif isinstance(fmla, lg.Eq) or isinstance(fmla, lg.Implies) or isinstance(fmla, lg.Iff):
+            return Translation.globals_in_fmla(fmla.t1) | Translation.globals_in_fmla(fmla.t2)
+        elif isinstance(fmla, lg.Not):
+            return Translation.globals_in_fmla(fmla.body)
+        elif isinstance(fmla, lg.Apply):
+            return {fmla.func.name} | set.union(*[Translation.globals_in_fmla(x) for x in fmla.terms])
+        elif isinstance(fmla, lg.Const):
+            return {fmla.name}
+        elif isinstance(fmla, lg.Var):
+            return set()
+        else:
+            raise NotImplementedError("constants_in_fmla: {}".format(repr(fmla)))
+
 
 # Our own class, which will be used to generate a mypyvy `Program`
 class MypyvyProgram:
@@ -103,11 +138,14 @@ class MypyvyProgram:
     # axiom -> pyv.AxiomDecl
 
     def __init__(self):
+        self.immutable_symbols = set()
+
         self.sorts = []
         self.constants = []
         self.relations = []
         self.functions = []
         self.axioms = []
+        self.initializers = []
         self.invariants = []
 
     def add_constant_if_not_exists(self, cst):
@@ -146,9 +184,12 @@ class MypyvyProgram:
 
     def translate_ivy_sig(self, sig: il.Sig):
         '''Translate a module signature to the sorts, constants,
-        relations, and functions of a mypyvy specification.'''
+        relations, and functions of a mypyvy specification.
+        To correctly infer which symbols are immutable, this
+        must be called AFTER `add_axioms_and_props`.
+        '''
         # Add sorts
-        for (sort_name, sort) in sig.sorts.items():
+        for (_sort_name, sort) in sig.sorts.items():
             self.add_sort(sort)
 
         # # Add symbols, replacing "." with DOT_REPLACEMENT
@@ -160,7 +201,7 @@ class MypyvyProgram:
 
             # FIXME: how to determine if (im)mutable?
             # Ivy has no such distinction.
-            is_mutable = True
+            is_mutable = (sym.name not in self.immutable_symbols)
 
             if kind == 'individual':
                 pyv_sort = Translation.to_pyv_sort(sort)
@@ -186,6 +227,8 @@ class MypyvyProgram:
             fmla = Translation.translate_logic_fmla(ax)
             axiom = pyv.AxiomDecl(None, fmla)
             self.axioms.append(axiom)
+            # Mark symbols as immutable if they appear in axioms
+            self.immutable_symbols |= Translation.globals_in_fmla(ax)
 
         # Add properties that are assumed to be true in this isolate
         for prop in mod.labeled_props:
@@ -202,9 +245,19 @@ class MypyvyProgram:
             inv = pyv.InvariantDecl(Translation.to_pyv_name(conj.label.relname), fmla, False, False)
             self.invariants.append(inv)
 
+    def add_initializers(self, mod: im.Module):
+        '''Add initializers to the mypyvy program.'''
+        for (name, init) in mod.initializers:
+            name = Translation.to_pyv_name(name)
+            # convert initializer to formula
+            upd = it.make_vc(init).to_formula()
+            fmla = Translation.translate_logic_fmla(upd)
+            decl = pyv.InitDecl(name, fmla)
+            self.initializers.append(decl)
+
     def to_program(self) -> pyv.Program:
         decls = self.sorts + self.constants + self.relations + self.functions \
-            + self.axioms + self.invariants
+            + self.axioms + self.initializers + self.invariants
         return pyv.Program(decls)
 
 
@@ -214,29 +267,28 @@ def check_isolate():
 
     # FIXME: do we need to handle mod.aliases? (type aliases)
 
-    # STEP 1: parse mod.sig to determine
-    # sorts, relations, functions, and individuals
-    # mod.sig = sig
-    #   sig.sorts
-    #   sig.symbols (and sig.all_symbols())
-    prog.translate_ivy_sig(mod.sig)
-
-    # STEP 2: add axioms and conjectures
-    # Drop into a REPL by typing interact()
+    # STEP 1: add axioms and conjectures
+    # (and mark symbols as immutable if they appear in axioms)
     # mod.axioms
     # mod.labeled_props -> properties (become axioms once checked)
     # mod.labeled_conjs -> invariants/conjectures (to be checked)
 
-    import pdb;pdb.set_trace()
-
     prog.add_axioms_and_props(mod)
     prog.add_conjectures(mod)
+
+    # STEP 2: parse mod.sig to determine
+    # sorts, relations, functions, and individuals
+    # mod.sig.sorts & mod.sig.symbols
+    prog.translate_ivy_sig(mod.sig)
 
     # STEP 3: generate actions
     # - collect all implicitly existentially quantified variables (those starting with __)
     # mod.initializers -> after init
     # mod.public_actions
     # mod.actions
+
+    prog.add_initializers(mod)
+    # import pdb;pdb.set_trace()
 
     # Generate VCs:
     # _true = lg.And()
