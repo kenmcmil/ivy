@@ -199,11 +199,12 @@ class MypyvyProgram:
         # Add conjectures
         for conj in mod.labeled_conjs:
             fmla = Translation.translate_logic_fmla(conj.formula)
-            inv = pyv.AxiomDecl(Translation.to_pyv_name(conj.label.relname), fmla)
+            inv = pyv.InvariantDecl(Translation.to_pyv_name(conj.label.relname), fmla, False, False)
             self.invariants.append(inv)
 
     def to_program(self) -> pyv.Program:
-        decls = self.sorts + self.constants + self.relations + self.functions + self.axioms
+        decls = self.sorts + self.constants + self.relations + self.functions \
+            + self.axioms + self.invariants
         return pyv.Program(decls)
 
 
