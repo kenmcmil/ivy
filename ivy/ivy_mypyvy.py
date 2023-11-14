@@ -222,8 +222,8 @@ class Translation:
         # Collect all implicitly existentially quantified variables
         # ...and add them as parameters to the transition after
         # the action's own formal params
-        # FIXME: does pre have existentials?
         exs = set(filter(itr.is_skolem, tr.symbols()))
+        exs |= set(filter(itr.is_skolem, pre.symbols()))
         first_order_exs = set(filter(lambda x: il.is_first_order_sort(x.sort) | il.is_enumerated_sort(x.sort) | il.is_boolean_sort(x.sort), exs))
 
         # We can get intermediate versions of relations and functions,
