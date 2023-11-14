@@ -65,6 +65,28 @@ class Translation:
             vars.append(pyv.SortedVar(name, sort, None))
         return vars
 
+    def translate_symbol_decl(sym: il.Symbol, is_mutable=True) -> pyv.Decl:
+        sort = sym.sort
+        kind = Translation.sort_type(sort)
+        name = Translation.to_pyv_name(sym.name)
+
+        if kind == 'individual':
+            pyv_sort = Translation.to_pyv_sort(sort)
+            const = pyv.ConstantDecl(name, pyv_sort, is_mutable)
+            return const
+        elif kind == 'relation':
+            assert sym.is_relation()
+            pyv_sort = Translation.to_pyv_sort(sort)
+            rel = pyv.RelationDecl(name, pyv_sort, is_mutable)
+            return rel
+        elif kind == 'function':
+            (dom_sort, rng_sort) = Translation.to_pyv_sort(sort)
+            fn = pyv.FunctionDecl(name, dom_sort, rng_sort, is_mutable)
+            return fn
+        else:
+            raise NotImplementedError("translating symbol {} to mypyvy ".format(repr(sym)))
+ 
+
     def translate_logic_fmla(fmla, is_twostate=False) -> pyv.Expr:
         '''Translates a logic formula (as defined in logic.py) to a
         mypyvy expression. (Note: these for some reason are not AST nodes.)'''
@@ -157,8 +179,12 @@ class Translation:
         fmla = Translation.translate_logic_fmla(upd)
         return fmla
 
-    def translate_action(name: str, action: ivy_actions.Action) -> pyv.DefinitionDecl:
-        '''Translate an Ivy action to a mypyvy action.'''
+    def translate_action(name: str, action: ivy_actions.Action) -> tuple[pyv.DefinitionDecl, set[il.Symbol]]:
+        '''Translate an Ivy action to a mypyvy action. The transition
+        relation might include temporary/intermediate versions of relations.
+        To translate these to mypyvy, we collect them and return them as
+        the second return value. Our caller then must ensure these are
+        defined at the top-level in the mypyvy spec.'''
         # This gives us a two-state formula
         (mod, tr, pre) = action.update(im.module,None)
 
@@ -174,20 +200,27 @@ class Translation:
         # Collect all implicitly existentially quantified variables
         # ...and add them as parameters to the transition after
         # the action's own formal params
-        exs = sorted(list(set(filter(itr.is_skolem, tr.symbols()))))
+        exs = set(filter(itr.is_skolem, tr.symbols()))
+        first_order_exs = set(filter(lambda x: il.is_first_order_sort(x.sort) | il.is_enumerated_sort(x.sort) | il.is_boolean_sort(x.sort), exs))
+
+        # We can get intermediate versions of relations and functions,
+        # e.g. __m_l.a.b.balance.map(V0,V1), and we can't translate those as parameters
+        # We have to collect these and define them as relations/functions at the
+        # top-level, and also define an action that sets them arbitrarily.
+        second_order_exs = set(filter(lambda x: il.is_function_sort(x.sort), exs))
+        assert exs == first_order_exs | second_order_exs, "exs != first_order_exs + second_order_exs: {} != {} + {}".format(exs, first_order_exs, second_order_exs)
+
+        # Add to params
         # it seems exs already contains action.formal_params
         # but we might to use action.formal_params to prettify names
-        params = exs
-        # TODO: what to do with action.formal_returns?
-        # probably the easiest thing is to add them as existentials (parameters)
-
-        # FIXME: we can get intermediate versions of relations and functions,
-        # e.g. __m_l.a.b.balance.map(V0,V1), and we can't translate those as parameters
+        params = sorted(list(first_order_exs))
+        # what to do with action.formal_returns?
+        # it seems they're already existentials, so we can just ignore them
 
         # relation = old version
         # new_relation = new version
         # __fml:x = existentially quantified x
-        # __new_fml:x = ???
+        # __new_fml:x = ??? not sure what this is
         # __m_relation = temporary/modified version?
 
         # The precondition is defined negatively, i.e. the action *fails*
@@ -200,7 +233,7 @@ class Translation:
         pyv_fmla = Translation.translate_logic_fmla(fmla, is_twostate=True)
 
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
-        return trans
+        return (trans, second_order_exs)
 
 # Our own class, which will be used to generate a mypyvy `Program`
 class MypyvyProgram:
@@ -219,6 +252,9 @@ class MypyvyProgram:
         self.invariants = []
         self.relations = []
         self.sorts = []
+        # These are translation artifacts: declarations of intermediate relations/functions
+        # and the action that sets them arbitrarily.
+        self.translation_misc = []
 
     def add_constant_if_not_exists(self, cst):
         if cst.name not in [x.name for x in self.constants]:
@@ -254,12 +290,20 @@ class MypyvyProgram:
             # print("unhandled sort: {}".format(sort))
             raise NotImplementedError("sort {} not supported".format(sort))
 
-    def translate_ivy_sig(self, sig: il.Sig):
+    def translate_ivy_sig(self, mod: im.Module):
         '''Translate a module signature to the sorts, constants,
         relations, and functions of a mypyvy specification.
-        To correctly infer which symbols are immutable, this
-        must be called AFTER `add_axioms_and_props`.
         '''
+        # Identify immutable symbols: those which appear in axioms
+        # and those which are functionally axioms in this isolate
+        # (i.e. properties that are assumed to be true)
+        for ax in mod.axioms:
+            self.immutable_symbols |= Translation.globals_in_fmla(ax)
+        for prop in mod.labeled_props:
+            if prop.assumed:
+                self.immutable_symbols |= Translation.globals_in_fmla(prop.formula)
+
+        sig: il.Sig = mod.sig
         # Add sorts
         for (_sort_name, sort) in sig.sorts.items():
             self.add_sort(sort)
@@ -267,29 +311,19 @@ class MypyvyProgram:
         # # Add symbols, replacing "." with DOT_REPLACEMENT
         for _sym_name, sym in sig.symbols.items():
             assert _sym_name == sym.name, "symbol name mismatch: {} != {}".format(_sym_name, sym.name)
-            sort = sym.sort
-            kind = Translation.sort_type(sort)
-            name = Translation.to_pyv_name(sym.name)
-
-            # FIXME: how to determine if (im)mutable?
-            # Ivy has no such distinction.
+            kind = Translation.sort_type(sym.sort)
             is_mutable = (sym.name not in self.immutable_symbols)
-
+            pyv_sym_decl = Translation.translate_symbol_decl(sym, is_mutable)
             if kind == 'individual':
-                pyv_sort = Translation.to_pyv_sort(sort)
-                const = pyv.ConstantDecl(name, pyv_sort, is_mutable)
-                self.add_constant_if_not_exists(const)
+                self.add_constant_if_not_exists(pyv_sym_decl)
             elif kind == 'relation':
                 assert sym.is_relation()
-                pyv_sort = Translation.to_pyv_sort(sort)
-                # assert isinstance(pyv_sort, tuple)
-                rel = pyv.RelationDecl(name, pyv_sort, is_mutable)
-                self.relations.append(rel)
+                self.relations.append(pyv_sym_decl)
             elif kind == 'function':
-                (dom_sort, rng_sort) = Translation.to_pyv_sort(sort)
-                fn = pyv.FunctionDecl(name, dom_sort, rng_sort, is_mutable)
-                self.functions.append(fn)
- 
+                self.functions.append(pyv_sym_decl)
+            else:
+                raise NotImplementedError("translating symbol {} to mypyvy ".format(repr(sym)))
+
     def add_axioms_and_props(self, mod: im.Module):
         '''Add axioms and properties to the mypyvy program.'''
         # Add axioms
@@ -299,8 +333,6 @@ class MypyvyProgram:
             fmla = Translation.translate_logic_fmla(ax)
             axiom = pyv.AxiomDecl(None, fmla)
             self.axioms.append(axiom)
-            # Mark symbols as immutable if they appear in axioms
-            self.immutable_symbols |= Translation.globals_in_fmla(ax)
 
         # Add properties that are assumed to be true in this isolate
         for prop in mod.labeled_props:
@@ -326,15 +358,26 @@ class MypyvyProgram:
             self.initializers.append(decl)
 
     def add_public_actions(self, mod: im.Module):
-        '''Add public actions to the mypyvy program.'''
+        '''Add public actions to the mypyvy program.
+        The tran'''
         public_actions = filter(lambda x: x[0] in mod.public_actions, mod.actions.items())
+        second_order_exs = set()
         for (name, action) in public_actions:
-            decl = Translation.translate_action(name, action)
+            (decl, sec_ord_exs) = Translation.translate_action(name, action)
+            second_order_exs |= sec_ord_exs
             self.actions.append(decl)
 
+        # Define second order existentials as (mutable) relations/functions
+        for se_ex in second_order_exs:
+            pyv_decl = Translation.translate_symbol_decl(se_ex, True)
+            self.translation_misc.append(pyv_decl)
+
+        # TODO: define action to set these
+
+
     def to_program(self) -> pyv.Program:
-        decls = self.sorts + self.constants + self.relations + self.functions \
-            + self.axioms + self.initializers + self.actions + self.invariants
+        decls = self.sorts + self.translation_misc + self.constants + self.relations + \
+            self.functions + self.axioms + self.initializers + self.actions + self.invariants
         return pyv.Program(decls)
 
 
@@ -344,26 +387,23 @@ def check_isolate():
 
     # FIXME: do we need to handle mod.aliases? (type aliases)
 
-    # STEP 1: add axioms and conjectures
-    # (and mark symbols as immutable if they appear in axioms)
+    # STEP 1: parse mod.sig to determine
+    # sorts, relations, functions, and individuals
+    # mod.sig.sorts & mod.sig.symbols
+    prog.translate_ivy_sig(mod)
+
+    # STEP 2: add axioms and conjectures
     # mod.axioms
     # mod.labeled_props -> properties (become axioms once checked)
     # mod.labeled_conjs -> invariants/conjectures (to be checked)
-
     prog.add_axioms_and_props(mod)
     prog.add_conjectures(mod)
-
-    # STEP 2: parse mod.sig to determine
-    # sorts, relations, functions, and individuals
-    # mod.sig.sorts & mod.sig.symbols
-    prog.translate_ivy_sig(mod.sig)
 
     # STEP 3: generate actions
     # - collect all implicitly existentially quantified variables (those starting with __)
     # mod.initializers -> after init
     # mod.public_actions
     # mod.actions
-
     prog.add_initializers(mod)
     prog.add_public_actions(mod)
 
