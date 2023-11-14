@@ -1,7 +1,7 @@
 #
 # Copyright (c) Microsoft Corporation. All Rights Reserved.
 #
-from . import ivy_actions
+from . import ivy_actions as ia
 from . import ivy_logic as il
 from . import ivy_module as im
 from . import ivy_trace as it
@@ -168,18 +168,40 @@ class Translation:
         else:
             raise NotImplementedError("constants_in_fmla: {}".format(repr(fmla)))
 
-    def initializer_to_fmla(action: ivy_actions.Action) -> pyv.Expr:
-        '''Translate an Ivy initializer to a mypyvy formula.'''
+    def translate_initializer(init: ia.Action) -> tuple[pyv.InitDecl, set[il.Symbol]]:
+        '''Translate an Ivy (combined) initializer, i.e. one that calls in
+        sequence all the initializer actions, to a mypyvy initializer.
+        This might include intermediate versions of relations.
+        To translate these to mypyvy, we collect them and return them as
+        the second return value. Our caller then must ensure these are
+        defined at the top-level in the mypyvy spec.
+        '''
+        # This is substantially similar to translate_action, but instead
+        # of defining a mypyvy transition, we explicitly add existential
+        # quantifiers around the one-state formula for init.
+
         # We want a one-state formula in this context
-        upd = it.make_vc(action).to_formula()
+        upd = it.make_vc(init).to_formula()
         # For some reason, make_vc() returns a conjuction
         # that has Not(And()) at the end. We remove that.
-        assert isinstance(upd, lg.And)
+        assert isinstance(upd, lg.And) and upd.terms[-1] == lg.Not(lg.And())
         upd = lg.And(*upd.terms[:-1])
-        fmla = Translation.translate_logic_fmla(upd)
-        return fmla
+        # Add existential quantifiers for all implicitly existentially quantified variables
+        exs = set(filter(itr.is_skolem, upd.symbols()))
+        first_order_exs = set(filter(lambda x: il.is_first_order_sort(x.sort) | il.is_enumerated_sort(x.sort) | il.is_boolean_sort(x.sort), exs))
+        second_order_exs = set(filter(lambda x: il.is_function_sort(x.sort), exs))
+        assert exs == first_order_exs | second_order_exs, "exs != first_order_exs + second_order_exs: {} != {} + {}".format(exs, first_order_exs, second_order_exs)
 
-    def translate_action(name: str, action: ivy_actions.Action) -> tuple[pyv.DefinitionDecl, set[il.Symbol]]:
+        ex_quant = sorted(list(first_order_exs))
+        # HACK: lg.Exists only takes Vars (ex_quant has Const), but mypyvy
+        # does not distinguish between the two -- it's all pyv.Id, so
+        # we add the existentials on the mypyvy side, rather than in Ivy.
+        fmla = Translation.translate_logic_fmla(upd)
+        ex_fmla = pyv.Exists(Translation.translate_binders(ex_quant), fmla)
+        decl = pyv.InitDecl(None, ex_fmla)
+        return (decl, second_order_exs)
+
+    def translate_action(name: str, action: ia.Action) -> tuple[pyv.DefinitionDecl, set[il.Symbol]]:
         '''Translate an Ivy action to a mypyvy action. The transition
         relation might include temporary/intermediate versions of relations.
         To translate these to mypyvy, we collect them and return them as
@@ -200,6 +222,7 @@ class Translation:
         # Collect all implicitly existentially quantified variables
         # ...and add them as parameters to the transition after
         # the action's own formal params
+        # FIXME: does pre have existentials?
         exs = set(filter(itr.is_skolem, tr.symbols()))
         first_order_exs = set(filter(lambda x: il.is_first_order_sort(x.sort) | il.is_enumerated_sort(x.sort) | il.is_boolean_sort(x.sort), exs))
 
@@ -254,7 +277,9 @@ class MypyvyProgram:
         self.sorts = []
         # These are translation artifacts: declarations of intermediate relations/functions
         # and the action that sets them arbitrarily.
-        self.translation_misc = []
+        self.second_order_existentials = set() # collects the names
+        self.intermediate = [] # declarations
+        self.havoc_action = [] # declarations
 
     def add_constant_if_not_exists(self, cst):
         if cst.name not in [x.name for x in self.constants]:
@@ -350,34 +375,41 @@ class MypyvyProgram:
             self.invariants.append(inv)
 
     def add_initializers(self, mod: im.Module):
-        '''Add initializers to the mypyvy program.'''
-        for (name, init) in mod.initializers:
-            name = Translation.to_pyv_name(name)
-            fmla = Translation.initializer_to_fmla(init)
-            decl = pyv.InitDecl(name, fmla)
-            self.initializers.append(decl)
+        '''Add initializers to the mypyvy program. Note that we CANNOT
+        translate initializers one-by-one, because (at least in Ivy 1.8)
+        they are stateful: the second initializer might depend on the state
+        modified by the first. Therefore, we create an artificial action
+        that combines all initializers in sequence, and translate that.'''
+        inits = list(map(lambda x: x[1], mod.initializers)) # get the actions
+        init_action = ia.Sequence(*inits)
+        (decl, sec_ord_exs) = Translation.translate_initializer(init_action)
+        self.second_order_existentials |= sec_ord_exs
+        self.initializers.append(decl)
 
     def add_public_actions(self, mod: im.Module):
-        '''Add public actions to the mypyvy program.
-        The tran'''
+        '''Add public actions to the mypyvy program.'''
         public_actions = filter(lambda x: x[0] in mod.public_actions, mod.actions.items())
-        second_order_exs = set()
         for (name, action) in public_actions:
             (decl, sec_ord_exs) = Translation.translate_action(name, action)
-            second_order_exs |= sec_ord_exs
+            self.second_order_existentials |= sec_ord_exs
             self.actions.append(decl)
 
+    def add_intermediate_rels_fn_and_havoc_action(self, mod: im.Module):
+        '''Declares relations and functions for the intermediate versions
+        of variables, and defines an action that sets them arbitrarily.'''
         # Define second order existentials as (mutable) relations/functions
-        for se_ex in second_order_exs:
+        for se_ex in self.second_order_existentials:
             pyv_decl = Translation.translate_symbol_decl(se_ex, True)
-            self.translation_misc.append(pyv_decl)
+            self.intermediate.append(pyv_decl)
 
-        # TODO: define action to set these
-
+        # TODO: define action to havoc these these
+        # import pdb; pdb.set_trace()
 
     def to_program(self) -> pyv.Program:
-        decls = self.sorts + self.translation_misc + self.constants + self.relations + \
-            self.functions + self.axioms + self.initializers + self.actions + self.invariants
+        decls = self.sorts + self.constants + self.relations + \
+            self.functions + self.axioms + \
+            self.intermediate + self.havoc_action + \
+            self.initializers + self.actions + self.invariants
         return pyv.Program(decls)
 
 
@@ -406,6 +438,7 @@ def check_isolate():
     # mod.actions
     prog.add_initializers(mod)
     prog.add_public_actions(mod)
+    prog.add_intermediate_rels_fn_and_havoc_action(mod)
 
     #  Generate the program
     pyv_prog = prog.to_program()
