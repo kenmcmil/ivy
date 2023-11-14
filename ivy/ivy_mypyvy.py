@@ -1,12 +1,11 @@
 #
 # Copyright (c) Microsoft Corporation. All Rights Reserved.
 #
-
-from . import ivy_ast as ia
+from . import ivy_actions
 from . import ivy_logic as il
-from . import ivy_logic_utils as ilu
 from . import ivy_module as im
 from . import ivy_trace as it
+from . import ivy_transrel as itr
 from . import logic as lg
 from . import mypyvy_syntax as pyv
 
@@ -17,7 +16,8 @@ verbose = False
 # but mypyvy doesn't allow dots in names, so we replace
 # them with this string
 DOT_REPLACEMENT = "_"
-BRACE_REPLACEMENT = 'i'
+BRACE_REPLACEMENT = '_B_'
+COLON_REPLACEMENT = "_c_"
 
 # This is how Ivy internally represents true and false
 _true = lg.And()
@@ -52,27 +52,29 @@ class Translation:
             name = ivy_name.replace(".", DOT_REPLACEMENT)
             name = name.replace('[', BRACE_REPLACEMENT)
             name = name.replace(']', BRACE_REPLACEMENT)
+            name = name.replace(':', COLON_REPLACEMENT)
             return name
         raise Exception("cannot translate non-string name {} to mypyvy ".format(repr(ivy_name)))
+
+    def translate_binders(binders) -> tuple[pyv.SortedVar]:
+        '''Translate [var_name:var_sort] into mypyvy.'''
+        vars = []
+        for binder in binders:
+            name = Translation.to_pyv_name(binder.name)
+            sort = Translation.to_pyv_sort(binder.sort)
+            vars.append(pyv.SortedVar(name, sort, None))
+        return vars
 
     def translate_logic_fmla(fmla) -> pyv.Expr:
         '''Translates a logic formula (as defined in logic.py) to a
         mypyvy expression. (Note: these for some reason are not AST nodes.)'''
 
-        def translate_binders(binders) -> tuple[pyv.SortedVar]:
-            vars = []
-            for binder in binders:
-                name = Translation.to_pyv_name(binder.name)
-                sort = Translation.to_pyv_sort(binder.sort)
-                vars.append(pyv.SortedVar(name, sort, None))
-            return vars
-
         if isinstance(fmla, lg.ForAll):
             # fmla.variables & fmla.body
-            return pyv.Forall(translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body))
+            return pyv.Forall(Translation.translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body))
         elif isinstance(fmla, lg.Exists):
             # fmla.variables & fmla.body
-            return pyv.Exists(translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body))
+            return pyv.Exists(Translation.translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body))
         elif isinstance(fmla, lg.Ite):
             # fmla.sort & fmla.cond & fmla.t_then, fmla.t_else
             return pyv.IfThenElse(Translation.translate_logic_fmla(fmla.cond), Translation.translate_logic_fmla(fmla.t_then), Translation.translate_logic_fmla(fmla.t_else))
@@ -99,7 +101,6 @@ class Translation:
             # fmla.body
             return pyv.Not(Translation.translate_logic_fmla(fmla.body))
         elif isinstance(fmla, lg.Apply):
-            # FIXME: this doesn't work for relations
             # fmla.func & fmla.terms
             return pyv.Apply(Translation.to_pyv_name(fmla.func.name), tuple([Translation.translate_logic_fmla(x) for x in fmla.terms]))
         elif isinstance(fmla, lg.Const) or isinstance(fmla, lg.Var):
@@ -116,6 +117,8 @@ class Translation:
         elif isinstance(fmla, lg.Ite):
             return Translation.globals_in_fmla(fmla.cond) | Translation.globals_in_fmla(fmla.t_then) | Translation.globals_in_fmla(fmla.t_else)
         elif isinstance(fmla, lg.And) or isinstance(fmla, lg.Or):
+            if len(fmla.terms) == 0:
+                return set()
             return set.union(*[Translation.globals_in_fmla(x) for x in fmla.terms])
         elif isinstance(fmla, lg.Eq) or isinstance(fmla, lg.Implies) or isinstance(fmla, lg.Iff):
             return Translation.globals_in_fmla(fmla.t1) | Translation.globals_in_fmla(fmla.t2)
@@ -130,6 +133,56 @@ class Translation:
         else:
             raise NotImplementedError("constants_in_fmla: {}".format(repr(fmla)))
 
+    def initializer_to_fmla(action: ivy_actions.Action) -> pyv.Expr:
+        '''Translate an Ivy initializer to a mypyvy formula.'''
+        # We want a one-state formula in this context
+        upd = it.make_vc(action).to_formula()
+        # For some reason, make_vc() returns a conjuction
+        # that has Not(And()) at the end. We remove that.
+        assert isinstance(upd, lg.And)
+        upd = lg.And(*upd.terms[:-1])
+        fmla = Translation.translate_logic_fmla(upd)
+        return fmla
+
+    def translate_action(name: str, action: ivy_actions.Action) -> pyv.DefinitionDecl:
+        '''Translate an Ivy action to a mypyvy action.'''
+        # This gives us a two-state formula
+        (mod, tr, _pre) = action.update(im.module,None)
+
+        # Generate the modifies clauses
+        modified = sorted([Translation.to_pyv_name(x.name) for x in mod])
+        mods = tuple([pyv.ModifiesClause(x) for x in modified])
+
+        # Sanity check: all modified variables should have new_ versions
+        updated = sorted(list(set(filter(itr.is_new, tr.symbols()))))
+        _updated_of = list(map(lambda x: Translation.to_pyv_name(itr.new_of(x).name), updated))
+        assert modified == _updated_of, "modified != updated_of: {} != {}".format(modified, _updated_of)
+
+        # Collect all implicitly existentially quantified variables
+        # ...and add them as parameters to the transition after
+        # the action's own formal params
+        exs = sorted(list(set(filter(itr.is_skolem, tr.symbols()))))
+        params = action.formal_params + exs
+        # TODO: what to do with action.formal_returns?
+
+        # relation = old version
+        # new_relation = new version
+        # __fml:x = existentially quantified x
+        # __new_fml:x = ???
+        # __m_relation = temporary/modified version?
+
+        upd = tr.to_formula()
+        # TODO: translate new() properly
+        pyv_fmla = Translation.translate_logic_fmla(upd)
+
+        # import pdb;pdb.set_trace()
+
+        # Generate the transition
+        pyv_name = Translation.to_pyv_name(name)
+        pyv_params = Translation.translate_binders(params)
+
+        trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
+        return trans
 
 # Our own class, which will be used to generate a mypyvy `Program`
 class MypyvyProgram:
@@ -140,13 +193,14 @@ class MypyvyProgram:
     def __init__(self):
         self.immutable_symbols = set()
 
-        self.sorts = []
-        self.constants = []
-        self.relations = []
-        self.functions = []
+        self.actions = []
         self.axioms = []
+        self.constants = []
+        self.functions = []
         self.initializers = []
         self.invariants = []
+        self.relations = []
+        self.sorts = []
 
     def add_constant_if_not_exists(self, cst):
         if cst.name not in [x.name for x in self.constants]:
@@ -249,15 +303,20 @@ class MypyvyProgram:
         '''Add initializers to the mypyvy program.'''
         for (name, init) in mod.initializers:
             name = Translation.to_pyv_name(name)
-            # convert initializer to formula
-            upd = it.make_vc(init).to_formula()
-            fmla = Translation.translate_logic_fmla(upd)
+            fmla = Translation.initializer_to_fmla(init)
             decl = pyv.InitDecl(name, fmla)
             self.initializers.append(decl)
 
+    def add_public_actions(self, mod: im.Module):
+        '''Add public actions to the mypyvy program.'''
+        public_actions = filter(lambda x: x[0] in mod.public_actions, mod.actions.items())
+        for (name, action) in public_actions:
+            decl = Translation.translate_action(name, action)
+            self.actions.append(decl)
+
     def to_program(self) -> pyv.Program:
         decls = self.sorts + self.constants + self.relations + self.functions \
-            + self.axioms + self.initializers + self.invariants
+            + self.axioms + self.initializers + self.actions + self.invariants
         return pyv.Program(decls)
 
 
@@ -288,17 +347,7 @@ def check_isolate():
     # mod.actions
 
     prog.add_initializers(mod)
-    # import pdb;pdb.set_trace()
-
-    # Generate VCs:
-    # _true = lg.And()
-    # _false = lg.Or()
-    # it.make_vc(action, _true, _false)
-
-    # What's used in ivy_vmt.py seems easier to work with
-    # upd = a.update(im.module,None)
-    # upd[0] describes the referenced symbols? (or modified symbols?)
-    # upd[1] describes the formula
+    prog.add_public_actions(mod)
 
     #  Generate the program
     pyv_prog = prog.to_program()
