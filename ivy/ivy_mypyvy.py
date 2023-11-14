@@ -65,45 +65,58 @@ class Translation:
             vars.append(pyv.SortedVar(name, sort, None))
         return vars
 
-    def translate_logic_fmla(fmla) -> pyv.Expr:
+    def translate_logic_fmla(fmla, is_twostate=False) -> pyv.Expr:
         '''Translates a logic formula (as defined in logic.py) to a
         mypyvy expression. (Note: these for some reason are not AST nodes.)'''
 
         if isinstance(fmla, lg.ForAll):
             # fmla.variables & fmla.body
-            return pyv.Forall(Translation.translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body))
+            return pyv.Forall(Translation.translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body, is_twostate))
         elif isinstance(fmla, lg.Exists):
             # fmla.variables & fmla.body
-            return pyv.Exists(Translation.translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body))
+            return pyv.Exists(Translation.translate_binders(fmla.variables), Translation.translate_logic_fmla(fmla.body, is_twostate))
         elif isinstance(fmla, lg.Ite):
             # fmla.sort & fmla.cond & fmla.t_then, fmla.t_else
-            return pyv.IfThenElse(Translation.translate_logic_fmla(fmla.cond), Translation.translate_logic_fmla(fmla.t_then), Translation.translate_logic_fmla(fmla.t_else))
+            return pyv.IfThenElse(Translation.translate_logic_fmla(fmla.cond, is_twostate), Translation.translate_logic_fmla(fmla.t_then, is_twostate), Translation.translate_logic_fmla(fmla.t_else, is_twostate))
         elif isinstance(fmla, lg.And):
             # fmla.terms
             if len(fmla.terms) == 0:
                 return pyv.TrueExpr
-            return pyv.And(*tuple([Translation.translate_logic_fmla(x) for x in fmla.terms]))
+            return pyv.And(*tuple([Translation.translate_logic_fmla(x, is_twostate) for x in fmla.terms]))
         elif isinstance(fmla, lg.Or):
             # fmla.terms
             if len(fmla.terms) == 0:
                 return pyv.FalseExpr
-            return pyv.Or(*tuple([Translation.translate_logic_fmla(x) for x in fmla.terms]))
+            return pyv.Or(*tuple([Translation.translate_logic_fmla(x, is_twostate) for x in fmla.terms]))
         elif isinstance(fmla, lg.Eq):
             # fmla.t1 & fmla.t2
-            return pyv.Eq(Translation.translate_logic_fmla(fmla.t1), Translation.translate_logic_fmla(fmla.t2))
+            return pyv.Eq(Translation.translate_logic_fmla(fmla.t1, is_twostate), Translation.translate_logic_fmla(fmla.t2, is_twostate))
         elif isinstance(fmla, lg.Implies):
             # fmla.t1 & fmla.t2
-            return pyv.Implies(Translation.translate_logic_fmla(fmla.t1), Translation.translate_logic_fmla(fmla.t2))
+            return pyv.Implies(Translation.translate_logic_fmla(fmla.t1, is_twostate), Translation.translate_logic_fmla(fmla.t2, is_twostate))
         elif isinstance(fmla, lg.Iff):
             # fmla.t1 & fmla.t2
-            return pyv.Iff(Translation.translate_logic_fmla(fmla.t1), Translation.translate_logic_fmla(fmla.t2))
+            return pyv.Iff(Translation.translate_logic_fmla(fmla.t1, is_twostate), Translation.translate_logic_fmla(fmla.t2, is_twostate))
         elif isinstance(fmla, lg.Not):
             # fmla.body
-            return pyv.Not(Translation.translate_logic_fmla(fmla.body))
+            return pyv.Not(Translation.translate_logic_fmla(fmla.body, is_twostate))
         elif isinstance(fmla, lg.Apply):
             # fmla.func & fmla.terms
-            return pyv.Apply(Translation.to_pyv_name(fmla.func.name), tuple([Translation.translate_logic_fmla(x) for x in fmla.terms]))
-        elif isinstance(fmla, lg.Const) or isinstance(fmla, lg.Var):
+            if is_twostate and itr.is_new(fmla.func):
+                # We need to add a new() around the application and rename 'new_rel' to 'rel'
+                old_name = itr.new_of(fmla.func).name
+                fm = pyv.Apply(Translation.to_pyv_name(old_name), tuple([Translation.translate_logic_fmla(x, is_twostate) for x in fmla.terms]))
+                return pyv.New(fm)
+            else:
+                return pyv.Apply(Translation.to_pyv_name(fmla.func.name), tuple([Translation.translate_logic_fmla(x, is_twostate) for x in fmla.terms]))
+        elif isinstance(fmla, lg.Const):
+            if is_twostate and itr.is_new(fmla):
+                # We need to add a new() around the application and rename 'new_rel' to 'rel'
+                old_name = itr.new_of(fmla).name
+                fm = pyv.Id(Translation.to_pyv_name(old_name))
+                return pyv.New(fm)
+            return pyv.Id(Translation.to_pyv_name(fmla.name))
+        elif isinstance(fmla, lg.Var):
             return pyv.Id(Translation.to_pyv_name(fmla.name))
         else:
             raise NotImplementedError("translating logic formula {} to mypyvy ".format(repr(fmla)))
@@ -164,6 +177,7 @@ class Translation:
         exs = sorted(list(set(filter(itr.is_skolem, tr.symbols()))))
         params = action.formal_params + exs
         # TODO: what to do with action.formal_returns?
+        # probably the easiest thing is to add them as existentials (parameters)
 
         # relation = old version
         # new_relation = new version
@@ -173,7 +187,7 @@ class Translation:
 
         upd = tr.to_formula()
         # TODO: translate new() properly
-        pyv_fmla = Translation.translate_logic_fmla(upd)
+        pyv_fmla = Translation.translate_logic_fmla(upd, is_twostate=True)
 
         # import pdb;pdb.set_trace()
 
