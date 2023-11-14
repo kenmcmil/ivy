@@ -160,7 +160,7 @@ class Translation:
     def translate_action(name: str, action: ivy_actions.Action) -> pyv.DefinitionDecl:
         '''Translate an Ivy action to a mypyvy action.'''
         # This gives us a two-state formula
-        (mod, tr, _pre) = action.update(im.module,None)
+        (mod, tr, pre) = action.update(im.module,None)
 
         # Generate the modifies clauses
         modified = sorted([Translation.to_pyv_name(x.name) for x in mod])
@@ -175,9 +175,14 @@ class Translation:
         # ...and add them as parameters to the transition after
         # the action's own formal params
         exs = sorted(list(set(filter(itr.is_skolem, tr.symbols()))))
-        params = action.formal_params + exs
+        # it seems exs already contains action.formal_params
+        # but we might to use action.formal_params to prettify names
+        params = exs
         # TODO: what to do with action.formal_returns?
         # probably the easiest thing is to add them as existentials (parameters)
+
+        # FIXME: we can get intermediate versions of relations and functions,
+        # e.g. __m_l.a.b.balance.map(V0,V1), and we can't translate those as parameters
 
         # relation = old version
         # new_relation = new version
@@ -185,15 +190,14 @@ class Translation:
         # __new_fml:x = ???
         # __m_relation = temporary/modified version?
 
-        upd = tr.to_formula()
-        # TODO: translate new() properly
-        pyv_fmla = Translation.translate_logic_fmla(upd, is_twostate=True)
-
-        # import pdb;pdb.set_trace()
+        # The precondition is defined negatively, i.e. the action *fails*
+        # if the precondition is true, so we negate it.
+        fmla = lg.And(lg.Not(pre.to_formula()), tr.to_formula())
 
         # Generate the transition
         pyv_name = Translation.to_pyv_name(name)
         pyv_params = Translation.translate_binders(params)
+        pyv_fmla = Translation.translate_logic_fmla(fmla, is_twostate=True)
 
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
         return trans
