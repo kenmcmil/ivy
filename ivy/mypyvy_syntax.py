@@ -1752,7 +1752,7 @@ def pretty_no_parens(e: Expr, buf: List[str], prec: int, side: str) -> None:
 
         _pretty(e.arg2, buf, p, 'RIGHT')
     elif isinstance(e, NaryExpr):
-        assert len(e.args) >= 2
+        assert len(e.args) >= 2, "NaryExpr {} has < 2 args".format(repr(e))
 
         p = pretty_precedence(e)
 

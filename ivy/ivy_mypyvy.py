@@ -86,6 +86,23 @@ class Translation:
         else:
             raise NotImplementedError("translating symbol {} to mypyvy ".format(repr(sym)))
  
+    def pyv_havoc_symbol(sym: il.Symbol) -> pyv.Expr:
+        '''Return a two-state formula that havocs the given symbol.'''
+        sort = sym.sort
+        sym = itr.new(sym) # we want to talk about the new version
+        vvar = lg.Var("V", sort.rng)
+
+        fmla = None
+        if len(sort.dom) == 0:
+            # exists V in sort.rng. cst = V
+            fmla = lg.Exists([vvar], lg.Eq(sym, vvar))
+        else:
+            # forall X0 X1 X2 in sort.dom. exists V in sort.rng. rel(X,Y,Z) = V
+            uvars = [lg.Var("X{}".format(i), sort.dom[i]) for i in range(len(sort.dom))]
+            ex = lg.Exists([vvar], lg.Eq(lg.Apply(sym, *uvars), vvar))
+            fmla = lg.ForAll(uvars, ex)
+
+        return Translation.translate_logic_fmla(fmla, is_twostate=True)
 
     def translate_logic_fmla(fmla, is_twostate=False) -> pyv.Expr:
         '''Translates a logic formula (as defined in logic.py) to a
@@ -184,6 +201,7 @@ class Translation:
         upd = it.make_vc(init).to_formula()
         # For some reason, make_vc() returns a conjuction
         # that has Not(And()) at the end. We remove that.
+        # FIXME: are we supposed to negate the whole thing?
         assert isinstance(upd, lg.And) and upd.terms[-1] == lg.Not(lg.And())
         upd = lg.And(*upd.terms[:-1])
         # Add existential quantifiers for all implicitly existentially quantified variables
@@ -222,7 +240,8 @@ class Translation:
         # Collect all implicitly existentially quantified variables
         # ...and add them as parameters to the transition after
         # the action's own formal params
-        exs = set(filter(itr.is_skolem, tr.symbols()))
+        exs = set()
+        exs |= set(filter(itr.is_skolem, tr.symbols()))
         exs |= set(filter(itr.is_skolem, pre.symbols()))
         first_order_exs = set(filter(lambda x: il.is_first_order_sort(x.sort) | il.is_enumerated_sort(x.sort) | il.is_boolean_sort(x.sort), exs))
 
@@ -403,8 +422,14 @@ class MypyvyProgram:
             pyv_decl = Translation.translate_symbol_decl(se_ex, True)
             self.intermediate.append(pyv_decl)
 
-        # TODO: define action to havoc these these
-        # import pdb; pdb.set_trace()
+        # Create a havoc action that sets all second order existentials arbitrarily
+        if len(self.second_order_existentials) > 0:
+            modified = sorted([Translation.to_pyv_name(x.name) for x in self.second_order_existentials])
+            mods = tuple([pyv.ModifiesClause(x) for x in modified])
+            havoc_clauses: list[pyv.Expr] = [Translation.pyv_havoc_symbol(x) for x in self.second_order_existentials]
+            havoc_fmla = pyv.And(*havoc_clauses)
+            act = pyv.DefinitionDecl(True, 2, "_havoc_intermediaries", [], mods, havoc_fmla)
+            self.havoc_action.append(act)
 
     def to_program(self) -> pyv.Program:
         decls = self.sorts + self.constants + self.relations + \
