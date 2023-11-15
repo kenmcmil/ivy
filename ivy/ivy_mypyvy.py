@@ -303,11 +303,12 @@ class MypyvyProgram:
                 const = pyv.ConstantDecl(enum_value, pyv_sort, False)
                 self.constants.append(const)
 
-            # Add distinct axioms
+            # Add distinct axioms (if there are >=2 enum values)
             individuals = [pyv.Id(name) for name in sort.defines()]
-            op = pyv.NaryExpr("DISTINCT", tuple(individuals))
-            axiom = pyv.AxiomDecl("{}_distinct".format(sort.name), op)
-            self.axioms.append(axiom)
+            if len(individuals) >= 2:
+                op = pyv.NaryExpr("DISTINCT", tuple(individuals))
+                axiom = pyv.AxiomDecl("{}_distinct".format(sort.name), op)
+                self.axioms.append(axiom)
         elif il.is_boolean_sort(sort):
             # No need to declare the bool sort
             pass
