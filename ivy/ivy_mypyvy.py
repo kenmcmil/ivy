@@ -185,6 +185,40 @@ class Translation:
         else:
             raise NotImplementedError("constants_in_fmla: {}".format(repr(fmla)))
 
+    def new_globals_in_pyv_fmla(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
+        '''Returns the set of global names that appear in a mypyvy formula
+        under new(). Used to identify which relations/functions are modified.'''
+        if isinstance(e, pyv.Bool) or isinstance(e, pyv.Int):
+            return set()
+        elif isinstance(e, pyv.UnaryExpr):
+            if e.op == 'NEW':
+                return Translation.new_globals_in_pyv_fmla(globals, e.arg, under_new=True)
+            return Translation.new_globals_in_pyv_fmla(globals, e.arg, under_new)
+        elif isinstance(e, pyv.BinaryExpr):
+            return Translation.new_globals_in_pyv_fmla(globals, e.arg1, under_new) | Translation.new_globals_in_pyv_fmla(globals, e.arg2, under_new)
+        elif isinstance(e, pyv.NaryExpr):
+            return set.union(*[Translation.new_globals_in_pyv_fmla(globals, x, under_new) for x in e.args])
+        elif isinstance(e, pyv.AppExpr):
+            res = set.union(*[Translation.new_globals_in_pyv_fmla(globals, x, under_new) for x in e.args])
+            if under_new:
+                res.add(e.callee)
+            return res
+        elif isinstance(e, pyv.QuantifierExpr):
+            return Translation.new_globals_in_pyv_fmla(globals, e.body, under_new)
+        elif isinstance(e, pyv.Id):
+            if under_new and e.name in globals:
+                return set([e.name])
+            return set()
+        elif isinstance(e, pyv.IfThenElse):
+            return Translation.new_globals_in_pyv_fmla(globals, e.branch, under_new) \
+                | Translation.new_globals_in_pyv_fmla(globals, e.then, under_new) \
+                      | Translation.new_globals_in_pyv_fmla(globals, e.els, under_new)
+        elif isinstance(e, pyv.Let):
+            return Translation.new_globals_in_pyv_fmla(globals, e.val, under_new) \
+                | Translation.new_globals_in_pyv_fmla(globals, e.body, under_new)
+        else:
+            assert False, e
+
     def translate_initializer(init: ia.Action) -> tuple[pyv.InitDecl, set[il.Symbol]]:
         '''Translate an Ivy (combined) initializer, i.e. one that calls in
         sequence all the initializer actions, to a mypyvy initializer.
@@ -219,7 +253,7 @@ class Translation:
         decl = pyv.InitDecl(None, ex_fmla)
         return (decl, second_order_exs)
 
-    def translate_action(name: str, action: ia.Action) -> tuple[pyv.DefinitionDecl, set[il.Symbol]]:
+    def translate_action(pyv_mutable_symbols: set[str], name: str, action: ia.Action) -> tuple[pyv.DefinitionDecl, set[il.Symbol]]:
         '''Translate an Ivy action to a mypyvy action. The transition
         relation might include temporary/intermediate versions of relations.
         To translate these to mypyvy, we collect them and return them as
@@ -227,15 +261,6 @@ class Translation:
         defined at the top-level in the mypyvy spec.'''
         # This gives us a two-state formula
         (mod, tr, pre) = action.update(im.module,None)
-
-        # Generate the modifies clauses
-        modified = sorted([Translation.to_pyv_name(x.name) for x in mod])
-        mods = tuple([pyv.ModifiesClause(x) for x in modified])
-
-        # Sanity check: all modified variables should have new_ versions
-        updated = sorted(list(set(filter(itr.is_new, tr.symbols()))))
-        _updated_of = list(map(lambda x: Translation.to_pyv_name(itr.new_of(x).name), updated))
-        assert modified == _updated_of, "modified != updated_of: {} != {}".format(modified, _updated_of)
 
         # Collect all implicitly existentially quantified variables
         # ...and add them as parameters to the transition after
@@ -268,11 +293,41 @@ class Translation:
         # The precondition is defined negatively, i.e. the action *fails*
         # if the precondition is true, so we negate it.
         fmla = lg.And(lg.Not(pre.to_formula()), tr.to_formula())
+        # FIXME: ivy_vmt.py calls z3.simplify
+        # from ivy import z3
+        # import pdb; pdb.set_trace()
 
         # Generate the transition
         pyv_name = Translation.to_pyv_name(name)
         pyv_params = Translation.translate_binders(params)
         pyv_fmla = Translation.translate_logic_fmla(fmla, is_twostate=True)
+
+        # NOTE: mypyvy is less clever than Ivy when it comes to identifying
+        # what is modified. In particular, if there is a clause of the form
+        # new(env_historical_auth_required(O, t__this, _approve)), where
+        # t__this is an individual, it will think that t__this is modified
+        # by this clause, but that's not really the case.
+        # Basically, we'd want to do this this:
+        #
+        # modified = sorted([Translation.to_pyv_name(x.name) for x in mod])
+        # mods = tuple([pyv.ModifiesClause(x) for x in modified])
+        #
+        # But it sadly doesn't work for all cases.
+        # We "fix" this with a HACK by traversing the AST of the mypyvy
+        # transition and adding all these instances.
+        globals_in_fmla = Translation.globals_in_fmla(fmla)
+        pyv_globals_in_fmla = set(map(Translation.to_pyv_name, globals_in_fmla)) & pyv_mutable_symbols
+        pyv_new_globals: set[str] = Translation.new_globals_in_pyv_fmla(pyv_globals_in_fmla, pyv_fmla)
+        mods = tuple([pyv.ModifiesClause(x) for x in sorted(pyv_new_globals)])
+
+        # Sanity check 1: all Ivy modified variables should have new_ versions
+        modified = sorted([Translation.to_pyv_name(x.name) for x in mod])
+        updated = sorted(list(set(filter(itr.is_new, tr.symbols()))))
+        _updated_of = list(map(lambda x: Translation.to_pyv_name(itr.new_of(x).name), updated))
+        assert modified == _updated_of, "modified != updated_of: {} != {}".format(modified, _updated_of)
+
+        # Sanity check 2: pyv_new_globals is a superset of modified
+        assert pyv_new_globals.issuperset(modified), "pyv_new_globals is not a superset of modified: {} is not a superset of {}".format(pyv_new_globals, modified)
 
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
         return (trans, second_order_exs)
@@ -284,7 +339,7 @@ class MypyvyProgram:
     # axiom -> pyv.AxiomDecl
 
     def __init__(self):
-        self.immutable_symbols = set()
+        self.immutable_symbols: set[str] = set()
 
         self.actions = []
         self.axioms = []
@@ -334,6 +389,14 @@ class MypyvyProgram:
         else:
             # print("unhandled sort: {}".format(sort))
             raise NotImplementedError("sort {} not supported".format(sort))
+
+    def mutable_symbols(self) -> set[str]:
+        '''Returns the set of mutable symbols.'''
+        mut = set()
+        for c in self.constants + self.relations + self.functions:
+            if c.mutable:
+                mut.add(c.name)
+        return mut
 
     def translate_ivy_sig(self, mod: im.Module):
         '''Translate a module signature to the sorts, constants,
@@ -409,8 +472,9 @@ class MypyvyProgram:
     def add_public_actions(self, mod: im.Module):
         '''Add public actions to the mypyvy program.'''
         public_actions = filter(lambda x: x[0] in mod.public_actions, mod.actions.items())
+        mutable_symbols = self.mutable_symbols()
         for (name, action) in public_actions:
-            (decl, sec_ord_exs) = Translation.translate_action(name, action)
+            (decl, sec_ord_exs) = Translation.translate_action(mutable_symbols, name, action)
             self.second_order_existentials |= sec_ord_exs
             self.actions.append(decl)
 
