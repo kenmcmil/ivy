@@ -104,6 +104,25 @@ class Translation:
 
         return Translation.translate_logic_fmla(fmla, is_twostate=True)
 
+    def pyv_unchanged_symbol(sym: il.Symbol) -> pyv.Expr:
+        '''Return a two-state formula that asserts the given symbol is unchanged.'''
+        sort = sym.sort
+        old_sym = sym
+        sym = itr.new(sym) # we want to talk about the new version
+        vvar = lg.Var("V", sort.rng)
+
+        fmla = None
+        if len(sort.dom) == 0:
+            # new(cst) = cst
+            fmla = lg.Eq(sym, old_sym)
+        else:
+            # forall X0 X1 X2 in sort.dom. new(rel(X,Y,Z)) = rel(X, Y, Z)
+            uvars = [lg.Var("X{}".format(i), sort.dom[i]) for i in range(len(sort.dom))]
+            eq = lg.Eq(lg.Apply(sym, *uvars), lg.Apply(old_sym, *uvars))
+            fmla = lg.ForAll(uvars, eq)
+
+        return Translation.translate_logic_fmla(fmla, is_twostate=True)
+
     def translate_logic_fmla(fmla, is_twostate=False) -> pyv.Expr:
         '''Translates a logic formula (as defined in logic.py) to a
         mypyvy expression. (Note: these for some reason are not AST nodes.)'''
@@ -314,7 +333,8 @@ class Translation:
         #
         # But it sadly doesn't work for all cases.
         # We "fix" this with a HACK by traversing the AST of the mypyvy
-        # transition and adding all these instances.
+        # transition and adding all these instances AND then for each of them
+        # adding a clause that new(not_actually_modified) = not_actually_modified.
         globals_in_fmla = Translation.globals_in_fmla(fmla)
         pyv_globals_in_fmla = set(map(Translation.to_pyv_name, globals_in_fmla)) & pyv_mutable_symbols
         pyv_new_globals: set[str] = Translation.new_globals_in_pyv_fmla(pyv_globals_in_fmla, pyv_fmla)
@@ -328,6 +348,15 @@ class Translation:
 
         # Sanity check 2: pyv_new_globals is a superset of modified
         assert pyv_new_globals.issuperset(modified), "pyv_new_globals is not a superset of modified: {} is not a superset of {}".format(pyv_new_globals, modified)
+
+        # Add a clause that new(not_actually_modified) = not_actually_modified
+        pyv_not_actually_modified = pyv_new_globals - set(modified)
+        if len(pyv_not_actually_modified) > 0:
+            all_symbols = set(pre.symbols()) | set(tr.symbols())
+            ivy_not_actually_modified = set(filter(lambda x: Translation.to_pyv_name(x.name) in pyv_not_actually_modified, all_symbols))
+            noop_clauses = [Translation.pyv_unchanged_symbol(x) for x in ivy_not_actually_modified]
+            noop_fmla = pyv.And(*noop_clauses)
+            pyv_fmla = pyv.And(pyv_fmla, noop_fmla)
 
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
         return (trans, second_order_exs)
