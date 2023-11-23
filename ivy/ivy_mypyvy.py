@@ -1,13 +1,17 @@
 #
 # Copyright (c) Microsoft Corporation. All Rights Reserved.
 #
+from typing import Any
 from . import ivy_actions as ia
 from . import ivy_logic as il
 from . import ivy_module as im
+from . import ivy_solver
 from . import ivy_trace as it
 from . import ivy_transrel as itr
 from . import logic as lg
 from . import mypyvy_syntax as pyv
+
+from ivy import z3
 
 logfile = None
 verbose = False
@@ -64,6 +68,16 @@ class Translation:
             sort = Translation.to_pyv_sort(binder.sort)
             vars.append(pyv.SortedVar(name, sort, None))
         return vars
+
+    def smt_binders_to_ivy(fmla: z3.BoolRef):
+        '''Convert the binders of an SMT formula to Ivy binders.'''
+        assert z3.is_ast(fmla) and z3.is_expr(fmla) and z3.is_quantifier(fmla)
+        num_binders = fmla.num_vars()
+        # FIXME: how to handle EnumeratedSorts correctly here?
+        binders = [lg.Var(fmla.var_name(i), lg.UninterpretedSort(fmla.var_sort(i).name())) for i in range(num_binders)]
+        # Per https://stackoverflow.com/a/13357721, we have to reverse the order
+        binders = binders[::-1]
+        return binders
 
     def translate_symbol_decl(sym: il.Symbol, is_mutable=True) -> pyv.Decl:
         sort = sym.sort
@@ -122,6 +136,70 @@ class Translation:
             fmla = lg.ForAll(uvars, eq)
 
         return Translation.translate_logic_fmla(fmla, is_twostate=True)
+    
+    def smt_to_ivy(fmla: z3.BoolRef, sorts: dict[str, Any], binders=[]) -> lg.And:
+        '''Convert an SMT formula to an Ivy formula. Takes a dictionary
+        from names to Ivy sorts as helper.'''
+        assert z3.is_ast(fmla) and z3.is_expr(fmla)
+
+        # Quantifiers
+        # FIXME: variables underneath have de-Bruijn indices
+        # we need to convert them back to names
+        # https://stackoverflow.com/questions/13357509/is-it-possible-to-access-the-name-associated-with-the-de-bruijn-index-in-z3
+        if z3.is_quantifier(fmla) and fmla.is_forall():
+            # How to translate the sorts of the vars?
+            new_binders = Translation.smt_binders_to_ivy(fmla)
+            binders = binders + new_binders
+            return lg.ForAll(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, binders))
+        elif z3.is_quantifier(fmla): # strangely, there is no is_exists()
+            new_binders = Translation.smt_binders_to_ivy(fmla)
+            binders = binders + new_binders
+            return lg.Exists(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, binders))
+        # Unary ops
+        elif z3.is_not(fmla):
+            return lg.Not(Translation.smt_to_ivy(fmla.children()[0], sorts, binders))
+        # Binary ops
+        elif z3.is_and(fmla):
+            return lg.And(*[Translation.smt_to_ivy(x, sorts, binders) for x in fmla.children()])
+        elif z3.is_or(fmla):
+            return lg.Or(*[Translation.smt_to_ivy(x, sorts, binders) for x in fmla.children()])
+        elif z3.is_eq(fmla):
+            return lg.Eq(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders))
+        elif z3.is_app_of(fmla, z3.Z3_OP_IMPLIES):
+            return lg.Implies(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders))
+        elif z3.is_app_of(fmla, z3.Z3_OP_IFF):
+            return lg.Iff(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders))
+        # Ternary
+        elif z3.is_app_of(fmla, z3.Z3_OP_ITE):
+            return lg.Ite(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1]), Translation.smt_to_ivy(fmla.children()[2], sorts, binders))
+        # Constants
+        elif z3.is_true(fmla):
+            return _true
+        elif z3.is_false(fmla):
+            return _false
+        elif z3.is_const(fmla):
+            name = fmla.decl().name()
+            return lg.Const(name, sorts[name])
+        # IMPORTANT: these must come after all the other operators,
+        # because it's not really specific enough.
+        # Application
+        elif z3.is_app(fmla) and fmla.num_args() > 0:
+            name = fmla.decl().name()
+            sort = sorts[name]
+            args = [Translation.smt_to_ivy(x, sorts, binders) for x in fmla.children()]
+            try:
+                return lg.Apply(lg.Const(name, sort), *args)
+            except:
+                import pdb; pdb.set_trace()
+
+                # Constants
+        elif z3.is_var(fmla):
+            # FIXME: is this correct?
+            return binders[z3.get_var_index(fmla)]
+        else:
+            import pdb; pdb.set_trace()
+            assert False, "unhandled SMT formula: {}".format(fmla)
+
 
     def translate_logic_fmla(fmla, is_twostate=False) -> pyv.Expr:
         '''Translates a logic formula (as defined in logic.py) to a
@@ -281,6 +359,19 @@ class Translation:
         # This gives us a two-state formula
         (mod, tr, pre) = action.update(im.module,None)
 
+
+        # The precondition is defined negatively, i.e. the action *fails*
+        # if the precondition is true, so we negate it.
+        fmla = lg.And(lg.Not(pre.to_formula()), tr.to_formula())
+        symbols = {}
+        for sym in fmla.symbols():
+            symbols[sym.name] = sym.sort
+        
+        # Simplify formula with Z3's help.
+        z3_fmla = ivy_solver.formula_to_z3(fmla)
+        sfmla = Translation.simplify_via_smt(z3_fmla)
+        _fmla = Translation.smt_to_ivy(sfmla, symbols)
+
         # Collect all implicitly existentially quantified variables
         # ...and add them as parameters to the transition after
         # the action's own formal params
@@ -309,9 +400,6 @@ class Translation:
         # __new_fml:x = ??? not sure what this is
         # __m_relation = temporary/modified version?
 
-        # The precondition is defined negatively, i.e. the action *fails*
-        # if the precondition is true, so we negate it.
-        fmla = lg.And(lg.Not(pre.to_formula()), tr.to_formula())
         # FIXME: ivy_vmt.py calls z3.simplify
         # from ivy import z3
         # import pdb; pdb.set_trace()
@@ -359,7 +447,23 @@ class Translation:
             pyv_fmla = pyv.And(pyv_fmla, noop_fmla)
 
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
+        import pdb; pdb.set_trace()
         return (trans, second_order_exs)
+    
+
+    def simplify_via_smt(fmla: z3.BoolRef) -> z3.BoolRef:
+        '''Simplify an SMT formula.'''
+        # First, apply the contextual solver
+        fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
+        # Then perform our own (further) simplifications
+        # https://microsoft.github.io/z3guide/programming/Example%20Programs/Formula%20Simplification/
+
+        # Rules for simplification:
+        # (1) (if B then X else X) => X
+        # (2) (X = X) => true
+
+        return fmla
+
 
 # Our own class, which will be used to generate a mypyvy `Program`
 class MypyvyProgram:
