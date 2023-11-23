@@ -74,9 +74,11 @@ class Translation:
         assert z3.is_ast(fmla) and z3.is_expr(fmla) and z3.is_quantifier(fmla)
         num_binders = fmla.num_vars()
         # FIXME: how to handle EnumeratedSorts correctly here?
-        binders = [lg.Var(fmla.var_name(i), lg.UninterpretedSort(fmla.var_sort(i).name())) for i in range(num_binders)]
-        # Per https://stackoverflow.com/a/13357721, we have to reverse the order
-        binders = binders[::-1]
+        def to_ivy_name(name: str) -> str:
+            # For some reason, SMT vars incorporate the sort,
+            # like 'X:integer'; we only want the 'X'
+            return name.split(':')[0]
+        binders = [lg.Var(to_ivy_name(fmla.var_name(i)), lg.UninterpretedSort(fmla.var_sort(i).name())) for i in range(num_binders)]
         return binders
 
     def translate_symbol_decl(sym: il.Symbol, is_mutable=True) -> pyv.Decl:
@@ -149,11 +151,12 @@ class Translation:
         if z3.is_quantifier(fmla) and fmla.is_forall():
             # How to translate the sorts of the vars?
             new_binders = Translation.smt_binders_to_ivy(fmla)
-            binders = binders + new_binders
+            # FIXME: wtf should happen here?
+            binders = binders + list(reversed(new_binders))
             return lg.ForAll(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, binders))
         elif z3.is_quantifier(fmla): # strangely, there is no is_exists()
             new_binders = Translation.smt_binders_to_ivy(fmla)
-            binders = binders + new_binders
+            binders = binders + list(reversed(new_binders))
             return lg.Exists(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, binders))
         # Unary ops
         elif z3.is_not(fmla):
@@ -171,7 +174,7 @@ class Translation:
             return lg.Iff(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders))
         # Ternary
         elif z3.is_app_of(fmla, z3.Z3_OP_ITE):
-            return lg.Ite(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1]), Translation.smt_to_ivy(fmla.children()[2], sorts, binders))
+            return lg.Ite(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders), Translation.smt_to_ivy(fmla.children()[2], sorts, binders))
         # Constants
         elif z3.is_true(fmla):
             return _true
@@ -366,18 +369,21 @@ class Translation:
         symbols = {}
         for sym in fmla.symbols():
             symbols[sym.name] = sym.sort
-        
-        # Simplify formula with Z3's help.
+
+        # Make sure round-tripping through SMT works        
         z3_fmla = ivy_solver.formula_to_z3(fmla)
+        _fmla = Translation.smt_to_ivy(z3_fmla, symbols)
+        assert fmla == _fmla, "Round-tripping Ivy -> SMT -> Ivy is incorrect: {} != {}".format(fmla, _fmla)
+
+        # then simplify via SMT
         sfmla = Translation.simplify_via_smt(z3_fmla)
-        _fmla = Translation.smt_to_ivy(sfmla, symbols)
+        _sfmla = Translation.smt_to_ivy(sfmla, symbols)
+        fmla = _sfmla
 
         # Collect all implicitly existentially quantified variables
         # ...and add them as parameters to the transition after
         # the action's own formal params
-        exs = set()
-        exs |= set(filter(itr.is_skolem, tr.symbols()))
-        exs |= set(filter(itr.is_skolem, pre.symbols()))
+        exs = set(filter(itr.is_skolem, fmla.symbols()))
         first_order_exs = set(filter(lambda x: il.is_first_order_sort(x.sort) | il.is_enumerated_sort(x.sort) | il.is_boolean_sort(x.sort), exs))
 
         # We can get intermediate versions of relations and functions,
