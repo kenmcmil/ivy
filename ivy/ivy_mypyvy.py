@@ -11,6 +11,7 @@ from . import ivy_transrel as itr
 from . import logic as lg
 from . import mypyvy_syntax as pyv
 
+import time
 from ivy import z3
 
 logfile = None
@@ -288,38 +289,40 @@ class Translation:
         else:
             raise NotImplementedError("constants_in_fmla: {}".format(repr(fmla)))
 
-    def new_globals_in_pyv_fmla(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
+    def pyv_globals_under_new(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
         '''Returns the set of global names that appear in a mypyvy formula
-        under new(). Used to identify which relations/functions are modified.
-        Takes as argument the set of all mutable global symbols.'''
+        under new(). Used to identify which relations/functions we need to
+        declare as modified. Takes as argument the set of all mutable global symbols.
+        IMPORTANT: because of mypyvy's conservative logic, some of these variables
+        might not actually be modified. We need to identify those separately.'''
         if isinstance(e, pyv.Bool) or isinstance(e, pyv.Int):
             return set()
         elif isinstance(e, pyv.UnaryExpr):
             if e.op == 'NEW':
-                return Translation.new_globals_in_pyv_fmla(globals, e.arg, under_new=True)
-            return Translation.new_globals_in_pyv_fmla(globals, e.arg, under_new)
+                return Translation.pyv_globals_under_new(globals, e.arg, under_new=True)
+            return Translation.pyv_globals_under_new(globals, e.arg, under_new)
         elif isinstance(e, pyv.BinaryExpr):
-            return Translation.new_globals_in_pyv_fmla(globals, e.arg1, under_new) | Translation.new_globals_in_pyv_fmla(globals, e.arg2, under_new)
+            return Translation.pyv_globals_under_new(globals, e.arg1, under_new) | Translation.pyv_globals_under_new(globals, e.arg2, under_new)
         elif isinstance(e, pyv.NaryExpr):
-            return set.union(*[Translation.new_globals_in_pyv_fmla(globals, x, under_new) for x in e.args])
+            return set.union(*[Translation.pyv_globals_under_new(globals, x, under_new) for x in e.args])
         elif isinstance(e, pyv.AppExpr):
-            res = set.union(*[Translation.new_globals_in_pyv_fmla(globals, x, under_new) for x in e.args])
+            res = set.union(*[Translation.pyv_globals_under_new(globals, x, under_new) for x in e.args])
             if under_new:
                 res.add(e.callee)
             return res
         elif isinstance(e, pyv.QuantifierExpr):
-            return Translation.new_globals_in_pyv_fmla(globals, e.body, under_new)
+            return Translation.pyv_globals_under_new(globals, e.body, under_new)
         elif isinstance(e, pyv.Id):
             if under_new and e.name in globals:
                 return set([e.name])
             return set()
         elif isinstance(e, pyv.IfThenElse):
-            return Translation.new_globals_in_pyv_fmla(globals, e.branch, under_new) \
-                | Translation.new_globals_in_pyv_fmla(globals, e.then, under_new) \
-                      | Translation.new_globals_in_pyv_fmla(globals, e.els, under_new)
+            return Translation.pyv_globals_under_new(globals, e.branch, under_new) \
+                | Translation.pyv_globals_under_new(globals, e.then, under_new) \
+                      | Translation.pyv_globals_under_new(globals, e.els, under_new)
         elif isinstance(e, pyv.Let):
-            return Translation.new_globals_in_pyv_fmla(globals, e.val, under_new) \
-                | Translation.new_globals_in_pyv_fmla(globals, e.body, under_new)
+            return Translation.pyv_globals_under_new(globals, e.val, under_new) \
+                | Translation.pyv_globals_under_new(globals, e.body, under_new)
         else:
             assert False, e
 
@@ -331,7 +334,8 @@ class Translation:
         the second return value. Our caller then must ensure these are
         defined at the top-level in the mypyvy spec.
         '''
-        print("Translating initializer...")
+        print("Translating initializer... ", end='', flush=True)
+        _start = time.monotonic()
         # This is substantially similar to translate_action, but instead
         # of defining a mypyvy transition, we explicitly add existential
         # quantifiers around the one-state formula for init.
@@ -351,6 +355,7 @@ class Translation:
         z3_fmla = ivy_solver.formula_to_z3(upd)
         sfmla = Translation.simplify_via_smt(z3_fmla)
         _sfmla = Translation.smt_to_ivy(sfmla, im.module.sig.sorts, symbols)
+        _upd = upd # Save original formula
         upd = _sfmla
 
         # Add existential quantifiers for all implicitly existentially quantified variables
@@ -366,6 +371,8 @@ class Translation:
         fmla = Translation.translate_logic_fmla(upd)
         ex_fmla = pyv.Exists(Translation.translate_binders(ex_quant), fmla)
         decl = pyv.InitDecl(None, ex_fmla)
+        _end = time.monotonic()
+        print("done in {:.2f}s! ({:.3f}x original size)".format(_end - _start, len(str(_sfmla))/len(str(_upd))))
         return (decl, second_order_exs)
 
     def translate_action(pyv_mutable_symbols: set[str], name: str, action: ia.Action) -> tuple[pyv.DefinitionDecl, set[il.Symbol]]:
@@ -374,7 +381,8 @@ class Translation:
         To translate these to mypyvy, we collect them and return them as
         the second return value. Our caller then must ensure these are
         defined at the top-level in the mypyvy spec.'''
-        print("Translating action {}...".format(name))
+        print("Translating action `{}`... ".format(name), end='', flush=True)
+        _start = time.monotonic()
         # This gives us a two-state formula
         (_mod, tr, pre) = action.update(im.module,None)
 
@@ -393,6 +401,7 @@ class Translation:
         # then simplify via SMT
         sfmla = Translation.simplify_via_smt(z3_fmla)
         _sfmla = Translation.smt_to_ivy(sfmla, im.module.sig.sorts, symbols)
+        _fmla = fmla # Save the original fmla
         fmla = _sfmla
 
         # Collect all implicitly existentially quantified variables
@@ -432,10 +441,32 @@ class Translation:
         #
         # Rather than relying on Ivy's output, we compute the set of modified
         # symbols ourselves, by mimicking mypyvy's logic.
-        pyv_new_globals: set[str] = Translation.new_globals_in_pyv_fmla(pyv_mutable_symbols, pyv_fmla)
+        pyv_new_globals: set[str] = Translation.pyv_globals_under_new(pyv_mutable_symbols, pyv_fmla)
         mods = tuple([pyv.ModifiesClause(x) for x in sorted(pyv_new_globals)])
 
+        # We still need to identify which relations are not really modified,
+        # but only caught in mypyvy's conservative logic. We know:
+        # (1) because of mypyvy's conservative logic, pyv_new_globals is
+        #     a superset of the symbols that are actually modified;
+        # (2) pyv_fmla, because it has undergone simplification, might not
+        #     contain all the symbols from the original formula, hence `_mod`
+        #     (Ivy modified for the original formula) is a superset of the
+        #     ACTUALLY modified symbols in `pyv_fmla` (but not necessarily
+        #     a superset of `pyv_new_globals`);
+        # (3) we assume that `_mod` (returned by Ivy) is the set of actually
+        #     modified symbols in the original formula
+        #
+        # Schematically:
+        #   actually_modified(orig) >= modified(simplified) >= actually_modified(simplified)
+        #
+        # What we do is we look at actually_modified(orig) and see which of
+        # these symbols  appear with a _new() in the simplified formula. These are
+        # actually_modified(simplified) and they should be a subset of modified(simplified).
+        # import pdb; pdb.set_trace()
+
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
+        _end = time.monotonic()
+        print("done in {:.2f}s! ({:.3f}x original size)".format(_end - _start, len(str(_sfmla))/len(str(_fmla))))
         return (trans, second_order_exs)
     
 
