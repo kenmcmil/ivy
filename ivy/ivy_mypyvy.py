@@ -148,18 +148,16 @@ class Translation:
         assert z3.is_ast(fmla) and z3.is_expr(fmla)
 
         # Quantifiers
-        # FIXME: variables underneath have de-Bruijn indices
-        # we need to convert them back to names
         # https://stackoverflow.com/questions/13357509/is-it-possible-to-access-the-name-associated-with-the-de-bruijn-index-in-z3
         if z3.is_quantifier(fmla) and fmla.is_forall():
             # How to translate the sorts of the vars?
             new_binders = Translation.smt_binders_to_ivy(sorts, fmla)
-            # FIXME: wtf should happen here?
-            binders = binders + list(reversed(new_binders))
+            # XXX: this seems to work, but I'm not sure it's correct
+            binders = list(reversed(new_binders)) + binders
             return lg.ForAll(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, syms, binders))
         elif z3.is_quantifier(fmla): # strangely, there is no is_exists()
             new_binders = Translation.smt_binders_to_ivy(sorts, fmla)
-            binders = binders + list(reversed(new_binders))
+            binders = list(reversed(new_binders)) + binders
             return lg.Exists(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, syms, binders))
         # Unary ops
         elif z3.is_not(fmla):
@@ -333,6 +331,7 @@ class Translation:
         the second return value. Our caller then must ensure these are
         defined at the top-level in the mypyvy spec.
         '''
+        print("Translating initializer...")
         # This is substantially similar to translate_action, but instead
         # of defining a mypyvy transition, we explicitly add existential
         # quantifiers around the one-state formula for init.
@@ -375,6 +374,7 @@ class Translation:
         To translate these to mypyvy, we collect them and return them as
         the second return value. Our caller then must ensure these are
         defined at the top-level in the mypyvy spec.'''
+        print("Translating action {}...".format(name))
         # This gives us a two-state formula
         (_mod, tr, pre) = action.update(im.module,None)
 
@@ -647,6 +647,7 @@ def check_isolate():
     # mod.initializers -> after init
     # mod.public_actions
     # mod.actions
+    print("The translation performs simplification via SMT. It might take on the order of minutes!")
     prog.add_initializers(mod)
     prog.add_public_actions(mod)
     prog.add_intermediate_rels_fn_and_havoc_action(mod)
