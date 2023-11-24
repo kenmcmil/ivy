@@ -344,6 +344,16 @@ class Translation:
         # FIXME: are we supposed to negate the whole thing?
         assert isinstance(upd, lg.And) and upd.terms[-1] == lg.Not(lg.And())
         upd = lg.And(*upd.terms[:-1])
+
+        symbols = {}
+        for sym in upd.symbols():
+            symbols[sym.name] = sym
+        # Simplify via SMT
+        z3_fmla = ivy_solver.formula_to_z3(upd)
+        sfmla = Translation.simplify_via_smt(z3_fmla)
+        _sfmla = Translation.smt_to_ivy(sfmla, im.module.sig.sorts, symbols)
+        upd = _sfmla
+
         # Add existential quantifiers for all implicitly existentially quantified variables
         exs = set(filter(itr.is_skolem, upd.symbols()))
         first_order_exs = set(filter(lambda x: il.is_first_order_sort(x.sort) | il.is_enumerated_sort(x.sort) | il.is_boolean_sort(x.sort), exs))
