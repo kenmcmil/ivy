@@ -372,7 +372,7 @@ class Translation:
         ex_fmla = pyv.Exists(Translation.translate_binders(ex_quant), fmla)
         decl = pyv.InitDecl(None, ex_fmla)
         _end = time.monotonic()
-        print("done in {:.2f}s! ({:.3f}x original size)".format(_end - _start, len(str(_sfmla))/len(str(_upd))))
+        print("done in {:.2f}s! ({:.1f}% of original size)".format(_end - _start, ((len(str(_sfmla)) / len(str(_upd))) * 100)))
         return (decl, second_order_exs)
 
     def translate_action(pyv_mutable_symbols: set[str], name: str, action: ia.Action) -> tuple[pyv.DefinitionDecl, set[il.Symbol]]:
@@ -441,32 +441,35 @@ class Translation:
         #
         # Rather than relying on Ivy's output, we compute the set of modified
         # symbols ourselves, by mimicking mypyvy's logic.
-        pyv_new_globals: set[str] = Translation.pyv_globals_under_new(pyv_mutable_symbols, pyv_fmla)
-        mods = tuple([pyv.ModifiesClause(x) for x in sorted(pyv_new_globals)])
+        pyv_supposedly_modified: set[str] = Translation.pyv_globals_under_new(pyv_mutable_symbols, pyv_fmla)
+        mods = tuple([pyv.ModifiesClause(x) for x in sorted(pyv_supposedly_modified)])
 
         # We still need to identify which relations are not really modified,
-        # but only caught in mypyvy's conservative logic. We know:
-        # (1) because of mypyvy's conservative logic, pyv_new_globals is
-        #     a superset of the symbols that are actually modified;
-        # (2) pyv_fmla, because it has undergone simplification, might not
-        #     contain all the symbols from the original formula, hence `_mod`
-        #     (Ivy modified for the original formula) is a superset of the
-        #     ACTUALLY modified symbols in `pyv_fmla` (but not necessarily
-        #     a superset of `pyv_new_globals`);
-        # (3) we assume that `_mod` (returned by Ivy) is the set of actually
-        #     modified symbols in the original formula
-        #
-        # Schematically:
-        #   actually_modified(orig) >= modified(simplified) >= actually_modified(simplified)
-        #
-        # What we do is we look at actually_modified(orig) and see which of
-        # these symbols  appear with a _new() in the simplified formula. These are
-        # actually_modified(simplified) and they should be a subset of modified(simplified).
-        # import pdb; pdb.set_trace()
+        # but only caught in mypyvy's conservative logic.
+        # What we do is we look at the simplified formula (`fmla`) and see
+        # which symbols start with new_. These should actually match
+        # the Ivy modified symbols in the original formula.
+        actually_modified = set(map(itr.new_of, filter(itr.is_new, fmla.symbols())))
+
+        # Sanity check: simplification shouldn't have changed the set of
+        # modified symbols.
+        orig_modified = set(map(lambda x: x.name, _mod))
+        simpl_modified = set(map(lambda x: x.name, actually_modified))
+        assert orig_modified == simpl_modified, "orig_modified != simpl_modified: {} != {}".format(orig_modified, simpl_modified)
+
+        # For each not actually modified relation, add a clause that
+        # it hasn't changed (otherwise it will get havoc'ed).
+        pyv_actually_modified: set[str] = set(map(Translation.to_pyv_name, simpl_modified))
+        pyv_not_actually_modified = pyv_supposedly_modified - pyv_actually_modified
+        if len(pyv_not_actually_modified) > 0:
+            ivy_not_actually_modified = set(filter(lambda x: Translation.to_pyv_name(x.name) in pyv_not_actually_modified, fmla.symbols()))
+            noop_clauses = [Translation.pyv_unchanged_symbol(x) for x in ivy_not_actually_modified]
+            noop_fmla = pyv.And(*noop_clauses)
+            pyv_fmla = pyv.And(pyv_fmla, noop_fmla)
 
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
         _end = time.monotonic()
-        print("done in {:.2f}s! ({:.3f}x original size)".format(_end - _start, len(str(_sfmla))/len(str(_fmla))))
+        print("done in {:.2f}s! ({:.1f}% of original size)".format(_end - _start, (len(str(_sfmla)) / len(str(_fmla)) * 100)))
         return (trans, second_order_exs)
     
 
@@ -474,13 +477,8 @@ class Translation:
         '''Simplify an SMT formula.'''
         # First, apply the contextual solver
         fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
-        # Then perform our own (further) simplifications
+        # TODO: perform our own (further) simplifications?
         # https://microsoft.github.io/z3guide/programming/Example%20Programs/Formula%20Simplification/
-
-        # Rules for simplification:
-        # (1) (if B then X else X) => X
-        # (2) (X = X) => true
-
         return fmla
 
 
