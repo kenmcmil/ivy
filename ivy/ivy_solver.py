@@ -583,11 +583,11 @@ def clauses_to_z3(clauses):
 
 def formula_to_z3_int(fmla):
 #    print "formula_to_z3_int: {} : {}".format(fmla,type(fmla))
-    if isinstance(fmla,ivy_logic.Definition or ivy_logic.is_eq(fmla) or isinstance(fmla,ivy_logic.Iff)):
-        if ivy_logic.is_true(fmla.args[1]):
-            return formula_to_z3_int(fmla.args[0])
-        if ivy_logic.is_false(fmla.args[1]):
-            return z3.Not(formula_to_z3_int(fmla.args[0]))
+    # if isinstance(fmla,ivy_logic.Definition or ivy_logic.is_eq(fmla) or isinstance(fmla,ivy_logic.Iff)):
+    #     if ivy_logic.is_true(fmla.args[1]):
+    #         return formula_to_z3_int(fmla.args[0])
+    #     if ivy_logic.is_false(fmla.args[1]):
+    #         return z3.Not(formula_to_z3_int(fmla.args[0]))
     if ivy_logic.is_atom(fmla):
         return atom_to_z3(fmla)
     if isinstance(fmla,ivy_logic.Definition) and ivy_logic.is_enumerated(fmla.args[0]) and not use_z3_enums:
@@ -603,18 +603,20 @@ def formula_to_z3_int(fmla):
         return z3.Or(args)
     if isinstance(fmla,ivy_logic.Not):
         return z3.Not(args[0])
-    if isinstance(fmla,ivy_logic.Definition or ivy_logic.is_eq(fmla) or isinstance(fmla,ivy_logic.Iff)):
-        if ivy_logic.is_true(fmla.args[1]):
-            return args[0]
-        if ivy_logic.is_false(fmla.args[1]):
-            return z3.Not(args[0])
+    if isinstance(fmla,ivy_logic.Definition or ivy_logic.is_eq(fmla)):
+        # if ivy_logic.is_true(fmla.args[1]):
+        #     return args[0]
+        # if ivy_logic.is_false(fmla.args[1]):
+        #     return z3.Not(args[0])
         z3_body = my_eq(args[0],args[1])
         return z3_body
         assert all(ivy_logic.is_variable(v) for v in fmla.args[0].args)
         z3_vs = [term_to_z3(v) for v in fmla.args[0].args]
         return z3.ForAll(z3_vs, z3_body)
     if isinstance(fmla,ivy_logic.Iff):
-        return my_eq(args[0],args[1])
+        # return my_eq(args[0],args[1])
+        ctx = z3.main_ctx()
+        return z3.BoolRef(z3.Z3_mk_iff(ctx.ref(), args[0].as_ast(), args[1].as_ast()), ctx)
     if isinstance(fmla,ivy_logic.Implies):
         return z3.Implies(args[0],args[1])
     if isinstance(fmla,ivy_logic.Ite):
