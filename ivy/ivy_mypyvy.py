@@ -69,16 +69,17 @@ class Translation:
             vars.append(pyv.SortedVar(name, sort, None))
         return vars
 
-    def smt_binders_to_ivy(fmla: z3.BoolRef):
-        '''Convert the binders of an SMT formula to Ivy binders.'''
+    def smt_binders_to_ivy(sorts: dict[str, Any], fmla: z3.BoolRef):
+        '''Convert the binders of an SMT formula to Ivy binders.
+        sorts: dictionary from sort names to Ivy sorts
+        '''
         assert z3.is_ast(fmla) and z3.is_expr(fmla) and z3.is_quantifier(fmla)
         num_binders = fmla.num_vars()
-        # FIXME: how to handle EnumeratedSorts correctly here?
         def to_ivy_name(name: str) -> str:
             # For some reason, SMT vars incorporate the sort,
             # like 'X:integer'; we only want the 'X'
             return name.split(':')[0]
-        binders = [lg.Var(to_ivy_name(fmla.var_name(i)), lg.UninterpretedSort(fmla.var_sort(i).name())) for i in range(num_binders)]
+        binders = [lg.Var(to_ivy_name(fmla.var_name(i)), sorts[fmla.var_sort(i).name()]) for i in range(num_binders)]
         return binders
 
     def translate_symbol_decl(sym: il.Symbol, is_mutable=True) -> pyv.Decl:
@@ -139,9 +140,11 @@ class Translation:
 
         return Translation.translate_logic_fmla(fmla, is_twostate=True)
     
-    def smt_to_ivy(fmla: z3.BoolRef, sorts: dict[str, Any], binders=[]) -> lg.And:
-        '''Convert an SMT formula to an Ivy formula. Takes a dictionary
-        from names to Ivy sorts as helper.'''
+    def smt_to_ivy(fmla: z3.BoolRef, sorts: dict[str, Any], syms: dict[str, Any], binders=[]) -> lg.And:
+        '''Convert an SMT formula to an Ivy formula.
+        sorts: dict from sort names to Ivy sorts
+        syms: dict from symbol names to Ivy symbols
+        '''
         assert z3.is_ast(fmla) and z3.is_expr(fmla)
 
         # Quantifiers
@@ -150,31 +153,31 @@ class Translation:
         # https://stackoverflow.com/questions/13357509/is-it-possible-to-access-the-name-associated-with-the-de-bruijn-index-in-z3
         if z3.is_quantifier(fmla) and fmla.is_forall():
             # How to translate the sorts of the vars?
-            new_binders = Translation.smt_binders_to_ivy(fmla)
+            new_binders = Translation.smt_binders_to_ivy(sorts, fmla)
             # FIXME: wtf should happen here?
             binders = binders + list(reversed(new_binders))
-            return lg.ForAll(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, binders))
+            return lg.ForAll(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, syms, binders))
         elif z3.is_quantifier(fmla): # strangely, there is no is_exists()
-            new_binders = Translation.smt_binders_to_ivy(fmla)
+            new_binders = Translation.smt_binders_to_ivy(sorts, fmla)
             binders = binders + list(reversed(new_binders))
-            return lg.Exists(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, binders))
+            return lg.Exists(new_binders, Translation.smt_to_ivy(fmla.body(), sorts, syms, binders))
         # Unary ops
         elif z3.is_not(fmla):
-            return lg.Not(Translation.smt_to_ivy(fmla.children()[0], sorts, binders))
+            return lg.Not(Translation.smt_to_ivy(fmla.children()[0], sorts, syms, binders))
         # Binary ops
         elif z3.is_and(fmla):
-            return lg.And(*[Translation.smt_to_ivy(x, sorts, binders) for x in fmla.children()])
+            return lg.And(*[Translation.smt_to_ivy(x, sorts, syms, binders) for x in fmla.children()])
         elif z3.is_or(fmla):
-            return lg.Or(*[Translation.smt_to_ivy(x, sorts, binders) for x in fmla.children()])
+            return lg.Or(*[Translation.smt_to_ivy(x, sorts, syms, binders) for x in fmla.children()])
         elif z3.is_eq(fmla):
-            return lg.Eq(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders))
+            return lg.Eq(Translation.smt_to_ivy(fmla.children()[0], sorts, syms, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, syms, binders))
         elif z3.is_app_of(fmla, z3.Z3_OP_IMPLIES):
-            return lg.Implies(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders))
+            return lg.Implies(Translation.smt_to_ivy(fmla.children()[0], sorts, syms, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, syms, binders))
         elif z3.is_app_of(fmla, z3.Z3_OP_IFF):
-            return lg.Iff(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders))
+            return lg.Iff(Translation.smt_to_ivy(fmla.children()[0], sorts, syms, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, syms, binders))
         # Ternary
         elif z3.is_app_of(fmla, z3.Z3_OP_ITE):
-            return lg.Ite(Translation.smt_to_ivy(fmla.children()[0], sorts, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, binders), Translation.smt_to_ivy(fmla.children()[2], sorts, binders))
+            return lg.Ite(Translation.smt_to_ivy(fmla.children()[0], sorts, syms, binders), Translation.smt_to_ivy(fmla.children()[1], sorts, syms, binders), Translation.smt_to_ivy(fmla.children()[2], sorts, syms, binders))
         # Constants
         elif z3.is_true(fmla):
             return _true
@@ -182,17 +185,19 @@ class Translation:
             return _false
         elif z3.is_const(fmla):
             name = fmla.decl().name()
-            return lg.Const(name, sorts[name])
+            sort = syms[name].sort
+            return lg.Const(name, sort)
         # IMPORTANT: these must come after all the other operators,
         # because it's not really specific enough.
         # Application
         elif z3.is_app(fmla) and fmla.num_args() > 0:
             name = fmla.decl().name()
-            sort = sorts[name]
-            args = [Translation.smt_to_ivy(x, sorts, binders) for x in fmla.children()]
+            sort = syms[name].sort
+            args = [Translation.smt_to_ivy(x, sorts, syms, binders) for x in fmla.children()]
             try:
                 return lg.Apply(lg.Const(name, sort), *args)
             except:
+                # ivy.logic.SortError: in application of new_env.auth_required, at position 3, expected sort {_mint,_transfer}, got sort function_identifier
                 import pdb; pdb.set_trace()
 
                 # Constants
@@ -362,22 +367,21 @@ class Translation:
         # This gives us a two-state formula
         (mod, tr, pre) = action.update(im.module,None)
 
-
         # The precondition is defined negatively, i.e. the action *fails*
         # if the precondition is true, so we negate it.
         fmla = lg.And(lg.Not(pre.to_formula()), tr.to_formula())
         symbols = {}
         for sym in fmla.symbols():
-            symbols[sym.name] = sym.sort
+            symbols[sym.name] = sym
 
         # Make sure round-tripping through SMT works        
         z3_fmla = ivy_solver.formula_to_z3(fmla)
-        _fmla = Translation.smt_to_ivy(z3_fmla, symbols)
-        assert fmla == _fmla, "Round-tripping Ivy -> SMT -> Ivy is incorrect: {} != {}".format(fmla, _fmla)
+        _fmla = Translation.smt_to_ivy(z3_fmla, im.module.sig.sorts, symbols)
+        assert fmla == _fmla, "Round-tripping Ivy -> SMT -> Ivy is incorrect: BEFORE:\n{}\n!=\nAFTER:\n{}".format(fmla, _fmla)
 
         # then simplify via SMT
         sfmla = Translation.simplify_via_smt(z3_fmla)
-        _sfmla = Translation.smt_to_ivy(sfmla, symbols)
+        _sfmla = Translation.smt_to_ivy(sfmla, im.module.sig.sorts, symbols)
         fmla = _sfmla
 
         # Collect all implicitly existentially quantified variables
