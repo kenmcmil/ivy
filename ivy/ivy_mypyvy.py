@@ -292,7 +292,8 @@ class Translation:
 
     def new_globals_in_pyv_fmla(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
         '''Returns the set of global names that appear in a mypyvy formula
-        under new(). Used to identify which relations/functions are modified.'''
+        under new(). Used to identify which relations/functions are modified.
+        Takes as argument the set of all mutable global symbols.'''
         if isinstance(e, pyv.Bool) or isinstance(e, pyv.Int):
             return set()
         elif isinstance(e, pyv.UnaryExpr):
@@ -365,7 +366,7 @@ class Translation:
         the second return value. Our caller then must ensure these are
         defined at the top-level in the mypyvy spec.'''
         # This gives us a two-state formula
-        (mod, tr, pre) = action.update(im.module,None)
+        (_mod, tr, pre) = action.update(im.module,None)
 
         # The precondition is defined negatively, i.e. the action *fails*
         # if the precondition is true, so we negate it.
@@ -404,16 +405,6 @@ class Translation:
         # what to do with action.formal_returns?
         # it seems they're already existentials, so we can just ignore them
 
-        # relation = old version
-        # new_relation = new version
-        # __fml:x = existentially quantified x
-        # __new_fml:x = ??? not sure what this is
-        # __m_relation = temporary/modified version?
-
-        # FIXME: ivy_vmt.py calls z3.simplify
-        # from ivy import z3
-        # import pdb; pdb.set_trace()
-
         # Generate the transition
         pyv_name = Translation.to_pyv_name(name)
         pyv_params = Translation.translate_binders(params)
@@ -424,40 +415,17 @@ class Translation:
         # new(env_historical_auth_required(O, t__this, _approve)), where
         # t__this is an individual, it will think that t__this is modified
         # by this clause, but that's not really the case.
-        # Basically, we'd want to do this this:
         #
-        # modified = sorted([Translation.to_pyv_name(x.name) for x in mod])
-        # mods = tuple([pyv.ModifiesClause(x) for x in modified])
+        # In any case, because we do simplification, some symbols from the
+        # original formula might have disappeared, so we can't just use
+        # what Ivy thought is modified by the action.
         #
-        # But it sadly doesn't work for all cases.
-        # We "fix" this with a HACK by traversing the AST of the mypyvy
-        # transition and adding all these instances AND then for each of them
-        # adding a clause that new(not_actually_modified) = not_actually_modified.
-        globals_in_fmla = Translation.globals_in_fmla(fmla)
-        pyv_globals_in_fmla = set(map(Translation.to_pyv_name, globals_in_fmla)) & pyv_mutable_symbols
-        pyv_new_globals: set[str] = Translation.new_globals_in_pyv_fmla(pyv_globals_in_fmla, pyv_fmla)
+        # Rather than relying on Ivy's output, we compute the set of modified
+        # symbols ourselves, by mimicking mypyvy's logic.
+        pyv_new_globals: set[str] = Translation.new_globals_in_pyv_fmla(pyv_mutable_symbols, pyv_fmla)
         mods = tuple([pyv.ModifiesClause(x) for x in sorted(pyv_new_globals)])
 
-        # Sanity check 1: all Ivy modified variables should have new_ versions
-        modified = sorted([Translation.to_pyv_name(x.name) for x in mod])
-        updated = sorted(list(set(filter(itr.is_new, tr.symbols()))))
-        _updated_of = list(map(lambda x: Translation.to_pyv_name(itr.new_of(x).name), updated))
-        assert modified == _updated_of, "modified != updated_of: {} != {}".format(modified, _updated_of)
-
-        # Sanity check 2: pyv_new_globals is a superset of modified
-        assert pyv_new_globals.issuperset(modified), "pyv_new_globals is not a superset of modified: {} is not a superset of {}".format(pyv_new_globals, modified)
-
-        # Add a clause that new(not_actually_modified) = not_actually_modified
-        pyv_not_actually_modified = pyv_new_globals - set(modified)
-        if len(pyv_not_actually_modified) > 0:
-            all_symbols = set(pre.symbols()) | set(tr.symbols())
-            ivy_not_actually_modified = set(filter(lambda x: Translation.to_pyv_name(x.name) in pyv_not_actually_modified, all_symbols))
-            noop_clauses = [Translation.pyv_unchanged_symbol(x) for x in ivy_not_actually_modified]
-            noop_fmla = pyv.And(*noop_clauses)
-            pyv_fmla = pyv.And(pyv_fmla, noop_fmla)
-
         trans = pyv.DefinitionDecl(True, 2, pyv_name, pyv_params, mods, pyv_fmla)
-        import pdb; pdb.set_trace()
         return (trans, second_order_exs)
     
 
