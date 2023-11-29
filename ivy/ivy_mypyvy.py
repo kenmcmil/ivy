@@ -72,17 +72,18 @@ class Translation:
             vars.append(pyv.SortedVar(name, sort, None))
         return vars
 
+    def smt_binder_name_to_ivy_name(name: str) -> str:
+        # For some reason, SMT vars incorporate the sort,
+        # like 'X:integer'; we only want the 'X'
+        return name.split(':')[0]
+
     def smt_binders_to_ivy(sorts: dict[str, Any], fmla: z3.BoolRef):
         '''Convert the binders of an SMT formula to Ivy binders.
         sorts: dictionary from sort names to Ivy sorts
         '''
         assert z3.is_ast(fmla) and z3.is_expr(fmla) and z3.is_quantifier(fmla)
         num_binders = fmla.num_vars()
-        def to_ivy_name(name: str) -> str:
-            # For some reason, SMT vars incorporate the sort,
-            # like 'X:integer'; we only want the 'X'
-            return name.split(':')[0]
-        binders = [lg.Var(to_ivy_name(fmla.var_name(i)), sorts[fmla.var_sort(i).name()]) for i in range(num_binders)]
+        binders = [lg.Var(Translation.smt_binder_name_to_ivy_name(fmla.var_name(i)), sorts[fmla.var_sort(i).name()]) for i in range(num_binders)]
         return binders
 
     def translate_symbol_decl(sym: il.Symbol, is_mutable=True) -> pyv.Decl:
@@ -477,6 +478,8 @@ class Translation:
 
     def simplify_via_smt(fmla: z3.BoolRef) -> z3.BoolRef:
         '''Simplify an SMT formula.'''
+        orig_fmla = fmla
+
         # First, apply the contextual solver
         fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
         # Then do some further simplifications
@@ -533,6 +536,22 @@ class Translation:
                 self.num_args = num_args
                 self.full_fmla = full_fmla
 
+            def __str__(self):
+                return self.full_fmla.__str__()
+
+            def is_application(self, fmla):
+                '''Is fmla an application of this macro?'''
+                if not z3.is_app(fmla):
+                    return False
+                if not fmla.decl() == self.head.decl():
+                    return False
+                return True
+
+            def unfold_definition_for(self, t):
+                '''Unfold the macro definition for the given application.'''
+                assert self.is_application(t), f"{t} is not an application of {self.head}"
+                return z3.substitute_vars(self.body, *t.children())
+
         def parse_macro(f):
             '''Splits a formula identified as a macro into a macro_head
             and a macro_body. Macro heads can then be identified in other formulas
@@ -560,17 +579,65 @@ class Translation:
                         # Return smaller subterms first
                         yield from subterms_rec(ch)
                         yield ch
+                # TODO: look under ForAll & Exists?
             return { s for s in subterms_rec(t) }
 
-        macro_fmlas = list(filter(is_skolem_macro, subterms(fmla)))
-        macros = list(map(parse_macro, macro_fmlas))
+        # We want to substitute m.head with m.bodies in fmla
+        # This seems very similar to `ivy_proof.ivy:unfold_fmla()`, which
+        # does this on the Ivy side.
+        def reduce_with_macro(t, macro):
+            def simplify_rec(t):
+                # Remove the macro definition
+                if z3.eq(t, macro.full_fmla):
+                    return True
+                # Replace the macro application with the body
+                if macro.is_application(t):
+                    return macro.unfold_definition_for(t)
+                chs = [simplify_rec(ch) for ch in t.children()]
+                # ForAll and Exists
+                if z3.is_quantifier(t):
+                    assert len(chs) == 1
+                    vs = [z3.Const(t.var_name(i), t.var_sort(i)) for i in range(t.num_vars())]
+                    if t.is_forall():
+                        return z3.ForAll(vs, chs[0])
+                    else:
+                        return z3.Exists(vs, chs[0])
+                # And() and Or() should be the same as applications
+                # but there is some arity check in z3.py that fails
+                # if they are treated as applications (their arity is supposedly 2).
+                if z3.is_and(t):
+                    return z3.And(chs)
+                if z3.is_or(t):
+                    return z3.Or(chs)
+                if z3.is_app(t):
+                    return t.decl()(chs)
+                if z3.is_const(t) or z3.is_var(t):
+                    return t
+                else:
+                    raise NotImplementedError(f"unhandled case: {t}")
+            return simplify_rec(t)
 
-        # import pdb; pdb.set_trace()
+        while True:
+            remaining_macros = map(parse_macro, filter(is_skolem_macro, subterms(fmla)))
+            # If there are no remaining macros to rewrite, we're done
+            # https://stackoverflow.com/a/21525143
+            _exhausted = object()
+            macro = next(remaining_macros, _exhausted)
+            if macro is _exhausted:
+                break
 
-        # Check:
-        # - z3.substitute_vars
-        # - z3.substitute
+            # Otherwise we reduce with this macro.
+            # This also replaces the macro definition itself with 'True'
+            _fmla = reduce_with_macro(fmla, macro)
+            fmla = _fmla
 
+        # Check that we produced an equivalent formula
+        s = z3.Solver()
+        s.add(z3.Not(orig_fmla == fmla))
+        res = s.check
+        assert res != z3.unsat, f"Simplification equivalnce: {res} produced a non-equivalent formula: {orig_fmla}\nis not equivalent to\n{fmla}"
+
+        # Apply a further simplification?
         return fmla
 
 
