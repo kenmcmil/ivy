@@ -635,8 +635,8 @@ class Translation:
         # Check that we produced an equivalent formula
         s = z3.Solver()
         s.add(z3.Not(orig_fmla == fmla))
-        res = s.check
-        assert res != z3.unsat, f"Simplification equivalence: {res} produced a non-equivalent formula: {orig_fmla}\nis not equivalent to\n{fmla}"
+        res = s.check()
+        assert res == z3.unsat, f"Simplification equivalence: {res} | produced a non-equivalent formula: {orig_fmla}\nis not equivalent to\n{fmla}"
 
         # Then perform Z3 simplifications
         fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
