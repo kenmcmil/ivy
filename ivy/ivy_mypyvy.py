@@ -10,6 +10,8 @@ from . import ivy_proof as pf
 from . import ivy_solver
 from . import ivy_trace as it
 from . import ivy_transrel as itr
+from . import ivy_utils as iu
+
 from . import logic as lg
 from . import mypyvy_syntax as pyv
 
@@ -294,6 +296,95 @@ class Translation:
         else:
             raise NotImplementedError("constants_in_fmla: {}".format(repr(fmla)))
 
+    def filter_subterms(fmla, pred):
+        s = set()
+        if pred(fmla):
+            s.add(fmla)
+        
+        if isinstance(fmla, lg.ForAll) or isinstance(fmla, lg.Exists):
+            return s | Translation.filter_subterms(fmla.body, pred)
+        elif isinstance(fmla, lg.Ite):
+            return s | Translation.filter_subterms(fmla.cond, pred) | Translation.filter_subterms(fmla.t_then, pred) | Translation.filter_subterms(fmla.t_else, pred)
+        elif isinstance(fmla, lg.And) or isinstance(fmla, lg.Or):
+            if len(fmla.terms) == 0:
+                return s
+            return s | set.union(*[Translation.filter_subterms(x, pred) for x in fmla.terms])
+        elif isinstance(fmla, lg.Eq) or isinstance(fmla, lg.Implies) or isinstance(fmla, lg.Iff):
+            return s | Translation.filter_subterms(fmla.t1, pred) | Translation.filter_subterms(fmla.t2, pred)
+        elif isinstance(fmla, lg.Not):
+            return s | Translation.filter_subterms(fmla.body, pred)
+        elif isinstance(fmla, lg.Apply):
+            return s | set.union(*[Translation.filter_subterms(x, pred) for x in fmla.terms])
+        elif isinstance(fmla, lg.Const) or isinstance(fmla, lg.Var):
+            return s
+        else:
+            raise NotImplementedError("Translation.filter_subterms: {}".format(repr(fmla)))
+
+
+    def replace_subterms(fmla: il.And, pred, with_fn=None) -> il.And:
+        if with_fn is None:
+            with_fn = lambda x: x
+        if pred(fmla):
+            return with_fn(fmla)
+        
+        if isinstance(fmla, lg.ForAll):
+            return lg.ForAll(fmla.variables, Translation.replace_subterms(fmla.body, pred, with_fn))
+        elif isinstance(fmla, lg.Exists):
+            return lg.Exists(fmla.variables, Translation.replace_subterms(fmla.body, pred, with_fn))
+        elif isinstance(fmla, lg.Ite):
+            return lg.Ite(Translation.replace_subterms(fmla.cond, pred, with_fn), Translation.replace_subterms(fmla.t_then, pred, with_fn), Translation.replace_subterms(fmla.t_else, pred, with_fn))
+        elif isinstance(fmla, lg.And):
+            return lg.And(*[Translation.replace_subterms(x, pred, with_fn) for x in fmla.terms])
+        elif isinstance(fmla, lg.Or):
+            return lg.Or(*[Translation.replace_subterms(x, pred, with_fn) for x in fmla.terms])
+        elif isinstance(fmla, lg.Eq):
+            return lg.Eq(Translation.replace_subterms(fmla.t1, pred, with_fn), Translation.replace_subterms(fmla.t2, pred, with_fn))
+        elif isinstance(fmla, lg.Implies):
+            return lg.Implies(Translation.replace_subterms(fmla.t1, pred, with_fn), Translation.replace_subterms(fmla.t2, pred, with_fn))
+        elif isinstance(fmla, lg.Iff):
+            return lg.Iff(Translation.replace_subterms(fmla.t1, pred, with_fn), Translation.replace_subterms(fmla.t2, pred, with_fn))
+        elif isinstance(fmla, lg.Not):
+            return lg.Not(Translation.replace_subterms(fmla.body, pred, with_fn))
+        elif isinstance(fmla, lg.Apply):
+            return lg.Apply(fmla.func, *[Translation.replace_subterms(x, pred, with_fn) for x in fmla.terms])
+        elif isinstance(fmla, lg.Const) or isinstance(fmla, lg.Var):
+            return fmla
+        else:
+            raise NotImplementedError("Translation.filter_subterms: {}".format(repr(fmla)))
+
+    def is_skolem_macro(f) -> bool:
+        '''Returns true if the given formula is a macro
+        that defines a Skolem relation.'''
+        # Adapted from `ivy_proof.ivy:match_from_defn()`
+        vs = set()
+        while isinstance(f, il.ForAll):
+            vs.update(f.variables)
+            f = f.body
+
+        # This code can handle constants as well, but we don't need it
+        if len(vs) == 0:
+            return False
+        
+        if il.is_eq(f) or isinstance(f, il.Iff):
+            lhs, rhs = f.args
+            # the or True is necessary because all() throws if list empty
+            if il.is_app(lhs) and (all(x in vs for x in lhs.args) or True) and iu.distinct(lhs.args):
+                try:
+                    # for applications
+                    return lhs.func.name.startswith(IVY_TEMPORARY_INDICATOR)
+                except:
+                    # for constants
+                    return lhs.name.startswith(IVY_TEMPORARY_INDICATOR)
+        return False
+
+    def reduce_skolem_macros(fmla: lg.And) -> lg.And:
+        '''Reduce Skolem macros in an Ivy formula.'''
+        macros = set(Translation.filter_subterms(fmla, Translation.is_skolem_macro))
+        _fmla = Translation.replace_subterms(fmla, Translation.is_skolem_macro, lambda x: _true)
+        macro_defs = [ast.LabeledFormula(ast.Atom(f'_macro_{i}'), macro_fmla) for (i, macro_fmla) in enumerate(macros)]
+        _sfmla = pf.unfold_fmla(_fmla, [macro_defs])
+        return _sfmla
+
     def pyv_globals_under_new(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
         '''Returns the set of global names that appear in a mypyvy formula
         under new(). Used to identify which relations/functions we need to
@@ -356,6 +447,20 @@ class Translation:
         symbols = {}
         for sym in upd.symbols():
             symbols[sym.name] = sym
+
+        # Remove intermediary variables
+        supd = Translation.reduce_skolem_macros(upd)
+
+        # Check that upd and supd are equivalent, via SMT
+        orig_z3 = ivy_solver.formula_to_z3(upd)
+        simp_z3 = ivy_solver.formula_to_z3(supd)
+        s = z3.Solver()
+        s.add(z3.Not(orig_z3 == simp_z3))
+        res = s.check()
+        assert res == z3.unsat, "Solver returned {}: upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+        
+        upd = supd
+
         # Simplify via SMT
         z3_fmla = ivy_solver.formula_to_z3(upd)
         sfmla = Translation.simplify_via_smt(z3_fmla, symbols)
@@ -397,6 +502,19 @@ class Translation:
         symbols = {}
         for sym in fmla.symbols():
             symbols[sym.name] = sym
+
+        # Remove intermediary variables
+        sfmla = Translation.reduce_skolem_macros(fmla)
+        
+        # Check that upd and supd are equivalent, via SMT
+        orig_z3 = ivy_solver.formula_to_z3(fmla)
+        simp_z3 = ivy_solver.formula_to_z3(sfmla)
+        s = z3.Solver()
+        s.add(z3.Not(orig_z3 == simp_z3))
+        res = s.check()
+        assert res == z3.unsat, "Solver returned {}: upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+        
+        fmla = sfmla
 
         # Make sure round-tripping through SMT works        
         z3_fmla = ivy_solver.formula_to_z3(fmla)
@@ -476,172 +594,11 @@ class Translation:
         _end = time.monotonic()
         print("done in {:.2f}s! ({:.1f}% of original size)".format(_end - _start, (len(str(_sfmla)) / len(str(_fmla)) * 100)))
         return (trans, second_order_exs)
-    
 
     def simplify_via_smt(fmla: z3.BoolRef, syms: dict[str, Any]) -> z3.BoolRef:
         '''Simplify an SMT formula.'''
-        orig_fmla = fmla
-
-        # Perform our own simplifications.
-        # https://microsoft.github.io/z3guide/programming/Example%20Programs/Formula%20Simplification/
-
-        # We would want to apply the macro-finder tactic and apply it
-        # only for the Skolem relations, but it seems that's not possible
-        # without modifying Z3 internals. Instead, we'll do it ourselves.
-        # Inspiration:
-        # https://github.com/Z3Prover/z3/blob/3422f44cea4e73572d1e22d1c483a960ec788771/src/ast/macros/macro_finder.cpp
-        # https://github.com/Z3Prover/z3/blob/3422f44cea4e73572d1e22d1c483a960ec788771/src/ast/macros/macro_util.cpp
-
-        # TODO: rRfactor this to perform the macro identification
-        # on the Ivy side, rather than relying on Z3.
-
-        def is_macro(f) -> bool:
-            '''Returns true if the given formula is a macro.
-            Implemented by calling Z3.'''
-            if not z3.is_bool(f):
-                return False
-
-            s = z3.Tactic('macro-finder').apply(f).as_expr()
-            # NOTE: this also returns True if `f` is a conjunction of
-            # macros; we don't want that, but it isn't an issue given
-            # how we call `is_macro` in this context.
-            return z3.is_true(s)
-
-        def is_skolem_macro(f) -> bool:
-            '''Returns true if the given formula is a macro
-            that defines a Skolem relation.'''
-            if not is_macro(f):
-                return False
-
-            # at the very least, it can identify when _rel is on the RHS
-            # Type of macros we support:
-            #  - ForAll(binders, Iff/Eq(_rel(binders), definition))
-            if z3.is_quantifier(f) and f.is_forall():
-                # Identify if _rel(binders) is on LHS or RHS of Iff/Eq
-                num_binders = f.num_vars()
-                sides = [0, 1] # LHS, RHS
-                for side in sides:
-                    if not f.body().children()[side].num_args() == num_binders:
-                        continue
-                    # name of quantified relation
-                    rel_name = f.body().children()[side].decl().name()
-                    return rel_name.startswith(IVY_TEMPORARY_INDICATOR)
-
-            return False
-
-        class Macro:
-            def __init__(self, head, body, num_args, full_fmla):
-                self.head = head
-                self.body = body
-                self.num_args = num_args
-                self.full_fmla = full_fmla
-
-            def __str__(self):
-                return self.full_fmla.__str__()
-
-            def is_application(self, fmla):
-                '''Is fmla an application of this macro?'''
-                if not z3.is_app(fmla):
-                    return False
-                if not fmla.decl() == self.head.decl():
-                    return False
-                return True
-
-        def parse_macro(f):
-            '''Splits a formula identified as a macro into a macro_head
-            and a macro_body. Macro heads can then be identified in other formulas
-            and replaced with the body.'''
-            assert z3.is_quantifier(f) and f.is_forall(), f"Unsupported macro type: {f}"
-            # Identify if _rel(binders) is on LHS or RHS of Iff/Eq
-            num_binders = f.num_vars()
-            sides = [0, 1] # LHS, RHS
-            for side in sides:
-                if not f.body().children()[side].num_args() == num_binders:
-                    continue
-                macro_head = f.body().children()[side]
-                macro_body = f.body().children()[1 - side]
-                return Macro(macro_head, macro_body, num_binders, f)
-            assert False, f"Macro could not be parsed: {f}"
-
-        def subterms(t):
-            seen = {}
-            def subterms_rec(t):
-                if z3.is_app(t):
-                    for ch in t.children():
-                        if ch in seen:
-                            continue
-                        seen[ch] = True
-                        # Return smaller subterms first
-                        yield from subterms_rec(ch)
-                        yield ch
-                # TODO: look under ForAll & Exists?
-            return { s for s in subterms_rec(t) }
-
-        # We want to substitute m.head with m.bodies in fmla
-        # This seems very similar to `ivy_proof.ivy:unfold_fmla()`, which
-        # does this on the Ivy side.
-        def remove_macro_definition(t, macro):
-            def simplify_rec(t):
-                # Remove the macro definition
-                if z3.eq(t, macro.full_fmla):
-                    return True
-                # Replace the macro application with the body
-                # if macro.is_application(t):
-                    # return macro.unfold_definition_for(t)
-                chs = [simplify_rec(ch) for ch in t.children()]
-                # ForAll and Exists
-                if z3.is_quantifier(t):
-                    assert len(chs) == 1
-                    vs = [z3.Const(t.var_name(i), t.var_sort(i)) for i in range(t.num_vars())]
-                    if t.is_forall():
-                        return z3.ForAll(vs, chs[0])
-                    else:
-                        return z3.Exists(vs, chs[0])
-                # And() and Or() should be the same as applications
-                # but there is some arity check in z3.py that fails
-                # if they are treated as applications (their arity is supposedly 2).
-                if z3.is_and(t):
-                    return z3.And(chs)
-                if z3.is_or(t):
-                    return z3.Or(chs)
-                if z3.is_app(t):
-                    return t.decl()(chs)
-                if z3.is_const(t) or z3.is_var(t):
-                    return t
-                else:
-                    raise NotImplementedError(f"unhandled case: {t}")
-            return simplify_rec(t)
-
-        while True:
-            remaining_macros = map(parse_macro, filter(is_skolem_macro, subterms(fmla)))
-            # If there are no remaining macros to rewrite, we're done
-            # https://stackoverflow.com/a/21525143
-            _exhausted = object()
-            macro = next(remaining_macros, _exhausted)
-            if macro is _exhausted:
-                break
-
-            # Otherwise we reduce with this macro.
-            # This also replaces the macro definition itself with 'True'
-            _fmla = remove_macro_definition(fmla, macro)
-            iv_fmla = Translation.smt_to_ivy(_fmla, im.module.sig.sorts, syms)
-            macro_fmla = Translation.smt_to_ivy(macro.full_fmla, im.module.sig.sorts, syms)
-            dfn = ast.LabeledFormula(ast.Atom('interm_macro'), macro_fmla)
-            _iv_fmla = pf.unfold_fmla(iv_fmla, [[dfn]])
-            _sm_fmla = ivy_solver.formula_to_z3(_iv_fmla)
-
-            fmla = _sm_fmla
-
-        # Check that we produced an equivalent formula
-        s = z3.Solver()
-        s.add(z3.Not(z3.Implies(orig_fmla, fmla)))
-        res = s.check()
-        assert res == z3.unsat, f"Simplification equivalence: {res} | produced a non-equivalent formula: {orig_fmla}\nis not equivalent to\n{fmla}"
-
-        # Then perform Z3 simplifications
         fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
         fmla = z3.Tactic('propagate-values').apply(fmla).as_expr()
-
         return fmla
 
 
