@@ -3,8 +3,10 @@
 #
 from typing import Any
 from . import ivy_actions as ia
+from . import ivy_ast as ast
 from . import ivy_logic as il
 from . import ivy_module as im
+from . import ivy_proof as pf
 from . import ivy_solver
 from . import ivy_trace as it
 from . import ivy_transrel as itr
@@ -356,7 +358,7 @@ class Translation:
             symbols[sym.name] = sym
         # Simplify via SMT
         z3_fmla = ivy_solver.formula_to_z3(upd)
-        sfmla = Translation.simplify_via_smt(z3_fmla)
+        sfmla = Translation.simplify_via_smt(z3_fmla, symbols)
         _sfmla = Translation.smt_to_ivy(sfmla, im.module.sig.sorts, symbols)
         _upd = upd # Save original formula
         upd = _sfmla
@@ -402,7 +404,7 @@ class Translation:
         assert fmla == _fmla, "Round-tripping Ivy -> SMT -> Ivy is incorrect: BEFORE:\n{}\n!=\nAFTER:\n{}".format(fmla, _fmla)
 
         # then simplify via SMT
-        sfmla = Translation.simplify_via_smt(z3_fmla)
+        sfmla = Translation.simplify_via_smt(z3_fmla, symbols)
         _sfmla = Translation.smt_to_ivy(sfmla, im.module.sig.sorts, symbols)
         _fmla = fmla # Save the original fmla
         fmla = _sfmla
@@ -476,7 +478,7 @@ class Translation:
         return (trans, second_order_exs)
     
 
-    def simplify_via_smt(fmla: z3.BoolRef) -> z3.BoolRef:
+    def simplify_via_smt(fmla: z3.BoolRef, syms: dict[str, Any]) -> z3.BoolRef:
         '''Simplify an SMT formula.'''
         orig_fmla = fmla
 
@@ -490,6 +492,9 @@ class Translation:
         # https://github.com/Z3Prover/z3/blob/3422f44cea4e73572d1e22d1c483a960ec788771/src/ast/macros/macro_finder.cpp
         # https://github.com/Z3Prover/z3/blob/3422f44cea4e73572d1e22d1c483a960ec788771/src/ast/macros/macro_util.cpp
 
+        # TODO: rRfactor this to perform the macro identification
+        # on the Ivy side, rather than relying on Z3.
+
         def is_macro(f) -> bool:
             '''Returns true if the given formula is a macro.
             Implemented by calling Z3.'''
@@ -497,7 +502,7 @@ class Translation:
                 return False
 
             s = z3.Tactic('macro-finder').apply(f).as_expr()
-            # FIXME: this also returns True if `f` is a conjunction of
+            # NOTE: this also returns True if `f` is a conjunction of
             # macros; we don't want that, but it isn't an issue given
             # how we call `is_macro` in this context.
             return z3.is_true(s)
@@ -542,26 +547,6 @@ class Translation:
                     return False
                 return True
 
-            def unfold_definition_for(self, t):
-                '''Unfold the macro definition for the given application.'''
-                assert self.is_application(t), f"{t} is not an application of {self.head}"
-                # FIXME: There seems to be an issue here if the ORDER of the
-                # quantifiers in the FORALL does not match the order of the
-                # arguments in the application, e.g. if:
-                #   macro.head.children() = [Var(2), Var(0), Var(1)]
-                #                instead of [Var(2), Var(1), Var(0)]
-                # We need to rearrange t.children() to match the order of
-                # the quantifiers in the macro head?
-                # Or is the issue something else?
-
-                # orig_children = t.children()
-                # # [2, 0, 1] in the example above
-                # head_indices = list(map(z3.get_var_index, macro.head.children()))
-                # rc = list(reversed(orig_children))
-                # children = [rc[i] for i in head_indices]
-
-                return z3.substitute_vars(self.body, *t.children())
-
         def parse_macro(f):
             '''Splits a formula identified as a macro into a macro_head
             and a macro_body. Macro heads can then be identified in other formulas
@@ -595,14 +580,14 @@ class Translation:
         # We want to substitute m.head with m.bodies in fmla
         # This seems very similar to `ivy_proof.ivy:unfold_fmla()`, which
         # does this on the Ivy side.
-        def reduce_with_macro(t, macro):
+        def remove_macro_definition(t, macro):
             def simplify_rec(t):
                 # Remove the macro definition
                 if z3.eq(t, macro.full_fmla):
                     return True
                 # Replace the macro application with the body
-                if macro.is_application(t):
-                    return macro.unfold_definition_for(t)
+                # if macro.is_application(t):
+                    # return macro.unfold_definition_for(t)
                 chs = [simplify_rec(ch) for ch in t.children()]
                 # ForAll and Exists
                 if z3.is_quantifier(t):
@@ -638,8 +623,14 @@ class Translation:
 
             # Otherwise we reduce with this macro.
             # This also replaces the macro definition itself with 'True'
-            _fmla = reduce_with_macro(fmla, macro)
-            fmla = _fmla
+            _fmla = remove_macro_definition(fmla, macro)
+            iv_fmla = Translation.smt_to_ivy(_fmla, im.module.sig.sorts, syms)
+            macro_fmla = Translation.smt_to_ivy(macro.full_fmla, im.module.sig.sorts, syms)
+            dfn = ast.LabeledFormula(ast.Atom('interm_macro'), macro_fmla)
+            _iv_fmla = pf.unfold_fmla(iv_fmla, [[dfn]])
+            _sm_fmla = ivy_solver.formula_to_z3(_iv_fmla)
+
+            fmla = _sm_fmla
 
         # Check that we produced an equivalent formula
         s = z3.Solver()
