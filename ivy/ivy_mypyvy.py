@@ -511,9 +511,8 @@ class Translation:
                 return False
 
             # at the very least, it can identify when _rel is on the RHS
-            # Two types of macros we support:
+            # Type of macros we support:
             #  - ForAll(binders, Iff/Eq(_rel(binders), definition))
-            #  - Iff/Eq(_rel, definition)
             if z3.is_quantifier(f) and f.is_forall():
                 # Identify if _rel(binders) is on LHS or RHS of Iff/Eq
                 num_binders = f.num_vars()
@@ -526,6 +525,29 @@ class Translation:
                     return rel_name.startswith(IVY_TEMPORARY_INDICATOR)
 
             return False
+
+        class Macro:
+            def __init__(self, head, body, num_args, full_fmla):
+                self.head = head
+                self.body = body
+                self.num_args = num_args
+                self.full_fmla = full_fmla
+
+        def parse_macro(f):
+            '''Splits a formula identified as a macro into a macro_head
+            and a macro_body. Macro heads can then be identified in other formulas
+            and replaced with the body.'''
+            assert z3.is_quantifier(f) and f.is_forall(), f"Unsupported macro type: {f}"
+            # Identify if _rel(binders) is on LHS or RHS of Iff/Eq
+            num_binders = f.num_vars()
+            sides = [0, 1] # LHS, RHS
+            for side in sides:
+                if not f.body().children()[side].num_args() == num_binders:
+                    continue
+                macro_head = f.body().children()[side]
+                macro_body = f.body().children()[1 - side]
+                return Macro(macro_head, macro_body, num_binders, f)
+            assert False, f"Macro could not be parsed: {f}"
 
         def subterms(t):
             seen = {}
@@ -540,9 +562,14 @@ class Translation:
                         yield ch
             return { s for s in subterms_rec(t) }
 
-        macros = list(filter(is_skolem_macro, subterms(fmla)))
+        macro_fmlas = list(filter(is_skolem_macro, subterms(fmla)))
+        macros = list(map(parse_macro, macro_fmlas))
 
         # import pdb; pdb.set_trace()
+
+        # Check:
+        # - z3.substitute_vars
+        # - z3.substitute
 
         return fmla
 
