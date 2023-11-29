@@ -12,7 +12,7 @@ from . import logic as lg
 from . import mypyvy_syntax as pyv
 
 import time
-from ivy import z3
+from ivy.z3 import z3
 
 logfile = None
 verbose = False
@@ -27,6 +27,8 @@ COLON_REPLACEMENT = "_c_"
 # This is how Ivy internally represents true and false
 _true = lg.And()
 _false = lg.Or()
+
+IVY_TEMPORARY_INDICATOR = '__m_'
 
 class Translation:
     '''Helper class for translating Ivy expressions to mypyvy expressions.'''
@@ -477,8 +479,71 @@ class Translation:
         '''Simplify an SMT formula.'''
         # First, apply the contextual solver
         fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
-        # TODO: perform our own (further) simplifications?
+        # Then do some further simplifications
+        fmla = z3.Tactic('propagate-values').apply(fmla).as_expr()
+
+        # Perform our own (further) simplifications.
         # https://microsoft.github.io/z3guide/programming/Example%20Programs/Formula%20Simplification/
+
+        # We would want to apply the macro-finder tactic and apply it
+        # only for the Skolem relations, but it seems that's not possible
+        # without modifying Z3 internals. Instead, we'll do it ourselves.
+        # Inspiration:
+        # https://github.com/Z3Prover/z3/blob/3422f44cea4e73572d1e22d1c483a960ec788771/src/ast/macros/macro_finder.cpp
+        # https://github.com/Z3Prover/z3/blob/3422f44cea4e73572d1e22d1c483a960ec788771/src/ast/macros/macro_util.cpp
+
+        def is_macro(f) -> bool:
+            '''Returns true if the given formula is a macro.
+            Implemented by calling Z3.'''
+            if not z3.is_bool(f):
+                return False
+
+            s = z3.Tactic('macro-finder').apply(f).as_expr()
+            # FIXME: this also returns True if `f` is a conjunction of
+            # macros; we don't want that, but it isn't an issue given
+            # how we call `is_macro` in this context.
+            return z3.is_true(s)
+
+        def is_skolem_macro(f) -> bool:
+            '''Returns true if the given formula is a macro
+            that defines a Skolem relation.'''
+            if not is_macro(f):
+                return False
+
+            # at the very least, it can identify when _rel is on the RHS
+            # Two types of macros we support:
+            #  - ForAll(binders, Iff/Eq(_rel(binders), definition))
+            #  - Iff/Eq(_rel, definition)
+            if z3.is_quantifier(f) and f.is_forall():
+                # Identify if _rel(binders) is on LHS or RHS of Iff/Eq
+                num_binders = f.num_vars()
+                sides = [0, 1] # LHS, RHS
+                for side in sides:
+                    if not f.body().children()[side].num_args() == num_binders:
+                        continue
+                    # name of quantified relation
+                    rel_name = f.body().children()[side].decl().name()
+                    return rel_name.startswith(IVY_TEMPORARY_INDICATOR)
+
+            return False
+
+        def subterms(t):
+            seen = {}
+            def subterms_rec(t):
+                if z3.is_app(t):
+                    for ch in t.children():
+                        if ch in seen:
+                            continue
+                        seen[ch] = True
+                        # Return smaller subterms first
+                        yield from subterms_rec(ch)
+                        yield ch
+            return { s for s in subterms_rec(t) }
+
+        macros = list(filter(is_skolem_macro, subterms(fmla)))
+
+        # import pdb; pdb.set_trace()
+
         return fmla
 
 
