@@ -480,12 +480,7 @@ class Translation:
         '''Simplify an SMT formula.'''
         orig_fmla = fmla
 
-        # First, apply the contextual solver
-        fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
-        # Then do some further simplifications
-        fmla = z3.Tactic('propagate-values').apply(fmla).as_expr()
-
-        # Perform our own (further) simplifications.
+        # Perform our own simplifications.
         # https://microsoft.github.io/z3guide/programming/Example%20Programs/Formula%20Simplification/
 
         # We would want to apply the macro-finder tactic and apply it
@@ -550,6 +545,21 @@ class Translation:
             def unfold_definition_for(self, t):
                 '''Unfold the macro definition for the given application.'''
                 assert self.is_application(t), f"{t} is not an application of {self.head}"
+                # FIXME: There seems to be an issue here if the ORDER of the
+                # quantifiers in the FORALL does not match the order of the
+                # arguments in the application, e.g. if:
+                #   macro.head.children() = [Var(2), Var(0), Var(1)]
+                #                instead of [Var(2), Var(1), Var(0)]
+                # We need to rearrange t.children() to match the order of
+                # the quantifiers in the macro head?
+                # Or is the issue something else?
+
+                # orig_children = t.children()
+                # # [2, 0, 1] in the example above
+                # head_indices = list(map(z3.get_var_index, macro.head.children()))
+                # rc = list(reversed(orig_children))
+                # children = [rc[i] for i in head_indices]
+
                 return z3.substitute_vars(self.body, *t.children())
 
         def parse_macro(f):
@@ -635,9 +645,12 @@ class Translation:
         s = z3.Solver()
         s.add(z3.Not(orig_fmla == fmla))
         res = s.check
-        assert res != z3.unsat, f"Simplification equivalnce: {res} produced a non-equivalent formula: {orig_fmla}\nis not equivalent to\n{fmla}"
+        assert res != z3.unsat, f"Simplification equivalence: {res} produced a non-equivalent formula: {orig_fmla}\nis not equivalent to\n{fmla}"
 
-        # Apply a further simplification?
+        # Then perform Z3 simplifications
+        fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
+        fmla = z3.Tactic('propagate-values').apply(fmla).as_expr()
+
         return fmla
 
 
