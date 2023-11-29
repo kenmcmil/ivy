@@ -548,7 +548,7 @@ class MypyvyProgram:
                 mut.add(c.name)
         return mut
 
-    def translate_ivy_sig(self, mod: im.Module):
+    def translate_ivy_sig(self, mod: im.Module, sig: il.Sig = None):
         '''Translate a module signature to the sorts, constants,
         relations, and functions of a mypyvy specification.
         '''
@@ -561,7 +561,8 @@ class MypyvyProgram:
             if prop.assumed:
                 self.immutable_symbols |= Translation.globals_in_fmla(prop.formula)
 
-        sig: il.Sig = mod.sig
+        # If we are explicitly passed a signature to use, use that one
+        sig: il.Sig = sig or mod.sig
         # Add sorts
         for (_sort_name, sort) in sig.sorts.items():
             self.add_sort(sort)
@@ -662,7 +663,13 @@ def check_isolate():
     # STEP 1: parse mod.sig to determine
     # sorts, relations, functions, and individuals
     # mod.sig.sorts & mod.sig.symbols
-    prog.translate_ivy_sig(mod)
+
+    # FIXME: Is using mod.old_sig correct?
+    # An isolate's (call it X) signature does not contain symbols used internally
+    # by isolates associated with it (e.g. Y) (e.g. via Ivy's `with` mechanism),
+    # but such symbols might appear when we translate X's actions to mypyvy,
+    # if X calls actions from Y.
+    prog.translate_ivy_sig(mod, mod.old_sig)
 
     # STEP 2: add axioms and conjectures
     # mod.axioms
