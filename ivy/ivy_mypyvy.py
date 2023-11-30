@@ -634,7 +634,7 @@ class Translation:
 
         # Check that we produced an equivalent formula
         s = z3.Solver()
-        s.add(z3.Not(orig_fmla == fmla))
+        s.add(z3.Not(z3.Implies(orig_fmla, fmla)))
         res = s.check()
         assert res == z3.unsat, f"Simplification equivalence: {res} | produced a non-equivalent formula: {orig_fmla}\nis not equivalent to\n{fmla}"
 
