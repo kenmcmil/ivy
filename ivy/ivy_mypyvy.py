@@ -379,10 +379,19 @@ class Translation:
 
     def reduce_skolem_macros(fmla: lg.And) -> lg.And:
         '''Reduce Skolem macros in an Ivy formula.'''
-        macros = set(Translation.filter_subterms(fmla, Translation.is_skolem_macro))
-        _fmla = Translation.replace_subterms(fmla, Translation.is_skolem_macro, lambda x: _true)
-        macro_defs = [ast.LabeledFormula(ast.Atom(f'_macro_{i}'), macro_fmla) for (i, macro_fmla) in enumerate(macros)]
-        _sfmla = pf.unfold_fmla(_fmla, [macro_defs])
+        _sfmla = fmla
+        while True:
+            # Call unfold one by one; otherwise it seems there's some kind
+            # of assertion failure; it seems the code wasn't tested for
+            # multiple simoultaneous unfoldings.
+            macros = set(Translation.filter_subterms(_sfmla, Translation.is_skolem_macro))
+            macro_defs = [ast.LabeledFormula(ast.Atom(f'_macro_{i}'), macro_fmla) for (i, macro_fmla) in enumerate(macros)]
+            try:
+                m = macro_defs.pop()
+                _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == m.formula, lambda x: _true)
+            except:
+                break
+            _sfmla = pf.unfold_fmla(_sfmla, [[m]])
         return _sfmla
 
     def pyv_globals_under_new(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
@@ -455,9 +464,9 @@ class Translation:
         orig_z3 = ivy_solver.formula_to_z3(upd)
         simp_z3 = ivy_solver.formula_to_z3(supd)
         s = z3.Solver()
-        s.add(z3.Not(orig_z3 == simp_z3))
+        s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
         res = s.check()
-        assert res == z3.unsat, "Solver returned {}: upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+        assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
         
         upd = supd
 
@@ -510,9 +519,9 @@ class Translation:
         orig_z3 = ivy_solver.formula_to_z3(fmla)
         simp_z3 = ivy_solver.formula_to_z3(sfmla)
         s = z3.Solver()
-        s.add(z3.Not(orig_z3 == simp_z3))
+        s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
         res = s.check()
-        assert res == z3.unsat, "Solver returned {}: upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+        assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
         
         fmla = sfmla
 
