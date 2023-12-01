@@ -21,6 +21,8 @@ from ivy.z3 import z3
 logfile = None
 verbose = False
 
+opt_unfold_macros = iu.BooleanParameter("unfold_macros",True)
+
 # Ivy symbols have dots in them (due to the module system)
 # but mypyvy doesn't allow dots in names, so we replace
 # them with this string
@@ -458,17 +460,16 @@ class Translation:
             symbols[sym.name] = sym
 
         # Remove intermediary variables
-        supd = Translation.reduce_skolem_macros(upd)
-
-        # Check that upd and supd are equivalent, via SMT
-        orig_z3 = ivy_solver.formula_to_z3(upd)
-        simp_z3 = ivy_solver.formula_to_z3(supd)
-        s = z3.Solver()
-        s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
-        res = s.check()
-        assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
-        
-        upd = supd
+        if opt_unfold_macros.get():
+            supd = Translation.reduce_skolem_macros(upd)
+            # Check that upd and supd are equivalent, via SMT
+            orig_z3 = ivy_solver.formula_to_z3(upd)
+            simp_z3 = ivy_solver.formula_to_z3(supd)
+            s = z3.Solver()
+            s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
+            res = s.check()
+            assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+            upd = supd
 
         # Simplify via SMT
         z3_fmla = ivy_solver.formula_to_z3(upd)
@@ -513,17 +514,16 @@ class Translation:
             symbols[sym.name] = sym
 
         # Remove intermediary variables
-        sfmla = Translation.reduce_skolem_macros(fmla)
-        
-        # Check that upd and supd are equivalent, via SMT
-        orig_z3 = ivy_solver.formula_to_z3(fmla)
-        simp_z3 = ivy_solver.formula_to_z3(sfmla)
-        s = z3.Solver()
-        s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
-        res = s.check()
-        assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
-        
-        fmla = sfmla
+        if opt_unfold_macros.get():
+            sfmla = Translation.reduce_skolem_macros(fmla)
+            # Check that upd and supd are equivalent, via SMT
+            orig_z3 = ivy_solver.formula_to_z3(fmla)
+            simp_z3 = ivy_solver.formula_to_z3(sfmla)
+            s = z3.Solver()
+            s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
+            res = s.check()
+            assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+            fmla = sfmla
 
         # Make sure round-tripping through SMT works        
         z3_fmla = ivy_solver.formula_to_z3(fmla)
@@ -813,6 +813,11 @@ def check_isolate():
     # mod.public_actions
     # mod.actions
     print("The translation performs simplification via SMT. It might take on the order of minutes!")
+    if opt_unfold_macros.get():
+        print("Will remove intermediary relations in initializer and transition definitions.")
+    else:
+        print("Will NOT remove intermediary relations in initializer and transition definitions.")
+
     prog.add_initializers(mod)
     prog.add_public_actions(mod)
     prog.add_intermediate_rels_fn_and_havoc_action(mod)
