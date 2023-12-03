@@ -692,6 +692,9 @@ class MypyvyProgram:
         for prop in mod.labeled_props:
             if prop.assumed:
                 self.immutable_symbols |= Translation.globals_in_fmla(prop.formula)
+        for dfn in mod.definitions:
+            self.immutable_symbols |= Translation.globals_in_fmla(dfn.formula.lhs())
+            self.immutable_symbols |= Translation.globals_in_fmla(dfn.formula.rhs())
 
         # If we are explicitly passed a signature to use, use that one
         sig: il.Sig = sig or mod.sig
@@ -715,8 +718,8 @@ class MypyvyProgram:
             else:
                 raise NotImplementedError("translating symbol {} to mypyvy ".format(repr(sym)))
 
-    def add_axioms_and_props(self, mod: im.Module):
-        '''Add axioms and properties to the mypyvy program.'''
+    def add_axioms_props_defs(self, mod: im.Module):
+        '''Add axioms, properties, and definitions to the mypyvy program.'''
         # Add axioms
         # For some reason, these are directly formulas, rather than AST nodes
         for ax in mod.axioms:
@@ -731,6 +734,13 @@ class MypyvyProgram:
                 fmla = Translation.translate_logic_fmla(prop.formula)
                 axiom = pyv.AxiomDecl(Translation.to_pyv_name(prop.label.relname), fmla)
                 self.axioms.append(axiom)
+
+        # Add definitions as axioms
+        for defn in mod.definitions:
+            lhs, rhs = Translation.translate_logic_fmla(defn.formula.lhs()), Translation.translate_logic_fmla(defn.formula.rhs())
+            fmla = pyv.Iff(lhs, rhs)
+            axiom = pyv.AxiomDecl(Translation.to_pyv_name(defn.name), fmla)
+            self.axioms.append(axiom)
 
     def add_conjectures(self, mod: im.Module):
         '''Add conjectures (claimed invariants) to the mypyvy program.'''
@@ -803,11 +813,11 @@ def check_isolate():
     # if X calls actions from Y.
     prog.translate_ivy_sig(mod, mod.old_sig)
 
-    # STEP 2: add axioms and conjectures
+    # STEP 2: add axioms, conjectures, and definitions
     # mod.axioms
     # mod.labeled_props -> properties (become axioms once checked)
     # mod.labeled_conjs -> invariants/conjectures (to be checked)
-    prog.add_axioms_and_props(mod)
+    prog.add_axioms_props_defs(mod)
     prog.add_conjectures(mod)
 
     # STEP 3: generate actions
