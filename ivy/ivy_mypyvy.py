@@ -35,6 +35,7 @@ _true = lg.And()
 _false = lg.Or()
 
 IVY_TEMPORARY_INDICATOR = '__m_'
+IVY_TSEITIN_INDICATOR = '__ts'
 
 class Translation:
     '''Helper class for translating Ivy expressions to mypyvy expressions.'''
@@ -373,10 +374,12 @@ class Translation:
             if il.is_app(lhs) and (all(x in vs for x in lhs.args) or True) and iu.distinct(lhs.args):
                 try:
                     # for applications
-                    return lhs.func.name.startswith(IVY_TEMPORARY_INDICATOR)
+                    return lhs.func.name.startswith(IVY_TEMPORARY_INDICATOR) \
+                        or lhs.func.name.startswith(IVY_TSEITIN_INDICATOR)
                 except:
                     # for constants
-                    return lhs.name.startswith(IVY_TEMPORARY_INDICATOR)
+                    return lhs.name.startswith(IVY_TEMPORARY_INDICATOR) \
+                        or lhs.name.startswith(IVY_TSEITIN_INDICATOR)
         return False
 
     def reduce_skolem_macros(fmla: lg.And) -> lg.And:
