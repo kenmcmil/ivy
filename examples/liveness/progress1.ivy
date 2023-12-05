@@ -1,0 +1,93 @@
+#lang ivy1.7
+
+# This file has an example of proving a liveness property of the form
+# G(p -> Fq) (also called a progress property).
+
+include order
+
+instance nat : unbounded_sequence
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# An abstraction of an unbounded queue with a head and a tail
+# pointer. The send action increments the tail pointer while recv
+# increments the head pointer, requiring that head < tail.
+
+isolate bar = {
+
+    action send
+
+    action recv
+
+    specification {
+        var head : nat
+        var tail : nat
+        
+        after init {
+            head := 0;
+            tail := 0;
+        }
+
+        instance receiving : signal
+
+        before send {
+            tail := tail.next;
+        }
+
+        before recv {
+            require head < tail;
+            call receiving.raise;
+            var bif := head.next;
+            head := bif;
+        }
+
+        # The property we want to prove is that, assuming we infinitely often call receive,
+        # always if tail = X then eventually X <= head.
+
+        # The proof with l2s_auto is fairly succint but it does have a wrinkle.
+        #
+        # First, we skolemize, so that the universal X becomes a constant _X.
+        #
+        # If the property is false, we know that eventually 'tail = _X -> eventually _X <= head'
+        # is false, so we take that as our start condition. The work to be done to prove
+        # eventually _X <= head is that the head pointer needs to move up to _X. So the
+        # work needed is X such that X < _X. The work_done prediciate is a bit tricky, however.
+        # That is, l2s_auto requires the invariant that there is always some work left to do.
+        # However, this may be false before the start condition (in particular, when head = tail = 0
+        # initially). One fix for this is to consider work to be done only when we have 'started',
+        # that is, which implies that the eventuality is always false. Thus, our work_done
+        # condition is X <= head & ~eventually _X <= head.
+        #
+        # This pattern might be generally useful for progress properties. 
+
+        temporal property
+        forall X.
+        (globally eventually receiving.now)
+        -> (globally tail = X -> eventually X <= head)
+        proof {
+            tactic skolemize;
+            tactic l2s_auto with
+            definition work_created(X) = (X <= tail)
+            definition work_needed(X) = (X <= _X) 
+            definition work_done(X) = (X <= head) & ~eventually(_X <= head)
+            definition work_start = ~(tail = _X -> eventually _X <= head)
+            definition work_progress = receiving.now
+        }
+    }
+} with nat
+
+export bar.send
+export bar.recv
+

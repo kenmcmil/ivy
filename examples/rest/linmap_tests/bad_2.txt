@@ -1,8 +1,0 @@
-put(2,42)
-put(0,7)
-end_put(2,true)
-get(1)
-end_get(1,true,7)
-end_put(0,true)
-get(3)
-end_get(3,true,42)

@@ -570,7 +570,8 @@ proof {
         apply introA<_S/x>
         apply introA<_T/x>
         apply exmid with q = (_S >= _T)
-        assume gcd_symm
+        instantiate [gs1] gcd_symm with X=_S, Y=_T
+        instantiate [gs2] gcd_symm with X=_S-_T, Y=_T
         proof [pos] {
             apply exmid with q = _S > _T
             proof [pos] {
@@ -595,6 +596,7 @@ proof {
     instantiate bezout_lemma_pre with S=S,T=T,M = (S if S > T else T)
     tactic skolemize
     instantiate with A=_A,B=_B
+    showgoals
 }
 
 # Here is a useful consequence of Bezout's lemma.

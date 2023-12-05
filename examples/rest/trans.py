@@ -26,13 +26,13 @@ def read_file(name):
 #        exit(1)
 
 def match_path(spath,rpath):
-    print spath
+    print(spath)
     parms = dict()
     if len(spath) != len(rpath):
         return None
     for x,y in zip(spath,rpath):
-        print x
-        print y
+        print(x)
+        print(y)
         if x.startswith('{'):
             parms[x[1:-1]] = y
         elif x != y:
@@ -70,7 +70,7 @@ def main():
             parms[p] = v
         
     matched = False
-    for path,stuff in spec['paths'].iteritems():
+    for path,stuff in spec['paths'].items():
         spath = path[1:].split('/')
         pparms = match_path(spath,rpath)
         if pparms is not None:
@@ -82,7 +82,7 @@ def main():
         sys.stderr.write('cannot match path {}\n'.format(rpath))
         exit(1)
 
-    print list(parms.iteritems())
+    print(list(parms.items()))
     
         
     

@@ -153,7 +153,7 @@ def main():
     inpname = sys.argv[1]
     outname = iname(inpname[:-5])+'.ivy'
 
-    print outname
+    print(outname)
 
     try:
         with open(inpname) as inp:
@@ -208,14 +208,14 @@ def main():
         
     def_refs = collections.defaultdict(list)
 
-    for name,value in defs.iteritems():
+    for name,value in defs.items():
         if "properties" in value:
             props = value["properties"]
-            for df in props.values():
+            for df in list(props.values()):
                 if "$ref" in df:
                     def_refs[name].append(df["$ref"][len('#/definitions/'):])
-    order = [(y,x) for x in def_refs.keys() for y in def_refs[x]]
-    ordered_names = ivy.ivy_utils.topological_sort(defs.keys(),order)
+    order = [(y,x) for x in list(def_refs.keys()) for y in def_refs[x]]
+    ordered_names = ivy.ivy_utils.topological_sort(list(defs.keys()),order)
     defs = collections.OrderedDict((x,defs[x]) for x in ordered_names)
                     
     def get_ref_or_type(prop,name,df):
@@ -252,7 +252,7 @@ def main():
 
 
 
-    for name,value in defs.iteritems():
+    for name,value in defs.items():
         if not isinstance(value,dict):
             format_error(inpname,'entry {} not a dictionary'.format(name))
         if "properties" in value:
@@ -263,7 +263,7 @@ def main():
             num_props = len(props)
             if not isinstance(props,dict):
                 format_error(inpname,'properties of entry {} not a dictionary'.format(name))
-            for idx,(prop,df) in enumerate(props.iteritems()):
+            for idx,(prop,df) in enumerate(props.items()):
                 ty = get_ref_or_type(prop,name,df)
                 comment = ' # ' + df["description"] if "description" in df else ''
                 items.append('        {}_ : {}{} {}\n'.format(iname(prop),ty,',' if idx < num_props-1 else '',comment))
@@ -277,13 +277,13 @@ def main():
     paths = spec["paths"]
         
     path_count = 0
-    for path,value in paths.iteritems():
+    for path,value in paths.items():
         path_count = path_count + 1
         if not isinstance(value,dict):
             format_error(inpname,'path entry {} not a dictionary'.format(path))
         out.write("\n# path: {}\n".format(path))
         out.write("object path_{} = {{\n".format(path_count))
-        for opname,op in value.iteritems():
+        for opname,op in value.items():
             if not isinstance(op,dict):
                 format_error(inpname,'op entry {} not a dictionary'.format(opname))
             out.write("\n    action {}".format(iname(opname)))
@@ -319,7 +319,7 @@ def main():
             out.write('\n')
             if "responses" not in op:
                 format_error(inpname,'path {} op {} has no responses field'.format(path,opname))
-            for respname,resp in op["responses"].iteritems():
+            for respname,resp in op["responses"].items():
                 if "schema" not in resp:
                     type = "unit"
                 else:

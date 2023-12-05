@@ -1,0 +1,120 @@
+#lang ivy1.8
+
+# This file contains a simple liveness proof using model checking, where the
+# property is not inductive over time.
+
+include order
+
+
+instance nat : unbounded_sequence
+
+# We need to include the model checking schemata for unbounded
+# sequences, so the model checker can interpret the 'nat' type.
+
+include mc_schemata
+instantiate unbounded_sequence_schemata(nat)
+
+module signal(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+type id
+
+isolate bar = {
+
+    # We have a 'send' actions that increments a tail pointer and a 'recv'
+    # action that increments a head pointer, if head < tail. The 'send' action
+    # stores a value in a queue at the tail pointer. The 'recv' action retrieves
+    # the value at the head pointer.
+
+    action send(x:id)
+
+    action recv
+
+    specification {
+        var head : nat
+        var tail : nat
+        var queue(X:nat) : id
+        
+        after init {
+            head := 0;
+            tail := 0;
+        }
+
+        instance sending : signal(id)
+        instance receiving : signal(id)
+
+        before send {
+            sending.raise(x);
+            queue(tail) := x;
+            tail := tail.next;
+        }
+
+        before recv {
+            require head < tail;
+            call receiving.raise(queue(head));
+            head := head.next;
+        }
+
+        # We want to prove that if we send value X, we eventually
+        # receive value X. This property is not inductive because
+        # receiving value X doesn't tell us anything about the head
+        # pointer (in particular it doesn't tell us the the head
+        # pointer has advances to the position of the tail pointer
+        # when X was sent, since X can be sent more than once.
+        #
+        # This, we first prove 'lemma1', stating the if the tail
+        # pointer is X, then eventually the head pointer is X. This is
+        # done by induction on X, as described in
+        # '1queuelive_mc1.ivy'.
+
+        temporal property [lemma1]
+        forall X.
+        (globally eventually receiving.now)
+        -> (globally tail = X -> eventually head = X)
+        proof {
+            tactic tempind;
+            tactic skolemize;
+            tactic mc proof {let Xm1 = _X - 1}
+        }
+
+        # With this lemma, we can prove our liveness property using a
+        # simple abstraction. In the 'tempind' tactic, we capture the
+        # value of the tail pointer at the time we send X, using a
+        # fresh variable Y. In other words, we translate 'G p' to
+        # the equivalent formula 'forall Y. G Y = tail -> p'. Then
+        # we skolemize to transform the quantifiers into constants _X
+        # and _Y.
+        #
+        # Model checking is able to verify the liveness property using
+        # just these two constants in its abstraction.
+
+        temporal property
+        forall X.
+        (globally eventually receiving.now) ->
+        globally (sending.now & sending.value = X) ->
+                 (eventually receiving.now & receiving.value = X)
+        
+        proof {
+            tactic tempind with Y = tail;
+            tactic skolemize;
+            tactic mc
+        }
+    }
+} with nat
+
+export bar.send
+export bar.recv
+

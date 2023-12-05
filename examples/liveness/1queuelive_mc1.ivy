@@ -1,0 +1,92 @@
+#lang ivy1.8
+
+# This file contains a simple liveness proof using model checking
+
+include order
+
+instance nat : unbounded_sequence
+
+# We need to include the model checking schemata for unbounded
+# sequences, so the model checker can interpret the 'nat' type.
+
+include mc_schemata
+instantiate unbounded_sequence_schemata(nat)
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+
+# We have a 'send' actions that increments a tail pointer and a 'recv'
+# action that increments a head pointer, if head < tail.
+
+action send
+
+action recv
+
+var head : nat
+var tail : nat
+
+after init {
+    head := 0;
+    tail := 0;
+}
+
+instance receiving : signal
+
+before send {
+    var baf := tail.next;
+    tail := baf;
+}
+
+before recv {
+    require head < tail;
+    call receiving.raise;
+    var bif := head.next;
+    head := bif;
+}
+
+# We want to prove that sif we infinitely often receive, then whenever
+# tail = X eventually head = X.
+#
+# This property is easy to prove because it is inductive over
+# time. That is, it suffices to assume that the property 'tail = X ->
+# eventually head = X' has always been true in the past fr all X. In
+# particular if X = head at the current time, then we can assume 'tail
+# = X - 1 -> eventually head = X - 1' has always been true in the
+# past. This means that eventually 'head = X - 1' and thuse eventually
+# 'head = X' (at the next time recv is called).
+#
+# The nice thing about this inductive argument is that we only have to
+# reason about X and X - 1. We can abstract away all the other values
+# of X. To do this, we first skolemize so that the universal X becomes
+# a fixed constant _X. Then we apply model checking tactic 'mc',
+# adding a new constant Xm1 that stands for _X -1. The model checker
+# uses these two symbolic constants in its finite abstraction. As we
+# argued above, this finite abstraction is enough to prove the
+# property.
+
+
+temporal property
+forall X.
+(globally eventually receiving.now)
+-> (globally tail = X -> eventually head = X)
+proof {
+    tactic tempind;
+    tactic skolemize;
+    tactic mc proof {let Xm1 = _X - 1}
+}
+
+export send
+export recv
+

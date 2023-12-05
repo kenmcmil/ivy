@@ -1,0 +1,142 @@
+diff --git a/ivy/include/1.8/mc_schemata.ivy b/ivy/include/1.8/mc_schemata.ivy
+index 725329d..de13ac4 100644
+--- a/ivy/include/1.8/mc_schemata.ivy
++++ b/ivy/include/1.8/mc_schemata.ivy
+@@ -267,3 +267,12 @@ module equality_schemata = {
+         property (f1(X1,X2,X3,X4) = f1(x1,x2,x3,x4)) | x1 ~= X1 | x2 ~= X2 | x3 ~= X3 | x4 ~= X4
+     }
+ }
++
++module unbounded_sequence_schemata(t) = {
++    instantiate total_order_schemata(t)
++    schema succ_minus = {
++        function x : t
++        function y : t
++        property t.succ(X,Y) -> ~(y = Y & X ~= x & x = y - 1) & ~(x = X & Y ~= y & x = y - 1)
++    }
++}
+diff --git a/ivy/ivy_check.py b/ivy/ivy_check.py
+index 0a8179a..459effa 100644
+--- a/ivy/ivy_check.py
++++ b/ivy/ivy_check.py
+@@ -125,7 +125,7 @@ def check_temporals():
+                 pc.admit_axiom(prop)
+             else:
+                 print('\n    The following temporal property is being proved:\n')
+-                print(pretty_lf(prop) + ' ...\n', end=' ')
++                print(pretty_lf(prop) + ' ...', end=' ')
+                 sys.stdout.flush()
+                 if prop.temporal:
+                     proof = pmap.get(prop.id,None)
+@@ -669,11 +669,16 @@ def check_subgoals(goals,method=None):
+             mod.initializers = [('init',model.init)]
+             mod.labeled_axioms = list(mod.labeled_axioms)
+             mod.assumed_invars = model.asms
++            mod.params = list(mod.params)
+             for prem in ivy_proof.goal_prems(goal):
+                 # if hasattr(prem,'temporal') and prem.temporal:
+                 if ivy_proof.goal_is_property(prem):
+                     # print ('using premise: {}'.format(prem))
+                     mod.labeled_axioms.append(prem)
++                elif ivy_proof.goal_is_defn(prem):
++                    dfnd = ivy_proof.goal_defines(prem)
++                    if lg.is_constant(dfnd):
++                        mod.params.append(dfnd)
+             # ivy_printer.print_module(mod)
+         else:
+             pgoal = ivy_compiler.theorem_to_property(goal)
+@@ -716,6 +721,11 @@ def check_subgoals(goals,method=None):
+                         check_isolate()
+                 
+ def mc_tactic(prover,goals,proof):
++    goal = goals[0]
++    conc = ivy_proof.goal_conc(goal)
++    if isinstance(conc,ivy_ast.TemporalModels):
++        if not lg.is_true(conc.fmla):
++            goals = ivy_l2s.l2s_tactic_full(prover,goals,proof)
+     check_subgoals(goals[0:1],method=ivy_mc.check_isolate)
+     return goals[1:]
+ 
+diff --git a/ivy/ivy_mc.py b/ivy/ivy_mc.py
+index 9d57581..00f95d0 100644
+--- a/ivy/ivy_mc.py
++++ b/ivy/ivy_mc.py
+@@ -770,10 +770,10 @@ def elim_ite(expr,cnsts):
+ # we are just using the ones that occur in the invariant
+ 
+ def mine_constants(mod,trans,invariant):
+-    print ('invariant: {}'.format(invariant))
+     res = defaultdict(list)
+-    for c in ilu.used_symbols_ast(invariant):
+-        if not il.is_function_sort(c.sort) and tr.is_skolem(c):
++    fmlas = [invariant]+mod.params
++    for c in ilu.used_symbols_asts(fmlas):
++        if not il.is_function_sort(c.sort) and (tr.is_skolem(c) or c in mod.params):
+             res[c.sort].append(c)
+     return res
+ 
+diff --git a/ivy/ivy_proof.py b/ivy/ivy_proof.py
+index 4cb4200..09ceb80 100644
+--- a/ivy/ivy_proof.py
++++ b/ivy/ivy_proof.py
+@@ -194,8 +194,8 @@ class ProofChecker(object):
+     def compose_proofs(self,decls,proofs):
+         for proof in proofs:
+             decls = self.apply_proof(decls,proof)
+-            if decls is None:
+-                return None
++            if decls is None or len(decls) == 0:
++                return decls
+         return decls
+ 
+     def show_goals_tactic(self,decls,proof):
+diff --git a/ivy/ivy_tactics.py b/ivy/ivy_tactics.py
+index 9ff7fbb..9bfd48d 100644
+--- a/ivy/ivy_tactics.py
++++ b/ivy/ivy_tactics.py
+@@ -7,6 +7,7 @@ from . import ivy_proof as pf
+ from . import ivy_actions as ia
+ from . import ivy_temporal as tm
+ from . import ivy_logic as lg
++from . import ivy_logic_utils as ilu
+ from . import ivy_utils as iu
+ from . import ivy_trace as tr
+ from . import ivy_logic_utils as lu
+@@ -45,6 +46,37 @@ def skolemize(self,decls,proof):
+ 
+ pf.register_tactic('skolemize',skolemize)
+ 
++def tempind_fmla(fmla,vs=[]):
++    if lg.is_forall(fmla):
++        return tempind_fmla(fmla.body,vs+list(fmla.variables))
++    if isinstance(fmla,lg.Implies):
++        prem_vars = set(ilu.variables_ast(fmla.args[0]))
++        conc = tempind_fmla(fmla.args[1],[v for v in vs if v.name not in prem_vars])
++        res = lg.Implies(fmla.args[0],conc)
++        uvs = [v for v in vs if v.name in prem_vars]
++        return lg.ForAll(uvs,res) if uvs else res
++    if vs and isinstance(fmla,lg.Globally):
++        return lg.ForAll(vs,lg.Or(fmla,lg.WhenOperator("next",fmla.body,lg.Not(lg.ForAll(vs,fmla.body)))))
++    return lg.Forall(vs,fmla) if vs else fmla
++        
++def apply_tempind(goal,proof):
++    conc = pr.goal_conc(goal)
++    if not (goal.temporal or isinstance(conc,ivy_ast.TemporalModels)):
++        raise iu.IvyError(proof,'proof goal is not temporal')
++    if isinstance(conc,ivy_ast.TemporalModels):
++        fmla = tempind_fmla(conc.fmla)
++        fmla = conc.clone([fmla])
++    else:
++        fmla = tempind_fmla(conc)
++    return pr.clone_goal(goal,pr.goal_prems(goal),fmla)
++    
++def tempind(self,decls,proof):
++    goal = decls[0]
++    goal = apply_tempind(goal,proof)
++    return [goal] + decls[1:]
++    
++pf.register_tactic('tempind',tempind)
++
+ used_sorry = False
+ 
+ def sorry(self,decls,proof):

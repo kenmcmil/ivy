@@ -2,7 +2,7 @@ import pexpect
 import sys
 
 def run(name,opts,res):
-    child = pexpect.spawn('./{} 0'.format(name))
+    child = pexpect.spawnu('./{} 0'.format(name))
     child.logfile = sys.stdout
     try:
         child.expect('>')
@@ -10,7 +10,7 @@ def run(name,opts,res):
         child.expect(r'= 0')
         return True
     except pexpect.EOF:
-        print child.before
+        print(child.before)
         return False
     finally:
         child.close()

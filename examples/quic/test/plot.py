@@ -19,7 +19,7 @@ def plot(fn,column,col):
 def main():
     import sys
     def usage():
-        print "usage: \n  {} <file>.dat column ".format(sys.argv[0])
+        print("usage: \n  {} <file>.dat column ".format(sys.argv[0]))
         sys.exit(1)
     if len(sys.argv) != 3:
         usage()

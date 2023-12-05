@@ -1,0 +1,159 @@
+#lang ivy1.8
+
+# In this example, we have two unbounded queues. Commands are sent on
+# queue q1.  Periodically, commands are read from q1 and responses are
+# sent on q2. We prove that a response to every command is eventually
+# received at the output of q2.
+
+# The proof is done non-compositionally. That is, we prove that the whole
+# system is live using a single instance of the l2s_auto tactic.
+
+include order
+
+instance nat : unbounded_sequence
+
+# A signal with zero parameters
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# A signal with one parameter
+
+module signal1(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# The type of messages (we can also think of the messages as message ids)
+
+type id
+
+# An unbounded queue module, with liveness property. Notice this module is an isolate and
+# depends on the theory of the index type 'nat'.
+
+module isolate unbounded_queue with nat = {
+
+    # This action sends a message. Since the queue is unbounded, this
+    # action always succeeds.
+
+    action send(x:id)
+
+    # This action receives a message. It returns a success code 'ok'
+    # and a value 'x' if 'ok' is true. If the queue is empty, 'ok is
+    # false.
+
+    action recv returns (x:id, ok:bool)
+
+    specification {
+        var head : nat
+        var tail : nat
+        var queue(X:nat) : id
+        
+        after init {
+            head := 0;
+            tail := 0;
+        }
+
+        instance sending : signal1(id)
+        instance trying : signal
+        instance receiving : signal1(id)
+
+        before send {
+            queue(tail) := x;
+            tail := tail.next;
+            sending.raise(x);   # ghost action to signal a send
+        }
+
+        before recv {
+            trying.raise;      # ghost action signalling polling of queue
+            ok := head < tail;
+            if ok {
+                receiving.raise(queue(head));   # ghost action to signal a receive
+                x := queue(head);
+                head := head.next;
+            }
+        }
+    }
+}
+
+# This isolate represents the system of two queues.
+
+isolate m = {
+    instance q1 : unbounded_queue
+    instance q2 : unbounded_queue
+
+    # This action polls q1, and if a message is available, it sends
+    # it on q2.
+
+    action poll = {
+        var x : id;
+        var ok : bool;
+        (x,ok) := q1.recv;
+        if ok {
+            q2.send(x);
+        }
+    }
+
+
+    # This is a system property we want to prove. That is, if we infinitely often poll
+    # both q1 and q2, then every message sent on q1 should eventually be received on q2.
+    #
+
+    
+    temporal property
+    forall X. ((globally eventually q1.trying.now)
+               & (globally eventually q2.trying.now)
+               & (eventually q1.sending.now & q1.sending.value = X) ->
+                 (eventually q2.receiving.now & q2.receiving.value = X))
+    proof {
+        tactic skolemize;
+        tactic l2s_auto with {
+            definition work_created[1](X) = (X < q1.tail)
+            definition work_needed[1](X) = ~exists Y. Y < X & q1.queue(Y) = _X 
+            definition work_done[1](X) = X < q1.head
+            definition work_progress[1] = q1.trying.now
+            definition work_start[1] = (q1.sending.now & q1.sending.value = _X)
+            definition work_created[2](X) = (X < q2.tail)
+            definition work_needed[2](X) = ~exists Y. Y < X & q2.queue(Y) = _X 
+            definition work_done[2](X) = X < q2.head
+            definition work_progress[2] = q2.trying.now
+            definition work_start[2] = (q2.sending.now & q2.sending.value = _X)
+            invariant  [foo] ($l2s_init . ~($l2s_g . ~(m.q1.sending.now & m.q1.sending.value = _X)))
+#            invariant [baz] ~(X < q2.head & q2.queue(X) = _X)
+#            invariant [bar] exists X. ~(X < q2.head) & ~exists Y. Y < X & q2.queue(Y) = _X
+#            invariant ~($l2s_init . ~($l2s_g . ~(m.q2.sending.now & m.q2.sending.value = _X)))
+#                       -> ~(X < q1.head & q1.queue(X) = _X)
+#            invariant ~($l2s_init . ~($l2s_g . ~(m.q2.sending.now & m.q2.sending.value = _X)))
+#                       -> exists X. ~(X < q1.head) & ~exists Y. Y < X & q1.queue(Y) = _X
+        }
+        showgoals
+    }
+    
+} with nat
+
+export m.q1.send
+export m.poll
+export m.q2.recv
+

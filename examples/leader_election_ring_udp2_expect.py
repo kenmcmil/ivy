@@ -2,7 +2,7 @@ import pexpect
 import sys
 
 def run(name,opts,res):
-    child = [pexpect.spawn('./{} {}'.format(name,idx)) for idx in range(2)]
+    child = [pexpect.spawnu('./{} {}'.format(name,idx)) for idx in range(2)]
     for idx in range(2):
         child[idx].logfile = sys.stdout
     try:
@@ -10,8 +10,11 @@ def run(name,opts,res):
         child[0].expect(r'< serv.elect')
         return True
     except pexpect.EOF:
-        print child.before
+        print(child.before)
         return False
     finally:
         for idx in range(2):
-            child[idx].close()
+            try:
+                child[idx].close()
+            except:
+                pass

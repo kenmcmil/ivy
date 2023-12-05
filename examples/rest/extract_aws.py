@@ -252,14 +252,14 @@ def main():
         
     def_refs = collections.defaultdict(list)
 
-    for name,value in defs.iteritems():
+    for name,value in defs.items():
         if "properties" in value:
             props = value["properties"]
-            for df in props.values():
+            for df in list(props.values()):
                 if "$ref" in df:
                     def_refs[name].append(df["$ref"][len('#/definitions/'):])
-    order = [(y,x) for x in def_refs.keys() for y in def_refs[x]]
-    ordered_names = ivy.ivy_utils.topological_sort(defs.keys(),order)
+    order = [(y,x) for x in list(def_refs.keys()) for y in def_refs[x]]
+    ordered_names = ivy.ivy_utils.topological_sort(list(defs.keys()),order)
     defs = collections.OrderedDict((x,defs[x]) for x in ordered_names)
                     
     def get_ref_or_type(prop,name,df):
@@ -337,7 +337,7 @@ def main():
         output_fields = defs[output_shape]["members"]
         output_req = defs[output_shape].get("required",None)
         out.write(indent * "    " + "Aws::S3::Model::{} {};\n".format(output_shape,res))
-        for name,df in output_fields.iteritems():
+        for name,df in output_fields.items():
             out_fld = '{}.{}_'.format(arg,iname(name))
             if output_req is None or name in output_req:
                 out.write(indent * "    " + res + '.Set' + name + '(' + to_aws(out_fld,df,indent) + ');\n')
@@ -384,7 +384,7 @@ def main():
                     output_fields = defs[output_shape]["members"]
                     output_req = defs[output_shape].get("required",None)
                     lines = []
-                    for name,df in output_fields.iteritems():
+                    for name,df in output_fields.items():
                         out_fld = '{}.{}_'.format(lhs,iname(name))
                         res_fld = "{}.Get{}()".format(arg,name)
                         if output_req is None or name in output_req:
@@ -427,7 +427,7 @@ def main():
         if name in defs:
             value = defs[name]
             if "members" in value:
-                for x,y in value["members"].iteritems():
+                for x,y in value["members"].items():
                     if "shape" in y:
                         recur_defs(y["shape"])
             if "member" in value:
@@ -438,7 +438,7 @@ def main():
             heap.add(name)
             sorted_defs.append(name)
                 
-    for name,value in defs.iteritems():
+    for name,value in defs.items():
         recur_defs(name)
         
     for name in sorted_defs:
@@ -454,7 +454,7 @@ def main():
             num_props = len(props)
             if not isinstance(props,dict):
                 format_error(inpname,'members of entry {} not a dictionary'.format(name))
-            for idx,(prop,df) in enumerate(props.iteritems()):
+            for idx,(prop,df) in enumerate(props.items()):
                 ty = get_ref_or_type(prop,name,df)
                 if required is not None and prop not in required:
                     ty = "option[{}]".format(ty)
@@ -479,7 +479,7 @@ def main():
         return "response_{}".format(ty)
 
     operation_count = 0
-    for operation,op in operations.iteritems():
+    for operation,op in operations.items():
         operation_count = operation_count + 1
         if not isinstance(op,dict):
             format_error(inpname,'operation entry {} not a dictionary'.format(operation))
@@ -618,7 +618,7 @@ void return_aws_client(Aws::S3::S3Client *s3_client) {
         return text.replace('CALLBACK',outaction)
     
 
-    for operation,op in operations.iteritems():
+    for operation,op in operations.items():
         if "input" in op and operation not in missing_headers: 
             out.write("\n\n<<< impl\n")
             out.write("#include <aws/s3/model/{}Request.h>\n".format(operation))
@@ -662,7 +662,7 @@ void return_aws_client(Aws::S3::S3Client *s3_client) {
             output_fields = defs[output_shape]["members"]
             output_req = defs[output_shape].get("required",None)
             out.write("        `{}` res;\n".format(iname(output_shape)))
-            for name,df in output_fields.iteritems():
+            for name,df in output_fields.items():
                 out_fld = 'res.{}_'.format(iname(name))
                 res_fld = "result.Get{}()".format(name)
                 if output_req is None or name in output_req:

@@ -6,7 +6,7 @@ from tabulate import tabulate
 def main():
     import sys
     def usage():
-        print "usage: \n  {} <file>.dat [field...]".format(sys.argv[0])
+        print("usage: \n  {} <file>.dat [field...]".format(sys.argv[0]))
         sys.exit(1)
     if len(sys.argv) < 2:
         usage()
@@ -25,7 +25,7 @@ def main():
                     sys.stderr.write('unknown field "{}"\n'.format(f))
                     exit(1)
             rows.append([row[f] for f in fields])
-        print tabulate(rows,tablefmt="fancy_grid",headers=fields)
+        print(tabulate(rows,tablefmt="fancy_grid",headers=fields))
 
 
 if __name__ == '__main__':

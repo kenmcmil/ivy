@@ -1,0 +1,199 @@
+#lang ivy1.8
+
+# In this example, we have two unbounded queues. Commands are sent on
+# queue q1.  Periodically, commands are read from q1 and responses are
+# sent on q2. We prove that a response to every command is eventually
+# received at the output of q2.
+
+# The proof is done compositionally. That is, we prove that q1 znd q2
+# are live in isolation.  That is, for each queue, if the output is
+# polled infinitely often, then every message sent is eventually
+# received. Then we combine liveness of q1 and q2 to prove liveness of
+# the system.
+
+
+include order
+
+instance nat : unbounded_sequence
+
+# A signal with zero parameters
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# A signal with one parameter
+
+module signal1(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# The type of messages (we can also think of the messages as message ids)
+
+type id
+
+# An unbounded queue module, with liveness property. Notice this module is an isolate and
+# depends on the theory of the index type 'nat'.
+
+module isolate unbounded_queue with nat = {
+
+    # This action sends a message. Since the queue is unbounded, this
+    # action always succeeds.
+
+    action send(x:id)
+
+    # This action receives a message. It returns a success code 'ok'
+    # and a value 'x' if 'ok' is true. If the queue is empty, 'ok is
+    # false.
+
+    action recv returns (x:id, ok:bool)
+
+    specification {
+        var head : nat
+        var tail : nat
+        var queue(X:nat) : id
+        
+        after init {
+            head := 0;
+            tail := 0;
+        }
+
+        instance sending : signal1(id)
+        instance trying : signal
+        instance receiving : signal1(id)
+
+        before send {
+            queue(tail) := x;
+            tail := tail.next;
+            sending.raise(x);   # ghost action to signal a send
+        }
+
+        before recv {
+            trying.raise;      # ghost action signalling polling of queue
+            ok := head < tail;
+            if ok {
+                receiving.raise(queue(head));   # ghost action to signal a receive
+                x := queue(head);
+                head := head.next;
+            }
+        }
+
+        # This is the liveness property of the queue. It says that if messages X is eventually sent
+        # and if the queue is polled infinitely often, then message X is eventually received.
+
+        temporal property [lpq]
+        forall X. ((globally eventually trying.now)
+                   & (eventually sending.now & sending.value = X) ->
+                     (eventually receiving.now & receiving.value = X))
+        proof {
+            tactic skolemize;
+            tactic l2s_auto with {
+                definition work_created(X) = (X < tail)
+                definition work_needed(X) = ~exists Y. Y < X & queue(Y) = _X 
+                definition work_done(X) = (X < head)
+                definition work_start = (sending.now & sending.value = _X)
+                definition work_progress = trying.now
+            }
+            showgoals
+        }
+    }
+}
+
+# This isolate represents the system of two queues.
+
+isolate m = {
+    instance q1 : unbounded_queue
+    instance q2 : unbounded_queue
+
+    # This action polls q1, and if a message is available, it sends
+    # it on q2.
+
+    action poll = {
+        var x : id;
+        var ok : bool;
+        (x,ok) := q1.recv;
+        if ok {
+            q2.send(x);
+        }
+    }
+
+    # This lemma says that if we receive from q2, then we eventually
+    # send on q2. This is a trivial property of the 'poll' action. To prove
+    # it, we use the l2s_auto tactic in a trivial way. This is a recipe that
+    # should be useful in any case where we want to assume Fp to prove Fq, and
+    # p implies that q occurs within a single atomic step (in other words, when there
+    # are no fairness conditions needed to prove the eventuality).
+
+    temporal property [poll_lemma]
+    forall X. (eventually q1.receiving.now & q1.receiving.value = X)
+              -> (eventually q2.sending.now & q2.sending.value = X) 
+
+    proof {
+        tactic skolemize;
+        showgoals;
+        tactic l2s_auto with {
+            definition work_created = false
+            definition work_needed = true
+            definition work_done = false
+            definition work_start = q1.receiving.now & q1.receiving.value = _X
+            definition work_progress = false
+        }
+        showgoals
+    }
+
+    # This is a system property we want to prove. That is, if we infinitely often poll
+    # both q1 and q2, then every message sent on q1 should eventually be received on q2.
+    #
+    # Using the liveness properties of q1 and q1 and the lemma 'poll_lemma' above, this property
+    # can be proved propositionally. Operationally, we do this by applying the 'l2s' tactic with the
+    # invariant false. This works becaause the negation of the property is unsatisfiable in the
+    # initial state.
+    #
+    # Notice we use the 'instantiate tactic to bring the needed lemmas, plugging in the
+    # skolem symbol '_X' for X. 
+    
+    temporal property
+    forall X. ((globally eventually q1.trying.now)
+               & (globally eventually q2.trying.now)
+               & (eventually q1.sending.now & q1.sending.value = X) ->
+                 (eventually q2.receiving.now & q2.receiving.value = X))
+    proof {
+        tactic skolemize;
+        instantiate q1.lpq with X = _X;
+        instantiate q2.lpq with X = _X;
+        instantiate poll_lemma with X = _X;
+        showgoals;
+        tactic l2s with {
+            invariant false
+        }
+        showgoals
+    }
+    
+}
+
+export m.q1.send
+export m.poll
+export m.q2.recv
+

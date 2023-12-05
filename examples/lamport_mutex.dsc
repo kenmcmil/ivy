@@ -1,1 +1,0 @@
-{"processes": [{"indices": [], "binary": "lamport_mutex", "params": [{"range": [0, "host_id.max"], "type": "host_id", "name": "host_id.max"}, {"type": {"indices": [{"range": [0, "host_id.max"], "type": "host_id", "name": "X__0"}], "name": "tcp.endpoint"}, "name": "node.sock.id"}], "name": "this"}]}

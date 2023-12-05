@@ -1,0 +1,196 @@
+#lang ivy1.8
+
+# A model of a queue using a linked list
+#
+# Properties:
+#
+# 1) Progress -- if we infinitely often call receive, then every sent messages is received
+# 2) No memory leaks -- when the queue is empty there is always a free cell
+#
+
+include order
+include collections
+
+# Type used to index the abstract queue contents
+
+instance nat : unbounded_sequence
+
+# Used to signal events to help express liveness properties
+
+module signal(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# The message type
+type id
+
+# Type indexing memory cells
+type cell
+
+isolate bar = {
+
+    # Send a message
+    action send(x:id)
+
+    # Receive a message (in principle should return the message!)
+    action recv
+
+    specification {
+
+        # The abstract queue contents (TODO: this should be ghost)
+
+        var head : nat
+        var tail : nat
+        var queue(X:nat) : id
+
+        # The concrete queue contents. The linked list is represented
+        # by a partial function 'link' that is defined only when the
+        # link is not null.
+
+        var head_cell : cell   # Pointer to head cell if any
+        var tail_cell : cell   # Pointer to tail cell if any 
+        var full(X:cell):bool  # Full bit for each cell
+        var val(X:cell):id     # Message contents of cell, if any
+        instance link : partial_function(cell,cell) # Links
+        var empty : bool       # The queue is empty
+
+        # Auxiliary variable maps concrete cells to abstract queue positions
+
+        var index(X:cell) : nat 
+
+        # Initialization
+
+        after init {
+            # Abstract state
+            head := 0;
+            tail := 0;
+            # Concrete state
+            full(C) := false;
+            empty := true;
+        }
+
+        # Signals to indicate sending and receiving events
+
+        instance sending : signal(id)
+        instance receiving : signal(id)
+
+        # Send action. To execute this, there must be an empty cell available.
+
+        before send {
+            require exists X. ~full(X);
+
+            if some c:cell. ~full(c) {
+
+                # Concrete action
+
+                queue(tail) := x;
+                full(c) := true;
+                val(c) := x;
+                if ~empty {
+                    link.remap(tail_cell,c);
+                } else {
+                    head_cell := c;
+                }
+                tail_cell := c;
+                empty := false;
+
+                # Abstract action (ghost code)
+
+                index(c) := tail;
+                tail := tail.next;
+                sending.raise(x);
+            }
+        }
+
+        # Receive action. Can only execute if queue not empty
+
+        before recv {
+            require ~empty;
+
+            # Abstract action (ghost code)
+
+            call receiving.raise(val(head_cell));
+            head := head.next;
+
+            # Concrete action
+
+            full(head_cell) := false;
+            if head_cell = tail_cell {
+                empty := true;
+            } else {
+                var c := link.get(head_cell);
+                link.remove(head_cell);
+                head_cell := c;
+            }
+
+            # TODO: workaround for 'index undefined' in proof
+            assert index(C) = index(C);
+#            assert queue(X) = queue(X)
+        }
+
+        # Liveness property. If we infinitely often receive, then every sent message is
+        # eventually received. To prove this, we need a bunch of invariants relating the
+        # concrete and abstract state. TODO: these should be proved separately.
+
+        temporal property
+        forall X. ((globally eventually receiving.now)
+                   & (eventually sending.now & sending.value = X) ->
+                     (eventually receiving.now & receiving.value = X))
+        proof {
+            tactic skolemize;
+            tactic l2s_auto with {
+                definition work_created(X) = (X < tail)
+                definition work_needed(X) = ~exists Y. Y < X & queue(Y) = _X 
+                definition work_done(X) = (X < head)
+                definition work_start = (sending.now & sending.value = _X)
+                definition work_progress = receiving.now
+                invariant empty <-> head = tail
+                invariant head <= tail
+                invariant full(C) -> index(C) < tail
+                invariant full(C) -> head <= index(C)
+                invariant ~empty -> full(head_cell) & index(head_cell) = head
+                invariant ~empty -> full(tail_cell) & nat.succ(index(tail_cell),tail)
+                invariant link.pre(C) <-> full(C) & C ~= tail_cell
+                invariant link.map(C,D) <-> full(C) & full(D) & nat.succ(index(C),index(D))
+                invariant full(C) & full(D) & index(C) = index(D) -> C = D
+                invariant full(C) -> val(C) = queue(index(C))
+            }
+            showgoals
+        }
+
+        # Prove we don't leak memory
+       
+        invariant empty -> exists X. ~full(X)
+
+        # Auxiliary invariants. TODO: these are duplicated in the liveness proof. Can we re-use them
+        # so we don't prove them twice?
+
+        invariant empty <-> head = tail
+        invariant head <= tail
+        invariant full(C) -> index(C) < tail
+        invariant full(C) -> head <= index(C)
+        invariant ~empty -> full(head_cell) & index(head_cell) = head
+        invariant ~empty -> full(tail_cell) & nat.succ(index(tail_cell),tail)
+        invariant link.pre(C) <-> full(C) & C ~= tail_cell
+        invariant link.map(C,D) <-> full(C) & full(D) & nat.succ(index(C),index(D))
+        invariant full(C) & full(D) & index(C) = index(D) -> C = D
+
+        
+    }
+} with nat
+
+export bar.send
+export bar.recv
+

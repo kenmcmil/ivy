@@ -1,0 +1,181 @@
+#lang ivy1.8
+
+# This file contains a liveness proof of the ticket protocol, and
+# illustrates Ivy's liveness to safety tactic on an infinite-state
+# system that requires dynamic abstraction. The example is discussed
+# in the following papers:
+#
+# Oded Padon, Jochen Hoenicke, Giuliano Losa, Andreas Podelski, Mooly
+# Sagiv, and Sharon Shoham: Reducing Liveness to Safety in First-Order
+# Logic. POPL 2018: Article 26.
+#
+# Oded Padon, Jochen Hoenicke, Kenneth L. McMillan, Andreas Podelski,
+# Mooly Sagiv, Sharon Shoham: Temporal Prophecy for Proving Temporal
+# Properties of Infinite-State Systems. FMCAD 2018: 1-11
+#
+# To verify this file, run:
+#
+#     $ ivy_check ticket.ivy
+#     ...
+#     OK
+#
+
+################################################################################
+# A liveness proof of the ticket protocol
+################################################################################
+
+
+################################################################################
+# Module for axiomatizing a total order
+################################################################################
+
+include order
+
+
+include mc_schemata
+
+module signal(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        function emits(X) = now & value = X
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+################################################################################
+#
+# Types, relations and functions describing the state
+#
+################################################################################
+
+type thread
+instance ticket : unbounded_sequence
+
+instantiate unbounded_sequence_schemata(ticket)
+
+action step12(t:thread)
+action step22(t:thread, k:ticket)
+action step23(t:thread, k:ticket)
+action step31(t:thread)
+
+instance scheduled : signal(thread)
+
+function le(X:ticket,Y:ticket) = (X <= Y)
+
+relation pc1(T:thread)
+relation pc2(T:thread)
+relation pc3(T:thread)
+
+individual service:ticket
+individual next_ticket:ticket
+relation m(T:thread, K:ticket)  # use relation and not a function to be in EPR
+
+after init {
+    pc1(T) := true;
+    pc2(T) := false;
+    pc3(T) := false;
+    service := 0;
+    next_ticket := 0;
+    m(T,K) := K = 0;
+}
+
+var last:thread
+
+before step12 {
+    require pc1(t);
+    scheduled.raise(t);
+    m(t,K) := K = next_ticket;
+    last := t;
+    pc1(t) := false;
+    pc2(t) := true;
+    var ntn := next_ticket.next;
+    next_ticket := ntn;
+}
+
+before step22 {
+    require pc2(t);
+    require m(t,k);
+    require ~le(k,service);
+    scheduled.raise(t);
+    # stay in pc2
+}
+
+before step23 {
+    require pc2(t);
+    require m(t,k);
+    require le(k,service);
+    scheduled.raise(t);
+    pc2(t) := false;
+    pc3(t) := true;
+}
+
+before step31 {
+    require pc3(t);
+    scheduled.raise(t);
+    var foo := service.next;
+    service := foo;
+    pc3(t) := false;
+    pc1(t) := true;
+}
+
+################################################################################
+#
+# Invariants for proving safety (also help for liveness)
+#
+################################################################################
+
+# basic
+invariant pc1(T) | pc2(T) | pc3(T)
+invariant ~pc1(T) | ~pc2(T)
+invariant ~pc1(T) | ~pc3(T)
+invariant ~pc2(T) | ~pc3(T)
+invariant m(T,K1) & m(T,K2) -> K1 = K2
+
+# safety property
+invariant pc3(T1) & pc3(T2) -> T1 = T2
+
+# inductive invariant for proving safety
+invariant next_ticket = 0 -> m(T,0)
+invariant next_ticket ~= 0 & m(T,M) -> ~le(next_ticket,M)
+invariant (pc2(T) | pc3(T)) -> next_ticket ~= 0
+invariant m(T1,M) & m(T2,M) & M ~= 0 -> T1 = T2
+invariant pc2(T) & m(T,M) -> le(service,M)
+invariant pc3(T) -> m(T,service)
+invariant le(service,next_ticket)
+invariant ~(~pc1(T1) & ~pc1(T2) & m(T1,M) & m(T2,M) & T1 ~= T2)
+
+
+################################################################################
+#
+# Temporal property and its proof
+#
+################################################################################
+
+
+temporal property [lemma1]
+(forall T. globally (eventually scheduled.emits(T))) ->
+forall X. globally next_ticket = X -> eventually service = X
+proof {
+    tactic mc with L = scheduled.value whenprev scheduled.now, Xm1 = X - 1
+}
+
+temporal property [live]
+(forall T. globally (eventually scheduled.emits(T))) ->
+forall T. (globally pc2(T) -> eventually pc3(T))
+proof {
+    tactic mc with Y = next_ticket
+}
+
+export step12
+export step22
+export step23
+export step31

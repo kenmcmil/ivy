@@ -38,7 +38,7 @@ def doit(fbase,out):
         try:
             f = open(fn,'r')
         except:
-            print "not found: %s" % fn
+            print("not found: %s" % fn)
             sys.exit(1)
 
         with iu.ErrorPrinter():
@@ -63,7 +63,7 @@ def doit(fbase,out):
 def main():
     import sys
     def usage():
-        print "usage: \n  {} <file>.iev ".format(sys.argv[0])
+        print("usage: \n  {} <file>.iev ".format(sys.argv[0]))
         sys.exit(1)
     if len(sys.argv) != 2:
         usage()

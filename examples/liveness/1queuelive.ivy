@@ -1,0 +1,86 @@
+#lang ivy1.8
+
+# This file contains a simple liveness proof, also shown in figure 3
+# in the tool paper submission.
+#
+# To verify this file, run:
+#
+#     $ ivy_check liveness.ivy
+#     ...
+#     OK
+#
+
+include order
+
+instance nat : unbounded_sequence
+
+module signal(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+type id
+
+isolate bar = {
+
+    action send(x:id)
+
+    action recv
+
+    specification {
+        var head : nat
+        var tail : nat
+        var queue(X:nat) : id
+        
+        after init {
+            head := 0;
+            tail := 0;
+        }
+
+        instance sending : signal(id)
+        instance receiving : signal(id)
+
+        before send {
+            queue(tail) := x;
+            tail := tail.next;
+            sending.raise(x);
+        }
+
+        before recv {
+            require head < tail;
+            call receiving.raise(queue(head));
+            head := head.next;
+        }
+
+        temporal property
+        forall X. ((globally eventually receiving.now)
+                   & (eventually sending.now & sending.value = X) ->
+                     (eventually receiving.now & receiving.value = X))
+        proof {
+            tactic skolemize;
+            tactic l2s_auto with {
+                definition work_created(X) = (X < tail)
+                definition work_needed(X) = ~exists Y. Y < X & queue(Y) = _X 
+                definition work_done(X) = (X < head)
+                definition work_start = (sending.now & sending.value = _X)
+                definition work_progress = receiving.now
+            }
+            showgoals
+        }
+    }
+} with nat
+
+export bar.send
+export bar.recv
+

@@ -6,7 +6,7 @@ from tabulate import tabulate
 def main():
     import sys
     def usage():
-        print "usage: \n  {} <file>.dat".format(sys.argv[0])
+        print("usage: \n  {} <file>.dat".format(sys.argv[0]))
         sys.exit(1)
     if len(sys.argv) != 2:
         usage()
@@ -38,7 +38,7 @@ def main():
         fun = lambda x: x[0]
         scands = sorted(cands,key=fun)
         data = [cand[1:] for cand in scands[-3:]]
-        print tabulate(data,tablefmt="fancy_grid")
+        print(tabulate(data,tablefmt="fancy_grid"))
 
 
 if __name__ == '__main__':

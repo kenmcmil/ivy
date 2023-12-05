@@ -1,0 +1,308 @@
+#lang ivy1.8
+
+# This is an example of using an abstract model to prove liveness. We
+# first prove liveness of the asbtacrt model using model
+# checking. Then we prove liveness of the system using the liveness
+# property of the model.  The second proof is done with l2s_auto, spo
+# we can scale it up. It involves writing some invariants relation the
+# state of the system and the state of the abstract model.
+#
+# We choose a system for which it is tricky to prove liveness with
+# l2s, to show how mdel checking can simplify the proof.
+
+include order
+
+
+instance nat : unbounded_sequence
+
+include mc_schemata
+
+module signal0 = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+module signal(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# Our abstract model consists of a work queue with elements of difference
+# classes. We use two arbitrary predicates to divide work elements into classes:
+#
+# - q(X) indicates that the work is 'qualified'. Qualidied work elements must be
+#   received in order
+# - p(X) indicates the kind of work: false = kind1, true = kind2
+#
+# We can received qualified elements from the work queue using to methods:
+# - recv1 gets the first qualified element if it is of kind1
+# - recv2 gets the first qualified element if it is of kind2
+#
+# We want to show that every qualified element in the queue is eventually received,
+# if *both* recv1 and recv2 are called infinitely often.
+
+module isolate split_queue2(nat,id,q,p) with nat = {
+
+    instantiate equality_schemata
+    instantiate unbounded_sequence_schemata(nat)
+
+    # add a work element to the queue
+    action send(x:id)
+
+    # receive work elements of kinds kind1 and kind2 respectively
+    action recv1
+    action recv2
+
+    # tail points to the next available queue cell
+    var tail : nat
+    # done(X) indicates the work in cell X is done
+    var done(X:nat) : bool
+    # queue(X) indicats the work element in cell X
+    var queue(X:nat) : id
+
+    # Two axuliaries to help in the proof
+    # lastq indicates the cell of the last quanified work element
+    var lastq : nat
+    # predq(X) gives the cell of the latest qualified element before
+    # cell X, if any (else it is zero)
+    var predq(X:nat) : nat
+
+    after init {
+        done(X) := false;
+        tail := 0;
+        lastq := 0;
+    }
+
+    instance trying1 : signal0
+    instance trying2 : signal0
+
+    # When we send, we append an element to the queue and update
+    # the auxiliaries lastq and predq.
+    before send {
+        queue(tail) := x;
+        predq(tail) := lastq;
+        if q(x) {
+            lastq := tail;
+        }
+        tail := tail.next;
+    }
+
+    # When receiving a kind1 element, we find the first work element
+    # that is not done, if any, and if it is of kind kind1, we mark it done.
+    before recv1 {
+        trying1.raise;
+        if some x:nat. ~done(x) & x < tail & q(queue(x)) minimizing x {
+            if p(queue(x)) {
+                done(x) := true;
+            }
+        }
+    }
+
+    # When receiving a kind2 element, we find the first work element
+    # that is not done, if any, and if it is of kind kind2, we mark it done.
+    before recv2 {
+        trying2.raise;
+        if some x:nat. ~done(x) & x < tail & q(queue(x)) minimizing x {
+            if ~p(queue(x)) {
+                done(x) := true;
+            }
+        }
+    }
+
+    # Here are some useful invariants. I particular, we have that
+    # there are no qualified elements between predq(X) and X.
+    #
+    # Also, we state the obvious (that there are no nats less than 0)
+    # to help the model checker, without adding 0 to the list of
+    # skolems.
+
+    invariant X < tail & predq(X) < Y & Y < X -> ~q(queue(Y))
+    invariant lastq < X & X < tail -> ~q(queue(X))
+    invariant lastq <= tail
+    invariant X < tail & done(X) & Y < X & q(queue(Y)) -> done(Y)
+    invariant done(X) -> X < tail
+    invariant ~(X:nat < 0)
+    
+    # Now we can prove liveness with the model checker. We concretize the
+    # following individuals:
+    #
+    # - X is the cell of the elelment to be completed
+    # - Y is the predecessor of this cell
+    # - V1 is the value of cell X
+    # - V2 is the value of cell Y
+    #
+    # The idea of the proof is this: we know by induction on time that
+    # cell Y is eventually done. Since there are no qualified cells
+    # between Y and X (an invariant stated above) we know the next
+    # cell to be processed is X. We have to concretize the cell values
+    # so we can evaluate the predicates p and q on these cells.
+
+    temporal property [lemma1]
+    (globally eventually trying1.now) &
+    (globally eventually trying2.now) ->
+    forall X. (globally X < tail & q(queue(X)) -> eventually done(X))
+    proof {
+        tactic mc with Y = predq(X), V1 = queue(X), V2 = queue(Y)
+    }
+
+}
+
+# Now that we have proved liveness of the abstractr model, we will create an
+# instance of it and use it to prove liveness of our system. Actually, our system
+# is the same as the abstract model, but without the auxiliaries.Still it is useful
+# to see how liveness of one can be used to prove liveness of the other using
+# auto_l2s.
+
+type id
+relation q(X:id)
+relation p(X:id)
+instance bar : split_queue2(nat,id,q,p)
+
+action send(x:id)
+
+action recv1
+action recv2
+
+var tail : nat
+var done(X:nat) : bool
+var queue(X:nat) : id
+
+after init {
+    done(X) := false;
+    tail := 0;
+}
+
+instance trying1 : signal0
+instance trying2 : signal0
+
+# Notice the send and receive methods have ghost calls to drive
+# the abstract model.
+
+before send {
+    bar.send(x); # ghost
+    queue(tail) := x;
+    tail := tail.next;
+}
+
+before recv1 {
+    trying1.raise;
+    bar.recv1; # ghost 
+    if some x:nat. ~done(x) & x < tail & q(queue(x)) minimizing x {
+        if p(queue(x)) {
+            done(x) := true;
+        }
+    }
+}
+
+before recv2 {
+    trying2.raise;
+    bar.recv2;
+    if some x:nat. ~done(x) & x < tail & q(queue(x)) minimizing x {
+        if ~p(queue(x)) {
+            done(x) := true;
+        }
+    }
+}
+
+# Here are some useful invariants, similar to the above, but
+# without the unneeded auxiliary state. Notice we have some
+# invariants relating the abstract and concrete state, as always
+# in a refinement proof.
+
+invariant X < tail & done(X) & Y < X & q(queue(Y)) -> done(Y)
+invariant done(X) -> X < tail
+invariant ~(X:nat < 0)
+invariant tail = bar.tail
+invariant done(X) = bar.done(X)
+invariant X < tail -> queue(X) = bar.queue(X)
+
+# Now here's the fun part. First we show that if
+# the system receives infinitely often, then so does the
+# abstract model. We do this for both kinds of receive.
+#
+# Notice in these l2s_auto proofs, work_start and work_end are the
+# same condition. This is because the starting condition persists
+# until the eventuality holds. We do the same proof for kind1 and
+# kind2.
+
+temporal property [gf1]
+(globally eventually trying1.now) ->
+(globally eventually bar.trying1.now)
+proof {
+    tactic l2s_auto2 with {
+        definition work_created = true
+        definition work_needed = true
+        definition work_done = false
+        definition work_end = ~eventually bar.trying1.now
+        definition work_start = ~eventually bar.trying1.now
+        definition work_progress = trying1.now
+    }
+}
+
+temporal property [gf2]
+(globally eventually trying2.now) ->
+(globally eventually bar.trying2.now)
+proof {
+    tactic l2s_auto2 with {
+        definition work_created = true
+        definition work_needed = true
+        definition work_done = false
+        definition work_end = ~eventually bar.trying2.now
+        definition work_start = ~eventually bar.trying2.now
+        definition work_progress = trying2.now
+    }
+}
+
+# With the obove lemmas, we can use liveness of the abstract
+# model to prove liveness of the concrete. Notice that the progress
+# condition is that the abstract model is done. This immediately ensures
+# that the concrete mode is done, becuase of our invariants relating
+# absract and concrete state.
+
+temporal property [lemma1]
+(globally eventually trying1.now) &
+(globally eventually trying2.now) ->
+forall X. (globally X < tail & q(queue(X)) -> eventually done(X))
+proof {
+    tactic skolemizenp;
+    instantiate bar.lemma1 with X = _X;
+    tactic l2s_auto2 with {
+        definition work_created = true
+        definition work_needed = true
+        definition work_done = false
+        definition work_end = ~(_X < tail & q(queue(_X)) -> eventually done(_X))
+        definition work_start = ~(_X < tail & q(queue(_X)) -> eventually done(_X))
+        definition work_progress = bar.done(_X)
+    }
+}
+
+# That's it! Notice that we did the proof of the concrete model very simply with
+# l2s_auto (in fact, everything except the progress condition is boilerplate).
+# This means we should be able to do proofs like this for big systems (using the
+# hgh capacity of l2s) while saving the tricky temporal reasoning for the abstract model
+# using model checking (which has much lower capacity).
+
+export send
+export recv1
+export recv2
+

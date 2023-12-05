@@ -1,0 +1,49 @@
+theorem [bezout_lemma] {
+    individual _A : nat
+    individual _B : nat
+    property [bezout_lemma_pre] S:nat > 0 & T:nat > 0 & (S if (S > T) else T) = (S if (S > T) else T) -> _A * S - _B * T = gcd(S,T)
+    property S:nat > 0 & T:nat > 0 -> _A * S - _B * T = gcd(S,T)
+}
+
+
+
+theorem [pos] {
+    individual _A : nat
+    individual _B : nat
+    individual x : nat
+    individual _S : nat
+    individual _T : nat
+    property [prop22] _S >= _T
+    property [gcd_symm] forall Y,X. X:nat > 0 & Y:nat > 0 -> gcd(X,Y) = gcd(Y,X)
+    property [prop22] _S > _T
+    property [ind_hyp] (_S - _T if (_S - _T > _T) else _T) < x -> (_S - _T > 0 & _T > 0 & (_S - _T if (_S - _T > _T) else _T) = (_S - _T if (_S - _T > _T) else _T) -> _A * (_S - _T) - _B * _T = gcd(_S - _T,_T))
+    property [gcd_euclid] _S > _T & _T > 0 -> gcd(_T,_S) = gcd(_T,_S - _T)
+    property _T > 0 & _S > 0 & x = (_T if (_T > _S) else _S) -> _A * _T - (_A + _B) * _S = gcd(_T,_S)
+}
+
+
+
+theorem [neg] {
+    individual x : nat
+    individual _S : nat
+    individual _T : nat
+    property [prop22] _S >= _T
+    property [gcd_symm] forall Y,X. X:nat > 0 & Y:nat > 0 -> gcd(X,Y) = gcd(Y,X)
+    property [prop23] ~_S > _T
+    property [gcd_self] _S > 0 -> gcd(_S,_S) = _S
+    property _T > 0 & _S > 0 & x = (_T if (_T > _S) else _S) -> 1:nat * _T - 0 * _S = gcd(_T,_S)
+}
+
+
+
+theorem [neg] {
+    individual _A : nat
+    individual _B : nat
+    individual x : nat
+    individual _S : nat
+    individual _T : nat
+    property [prop23] ~_S >= _T
+    property [ind_hyp] (_T - _S if (_T - _S > _S) else _S) < x -> (_S > 0 & _T - _S > 0 & (_T - _S if (_T - _S > _S) else _S) = (_S if (_S > _T - _S) else _T - _S) -> _A * _S - _B * (_T - _S) = gcd(_S,_T - _S))
+    property [gcd_euclid] _T > _S & _S > 0 -> gcd(_S,_T) = gcd(_S,_T - _S)
+    property _T > 0 & _S > 0 & x = (_T if (_T > _S) else _S) -> (_A + _B) * _T - _B * _S = gcd(_T,_S)
+}

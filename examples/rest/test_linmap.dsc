@@ -1,1 +1,0 @@
-{"processes": [{"indices": [], "binary": "test_linmap", "params": [], "name": "extract"}]}

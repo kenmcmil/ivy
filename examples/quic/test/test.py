@@ -55,7 +55,7 @@ client_tests = [
 
 import sys
 def usage():
-    print """usage:
+    print("""usage:
     {} [option...]
 options:
     dir=<output directory to create>
@@ -64,7 +64,7 @@ options:
     test=<test name pattern>
     stats={{true,false}}
     run={{true,false}}
-""".format(sys.argv[0])
+""".format(sys.argv[0]))
     sys.exit(1)
 
 dirpath = None
@@ -122,7 +122,7 @@ if dirpath is None:
             break
         idx = idx + 1
 
-print 'output directory: {}'.format(dirpath)
+print('output directory: {}'.format(dirpath))
             
 try:
     patre = re.compile(pat)
@@ -137,7 +137,7 @@ except OSError:
     exit(1)
 
 # extra_args = ['server_addr=0xc0a80101','client_addr=0xc0a80102'] if server_name == 'winquic' else []
-extra_args = [oname+'='+oval for oname,oval in ivy_options.iteritems() if oval is not None]
+extra_args = [oname+'='+oval for oname,oval in ivy_options.items() if oval is not None]
 
 svrd = dict(clients if test_client else servers)
 if server_name not in svrd:
@@ -148,8 +148,8 @@ server_dir,server_cmd = svrd[server_name]
 if not run:
     server_cmd = 'true'
 
-print 'implementation directory: {}'.format(server_dir)
-print 'implementation command: {}'.format(server_cmd)
+print('implementation directory: {}'.format(server_dir))
+print('implementation command: {}'.format(server_cmd))
 
 
 def open_out(name):
@@ -159,40 +159,40 @@ def sleep():
     return
     if server_name == 'winquic':
         st = 20
-        print 'sleeping for {}'.format(st)
+        print('sleeping for {}'.format(st))
         time.sleep(st)
 
 class Test(object):
     def __init__(self,dir,args):
         self.dir,self.name,self.res,self.opts = dir,args[0],args[-1],args[1:-1]
     def run(self,seq):
-        print '{}/{} ({}) ...'.format(self.dir,self.name,seq)
+        print('{}/{} ({}) ...'.format(self.dir,self.name,seq))
         status = self.run_expect(seq)
-        print 'PASS' if status else 'FAIL'
+        print('PASS' if status else 'FAIL')
         return status
     def run_expect(self,seq):
         for pc in self.preprocess_commands():
-            print 'executing: {}'.format(pc)
+            print('executing: {}'.format(pc))
             child = spawn(pc)
             child.logfile = sys.stdout
             child.expect(pexpect.EOF)
             child.close()
             if child.exitstatus != 0:
 #            if child.wait() != 0:
-                print child.before
+                print(child.before)
                 return False
         with open_out(self.name+str(seq)+'.out') as out:
             with open_out(self.name+str(seq)+'.err') as err:
                 with open_out(self.name+str(seq)+'.iev') as iev:
                     if run:
                         scmd = 'sleep 1; ' + server_cmd if test_client else server_cmd.split() 
-                        print 'implementation command: {}'.format(scmd)
+                        print('implementation command: {}'.format(scmd))
                         server = subprocess.Popen(scmd,
                                                   cwd=server_dir,
                                                   stdout=out,
                                                   stderr=err,
                                                   shell=test_client)
-                        print 'server pid: {}'.format(server.pid)
+                        print('server pid: {}'.format(server.pid))
                     try:
                         ok = self.expect(seq,iev)
                     except KeyboardInterrupt:
@@ -204,13 +204,13 @@ class Test(object):
                         retcode = server.wait()
                         if retcode != -15 and retcode != 0:  # if not exit on SIGTERM...
                             iev.write('server_return_code({})\n'.format(retcode))
-                            print "server return code: {}".format(retcode)
+                            print("server return code: {}".format(retcode))
                             return False
                     return ok
             
     def expect(self,seq,iev):
         command = self.command(seq)
-        print command
+        print(command)
         if platform.system() != 'Windows':
             oldcwd = os.getcwd()
             os.chdir(self.dir)
@@ -219,17 +219,17 @@ class Test(object):
             try:
                 retcode = proc.wait()
             except KeyboardInterrupt:
-                print 'terminating client process {}'.format(proc.pid)
+                print('terminating client process {}'.format(proc.pid))
                 proc.terminate()
                 raise KeyboardInterrupt
             if retcode == 124:
-                print 'timeout'
+                print('timeout')
                 iev.write('timeout\n')
                 sleep()
                 return False
             if retcode != 0:
                 iev.write('ivy_return_code({})\n'.format(retcode))
-                print 'client return code: {}'.format(retcode)
+                print('client return code: {}'.format(retcode))
             sleep()
             return retcode == 0
         else:
@@ -241,19 +241,19 @@ class Test(object):
             try:
                 child.expect(self.res,timeout=100)
                 child.close()
-                print "tester exit status: {}".format(child.exitstatus)
-                print "tester signal status: {}".format(child.signalstatus)
+                print("tester exit status: {}".format(child.exitstatus))
+                print("tester signal status: {}".format(child.signalstatus))
                 return True
             except pexpect.EOF:
-                print child.before
+                print(child.before)
                 return False
             except pexpect.exceptions.TIMEOUT:
-                print 'timeout'
+                print('timeout')
                 child.terminate()
                 child.close()
                 return False
             except KeyboardInterrupt:
-                print 'terminating tester process'
+                print('terminating tester process')
                 child.kill(signal.SIGINT)
                 child.close()
                 raise KeyboardInterrupt
@@ -294,11 +294,11 @@ try:
                 stats.doit(test.name,out)
                 os.chdir(save)
     if num_failures:
-        print 'error: {} tests(s) failed'.format(num_failures)
+        print('error: {} tests(s) failed'.format(num_failures))
     else:
-        print 'OK'
+        print('OK')
 except KeyboardInterrupt:
-    print 'terminated'
+    print('terminated')
 
 # for checkd in checks:
 #     dir,checkl = checkd

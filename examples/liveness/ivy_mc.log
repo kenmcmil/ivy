@@ -1,0 +1,569 @@
+
+instantiations:
+axiom [index.spec.prop4] index.succ(X,Z) -> (X < Z & ~(X < Y & Y < Z))
+axiom [index.spec.transitivity] (T:index < U & U < V) -> T < V
+axiom [index.spec.antisymmetry] ~(T:index < U & U < T)
+axiom [index.spec.totality] T:index < U | T = U | U < T
+axiom [index.spec.prop1] 0:index <= X
+axiom [nat.spec.prop4] nat.succ(X,Z) -> (X < Z & ~(X < Y & Y < Z))
+axiom [nat.spec.transitivity] (T:nat < U & U < V) -> T < V
+axiom [nat.spec.antisymmetry] ~(T:nat < U & U < T)
+axiom [nat.spec.totality] T:nat < U | T = U | U < T
+axiom [nat.spec.prop1] 0:nat <= X
+axiom [trans1] (_X = X & _X = X) -> _X = _X
+axiom [trans1] (__Xm1 = X & _X = X) -> __Xm1 = _X
+axiom [trans1] (_X = X & __Xm1 = X) -> _X = __Xm1
+axiom [trans1] (__Xm1 = X & __Xm1 = X) -> __Xm1 = __Xm1
+axiom [trans2] Y:nat = X -> (_X = X <-> _X = Y)
+axiom [trans2] Y:nat = X -> (__Xm1 = X <-> __Xm1 = Y)
+axiom [contra] Y:nat ~= X -> ~(_X = X & _X = Y)
+axiom [contra] Y:nat ~= X -> ~(__Xm1 = X & __Xm1 = Y)
+axiom [cong1b] l2s_w_4(X) = l2s_w_4(_X) | _X ~= X
+axiom [cong1b] l2s_w_4(X) = l2s_w_4(__Xm1) | __Xm1 ~= X
+axiom [cong1b] new__old_l2s_g_4(X) = new__old_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] new__old_l2s_g_4(X) = new__old_l2s_g_4(__Xm1) | __Xm1 ~= X
+axiom [cong1b] new_l2s_g_4(X) = new_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] new_l2s_g_4(X) = new_l2s_g_4(__Xm1) | __Xm1 ~= X
+axiom [cong1b] new_l2s_w_4(X) = new_l2s_w_4(_X) | _X ~= X
+axiom [cong1b] new_l2s_w_4(X) = new_l2s_w_4(__Xm1) | __Xm1 ~= X
+axiom [cong1b] l2s_g_4(X) = l2s_g_4(_X) | _X ~= X
+axiom [cong1b] l2s_g_4(X) = l2s_g_4(__Xm1) | __Xm1 ~= X
+axiom [cong1b] _old_l2s_g_4(X) = _old_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] _old_l2s_g_4(X) = _old_l2s_g_4(__Xm1) | __Xm1 ~= X
+axiom [cong2] (X1:nat - X2 = _X <-> _X - _X = _X) | _X ~= X1 | _X ~= X2
+axiom [cong2] (X1:nat - X2 = _X <-> __Xm1 - _X = _X) | __Xm1 ~= X1 | _X ~= X2
+axiom [cong2] (X1:nat - X2 = _X <-> _X - __Xm1 = _X) | _X ~= X1 | __Xm1 ~= X2
+axiom [cong2] (X1:nat - X2 = _X <-> __Xm1 - __Xm1 = _X) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [cong2] (X1:nat - X2 = __Xm1 <-> _X - _X = __Xm1) | _X ~= X1 | _X ~= X2
+axiom [cong2] (X1:nat - X2 = __Xm1 <-> __Xm1 - _X = __Xm1) | __Xm1 ~= X1 | _X ~= X2
+axiom [cong2] (X1:nat - X2 = __Xm1 <-> _X - __Xm1 = __Xm1) | _X ~= X1 | __Xm1 ~= X2
+axiom [cong2] (X1:nat - X2 = __Xm1 <-> __Xm1 - __Xm1 = __Xm1) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [cong2b] X1:nat - X2 = _X - _X | _X ~= X1 | _X ~= X2
+axiom [cong2b] X1:nat - X2 = __Xm1 - _X | __Xm1 ~= X1 | _X ~= X2
+axiom [cong2b] X1:nat - X2 = _X - __Xm1 | _X ~= X1 | __Xm1 ~= X2
+axiom [cong2b] X1:nat - X2 = __Xm1 - __Xm1 | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [cong2b] X1:nat < X2 = (_X < _X) | _X ~= X1 | _X ~= X2
+axiom [cong2b] X1:nat < X2 = (__Xm1 < _X) | __Xm1 ~= X1 | _X ~= X2
+axiom [cong2b] X1:nat < X2 = (_X < __Xm1) | _X ~= X1 | __Xm1 ~= X2
+axiom [cong2b] X1:nat < X2 = (__Xm1 < __Xm1) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [cong2b] X1:nat <= X2 = (_X <= _X) | _X ~= X1 | _X ~= X2
+axiom [cong2b] X1:nat <= X2 = (__Xm1 <= _X) | __Xm1 ~= X1 | _X ~= X2
+axiom [cong2b] X1:nat <= X2 = (_X <= __Xm1) | _X ~= X1 | __Xm1 ~= X2
+axiom [cong2b] X1:nat <= X2 = (__Xm1 <= __Xm1) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [cong2b] nat.succ(X1,X2) = nat.succ(_X,_X) | _X ~= X1 | _X ~= X2
+axiom [cong2b] nat.succ(X1,X2) = nat.succ(__Xm1,_X) | __Xm1 ~= X1 | _X ~= X2
+axiom [cong2b] nat.succ(X1,X2) = nat.succ(_X,__Xm1) | _X ~= X1 | __Xm1 ~= X2
+axiom [cong2b] nat.succ(X1,X2) = nat.succ(__Xm1,__Xm1) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [lt1] ~(X:nat < Y & ~_X < Y & (_X < X | _X = X))
+axiom [lt1] ~(X:nat < Y & ~__Xm1 < Y & (__Xm1 < X | __Xm1 = X))
+axiom [lt2] ~(~X:nat < Y & ((~_X < X & _X < Y) | (~_X < X & _X ~= X & _X = Y)))
+axiom [lt2] ~(~X:nat < Y & ((~__Xm1 < X & __Xm1 < Y) | (~__Xm1 < X & __Xm1 ~= X & __Xm1 = Y)))
+axiom [lt3] Y:nat = X -> (_X < X <-> _X < Y)
+axiom [lt3] Y:nat = X -> (__Xm1 < X <-> __Xm1 < Y)
+axiom [lt4] (_X < X1 - X2 <-> _X < _X - _X) | _X ~= X1 | _X ~= X2
+axiom [lt4] (_X < X1 - X2 <-> _X < __Xm1 - _X) | __Xm1 ~= X1 | _X ~= X2
+axiom [lt4] (_X < X1 - X2 <-> _X < _X - __Xm1) | _X ~= X1 | __Xm1 ~= X2
+axiom [lt4] (_X < X1 - X2 <-> _X < __Xm1 - __Xm1) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [lt4] (__Xm1 < X1 - X2 <-> __Xm1 < _X - _X) | _X ~= X1 | _X ~= X2
+axiom [lt4] (__Xm1 < X1 - X2 <-> __Xm1 < __Xm1 - _X) | __Xm1 ~= X1 | _X ~= X2
+axiom [lt4] (__Xm1 < X1 - X2 <-> __Xm1 < _X - __Xm1) | _X ~= X1 | __Xm1 ~= X2
+axiom [lt4] (__Xm1 < X1 - X2 <-> __Xm1 < __Xm1 - __Xm1) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [lt5] X:nat = _X -> (~X < _X & ~_X < X)
+axiom [lt5] X:nat = __Xm1 -> (~X < __Xm1 & ~__Xm1 < X)
+axiom [lt6] (X1:nat - X2 = 0 <-> _X - _X = 0) | _X ~= X1 | _X ~= X2
+axiom [lt6] (X1:nat - X2 = 0 <-> __Xm1 - _X = 0) | __Xm1 ~= X1 | _X ~= X2
+axiom [lt6] (X1:nat - X2 = 0 <-> _X - __Xm1 = 0) | _X ~= X1 | __Xm1 ~= X2
+axiom [lt6] (X1:nat - X2 = 0 <-> __Xm1 - __Xm1 = 0) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [lt6] (X1:nat - X2 = 0 <-> _X - _X = 0) | _X ~= X1 | _X ~= X2
+axiom [lt6] (X1:nat - X2 = 0 <-> __Xm1 - _X = 0) | __Xm1 ~= X1 | _X ~= X2
+axiom [lt6] (X1:nat - X2 = 0 <-> _X - __Xm1 = 0) | _X ~= X1 | __Xm1 ~= X2
+axiom [lt6] (X1:nat - X2 = 0 <-> __Xm1 - __Xm1 = 0) | __Xm1 ~= X1 | __Xm1 ~= X2
+axiom [succ_minus] nat.succ(X,Y) -> (~(_X = Y & X ~= _X & _X = _X - 1) & ~(_X = X & Y ~= _X & _X = _X - 1))
+axiom [succ_minus] nat.succ(X,Y) -> (~(_X = Y & X ~= __Xm1 & __Xm1 = _X - 1) & ~(__Xm1 = X & Y ~= _X & __Xm1 = _X - 1))
+axiom [succ_minus] nat.succ(X,Y) -> (~(__Xm1 = Y & X ~= _X & _X = __Xm1 - 1) & ~(_X = X & Y ~= __Xm1 & _X = __Xm1 - 1))
+axiom [succ_minus] nat.succ(X,Y) -> (~(__Xm1 = Y & X ~= __Xm1 & __Xm1 = __Xm1 - 1) & ~(__Xm1 = X & Y ~= __Xm1 & __Xm1 = __Xm1 - 1))
+    (_X = bar.tail & _X = bar.tail) -> true
+    (_X = bar.tail & __Xm1 = bar.tail) -> _X = __Xm1
+    _X = bar.tail -> (_X = bar.tail <-> true)
+    _X = bar.tail -> (__Xm1 = bar.tail <-> _X = __Xm1)
+    _X ~= bar.tail -> ~(_X = bar.tail & true)
+    _X ~= bar.tail -> ~(__Xm1 = bar.tail & _X = __Xm1)
+    _X = bar.tail -> (_X < bar.tail <-> _X < _X)
+    _X = bar.tail -> (__Xm1 < bar.tail <-> __Xm1 < _X)
+    _X = bar.tail -> (~bar.tail < _X & ~_X < bar.tail)
+    (_X = new_bar.tail & _X = new_bar.tail) -> true
+    (_X = new_bar.tail & __Xm1 = new_bar.tail) -> _X = __Xm1
+    _X = new_bar.tail -> (_X = new_bar.tail <-> true)
+    _X = new_bar.tail -> (__Xm1 = new_bar.tail <-> _X = __Xm1)
+    _X ~= new_bar.tail -> ~(_X = new_bar.tail & true)
+    _X ~= new_bar.tail -> ~(__Xm1 = new_bar.tail & _X = __Xm1)
+    _X = new_bar.tail -> (_X < new_bar.tail <-> _X < _X)
+    _X = new_bar.tail -> (__Xm1 < new_bar.tail <-> __Xm1 < _X)
+    _X = new_bar.tail -> (~new_bar.tail < _X & ~_X < new_bar.tail)
+    (_X = bar.head & _X = bar.head) -> true
+    (_X = bar.head & __Xm1 = bar.head) -> _X = __Xm1
+    _X = bar.head -> (_X = bar.head <-> true)
+    _X = bar.head -> (__Xm1 = bar.head <-> _X = __Xm1)
+    _X ~= bar.head -> ~(_X = bar.head & true)
+    _X ~= bar.head -> ~(__Xm1 = bar.head & _X = __Xm1)
+    _X = bar.head -> (_X < bar.head <-> _X < _X)
+    _X = bar.head -> (__Xm1 < bar.head <-> __Xm1 < _X)
+    _X = bar.head -> (~bar.head < _X & ~_X < bar.head)
+    (_X = new_bar.head & _X = new_bar.head) -> true
+    (_X = new_bar.head & __Xm1 = new_bar.head) -> _X = __Xm1
+    _X = new_bar.head -> (_X = new_bar.head <-> true)
+    _X = new_bar.head -> (__Xm1 = new_bar.head <-> _X = __Xm1)
+    _X ~= new_bar.head -> ~(_X = new_bar.head & true)
+    _X ~= new_bar.head -> ~(__Xm1 = new_bar.head & _X = __Xm1)
+    _X = new_bar.head -> (_X < new_bar.head <-> _X < _X)
+    _X = new_bar.head -> (__Xm1 < new_bar.head <-> __Xm1 < _X)
+    _X = new_bar.head -> (~new_bar.head < _X & ~_X < new_bar.head)
+    (_X - 1 = _X <-> _X - _X = _X) | ~true | 1:nat ~= _X
+    (_X - 1 = _X <-> __Xm1 - _X = _X) | _X ~= __Xm1 | 1:nat ~= _X
+    (_X - 1 = _X <-> _X - __Xm1 = _X) | ~true | 1:nat ~= __Xm1
+    (_X - 1 = _X <-> __Xm1 - __Xm1 = _X) | _X ~= __Xm1 | 1:nat ~= __Xm1
+    (_X - 1 = __Xm1 <-> _X - _X = __Xm1) | ~true | 1:nat ~= _X
+    (_X - 1 = __Xm1 <-> __Xm1 - _X = __Xm1) | _X ~= __Xm1 | 1:nat ~= _X
+    (_X - 1 = __Xm1 <-> _X - __Xm1 = __Xm1) | ~true | 1:nat ~= __Xm1
+    (_X - 1 = __Xm1 <-> __Xm1 - __Xm1 = __Xm1) | _X ~= __Xm1 | 1:nat ~= __Xm1
+    _X - 1 = _X - _X | ~true | 1:nat ~= _X
+    _X - 1 = __Xm1 - _X | _X ~= __Xm1 | 1:nat ~= _X
+    _X - 1 = _X - __Xm1 | ~true | 1:nat ~= __Xm1
+    _X - 1 = __Xm1 - __Xm1 | _X ~= __Xm1 | 1:nat ~= __Xm1
+    (_X < _X - 1 <-> _X < _X - _X) | ~true | 1:nat ~= _X
+    (_X < _X - 1 <-> _X < __Xm1 - _X) | _X ~= __Xm1 | 1:nat ~= _X
+    (_X < _X - 1 <-> _X < _X - __Xm1) | ~true | 1:nat ~= __Xm1
+    (_X < _X - 1 <-> _X < __Xm1 - __Xm1) | _X ~= __Xm1 | 1:nat ~= __Xm1
+    (__Xm1 < _X - 1 <-> __Xm1 < _X - _X) | ~true | 1:nat ~= _X
+    (__Xm1 < _X - 1 <-> __Xm1 < __Xm1 - _X) | _X ~= __Xm1 | 1:nat ~= _X
+    (__Xm1 < _X - 1 <-> __Xm1 < _X - __Xm1) | ~true | 1:nat ~= __Xm1
+    (__Xm1 < _X - 1 <-> __Xm1 < __Xm1 - __Xm1) | _X ~= __Xm1 | 1:nat ~= __Xm1
+    (_X - 1 = 0 <-> _X - _X = 0) | ~true | 1:nat ~= _X
+    (_X - 1 = 0 <-> __Xm1 - _X = 0) | _X ~= __Xm1 | 1:nat ~= _X
+    (_X - 1 = 0 <-> _X - __Xm1 = 0) | ~true | 1:nat ~= __Xm1
+    (_X - 1 = 0 <-> __Xm1 - __Xm1 = 0) | _X ~= __Xm1 | 1:nat ~= __Xm1
+    (_X - 1 = __Xm1 & _X - 1 = _X) -> _X = __Xm1
+    (_X - 1 = __Xm1 & _X - 1 = __Xm1) -> true
+    _X - 1 = __Xm1 -> (_X = __Xm1 <-> _X - 1 = _X)
+    _X - 1 = __Xm1 -> (true <-> _X - 1 = __Xm1)
+    _X - 1 ~= __Xm1 -> ~(_X = __Xm1 & _X - 1 = _X)
+    _X - 1 ~= __Xm1 -> ~(true & _X - 1 = __Xm1)
+    _X - 1 = __Xm1 -> (_X < __Xm1 <-> _X < _X - 1)
+    _X - 1 = __Xm1 -> (__Xm1 < __Xm1 <-> __Xm1 < _X - 1)
+    _X - 1 = __Xm1 -> (~_X - 1 < __Xm1 & ~__Xm1 < _X - 1)
+    __ts0__ts0__new_fml:x = bar.tail -> (_X = bar.tail <-> _X = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.tail -> (__Xm1 = bar.tail <-> __Xm1 = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x ~= bar.tail -> ~(_X = bar.tail & _X = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x ~= bar.tail -> ~(__Xm1 = bar.tail & __Xm1 = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.tail -> (_X < bar.tail <-> _X < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.tail -> (__Xm1 < bar.tail <-> __Xm1 < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.head -> (_X = bar.head <-> _X = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.head -> (__Xm1 = bar.head <-> __Xm1 = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x ~= bar.head -> ~(_X = bar.head & _X = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x ~= bar.head -> ~(__Xm1 = bar.head & __Xm1 = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.head -> (_X < bar.head <-> _X < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.head -> (__Xm1 < bar.head <-> __Xm1 < __ts0__ts0__new_fml:x)
+    __fml:y = __ts0__ts0__ts0__new_bar.head_a -> (_X = __ts0__ts0__ts0__new_bar.head_a <-> _X = __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.head_a -> (__Xm1 = __ts0__ts0__ts0__new_bar.head_a <-> __Xm1 = __fml:y)
+    __fml:y ~= __ts0__ts0__ts0__new_bar.head_a -> ~(_X = __ts0__ts0__ts0__new_bar.head_a & _X = __fml:y)
+    __fml:y ~= __ts0__ts0__ts0__new_bar.head_a -> ~(__Xm1 = __ts0__ts0__ts0__new_bar.head_a & __Xm1 = __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.head_a -> (_X < __ts0__ts0__ts0__new_bar.head_a <-> _X < __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.head_a -> (__Xm1 < __ts0__ts0__ts0__new_bar.head_a <-> __Xm1 < __fml:y)
+    bar.head = new_bar.head -> (_X = new_bar.head <-> _X = bar.head)
+    bar.head = new_bar.head -> (__Xm1 = new_bar.head <-> __Xm1 = bar.head)
+    bar.head ~= new_bar.head -> ~(_X = new_bar.head & _X = bar.head)
+    bar.head ~= new_bar.head -> ~(__Xm1 = new_bar.head & __Xm1 = bar.head)
+    bar.head = new_bar.head -> (_X < new_bar.head <-> _X < bar.head)
+    bar.head = new_bar.head -> (__Xm1 < new_bar.head <-> __Xm1 < bar.head)
+    __ts0__ts0__ts0__new_bar.head_a = new_bar.head -> (_X = new_bar.head <-> _X = __ts0__ts0__ts0__new_bar.head_a)
+    __ts0__ts0__ts0__new_bar.head_a = new_bar.head -> (__Xm1 = new_bar.head <-> __Xm1 = __ts0__ts0__ts0__new_bar.head_a)
+    __ts0__ts0__ts0__new_bar.head_a ~= new_bar.head -> ~(_X = new_bar.head & _X = __ts0__ts0__ts0__new_bar.head_a)
+    __ts0__ts0__ts0__new_bar.head_a ~= new_bar.head -> ~(__Xm1 = new_bar.head & __Xm1 = __ts0__ts0__ts0__new_bar.head_a)
+    __ts0__ts0__ts0__new_bar.head_a = new_bar.head -> (_X < new_bar.head <-> _X < __ts0__ts0__ts0__new_bar.head_a)
+    __ts0__ts0__ts0__new_bar.head_a = new_bar.head -> (__Xm1 < new_bar.head <-> __Xm1 < __ts0__ts0__ts0__new_bar.head_a)
+    0:nat = new_bar.head -> (_X = new_bar.head <-> 0:nat = _X)
+    0:nat = new_bar.head -> (__Xm1 = new_bar.head <-> 0:nat = __Xm1)
+    0:nat ~= new_bar.head -> ~(_X = new_bar.head & 0:nat = _X)
+    0:nat ~= new_bar.head -> ~(__Xm1 = new_bar.head & 0:nat = __Xm1)
+    0:nat = new_bar.head -> (_X < new_bar.head <-> _X < 0)
+    0:nat = new_bar.head -> (__Xm1 < new_bar.head <-> __Xm1 < 0)
+    bar.tail = new_bar.tail -> (_X = new_bar.tail <-> _X = bar.tail)
+    bar.tail = new_bar.tail -> (__Xm1 = new_bar.tail <-> __Xm1 = bar.tail)
+    bar.tail ~= new_bar.tail -> ~(_X = new_bar.tail & _X = bar.tail)
+    bar.tail ~= new_bar.tail -> ~(__Xm1 = new_bar.tail & __Xm1 = bar.tail)
+    bar.tail = new_bar.tail -> (_X < new_bar.tail <-> _X < bar.tail)
+    bar.tail = new_bar.tail -> (__Xm1 < new_bar.tail <-> __Xm1 < bar.tail)
+    __ts0__ts0__ts0__new_bar.tail_a_a = new_bar.tail -> (_X = new_bar.tail <-> _X = __ts0__ts0__ts0__new_bar.tail_a_a)
+    __ts0__ts0__ts0__new_bar.tail_a_a = new_bar.tail -> (__Xm1 = new_bar.tail <-> __Xm1 = __ts0__ts0__ts0__new_bar.tail_a_a)
+    __ts0__ts0__ts0__new_bar.tail_a_a ~= new_bar.tail -> ~(_X = new_bar.tail & _X = __ts0__ts0__ts0__new_bar.tail_a_a)
+    __ts0__ts0__ts0__new_bar.tail_a_a ~= new_bar.tail -> ~(__Xm1 = new_bar.tail & __Xm1 = __ts0__ts0__ts0__new_bar.tail_a_a)
+    __ts0__ts0__ts0__new_bar.tail_a_a = new_bar.tail -> (_X < new_bar.tail <-> _X < __ts0__ts0__ts0__new_bar.tail_a_a)
+    __ts0__ts0__ts0__new_bar.tail_a_a = new_bar.tail -> (__Xm1 < new_bar.tail <-> __Xm1 < __ts0__ts0__ts0__new_bar.tail_a_a)
+    0:nat = new_bar.tail -> (_X = new_bar.tail <-> 0:nat = _X)
+    0:nat = new_bar.tail -> (__Xm1 = new_bar.tail <-> 0:nat = __Xm1)
+    0:nat ~= new_bar.tail -> ~(_X = new_bar.tail & 0:nat = _X)
+    0:nat ~= new_bar.tail -> ~(__Xm1 = new_bar.tail & 0:nat = __Xm1)
+    0:nat = new_bar.tail -> (_X < new_bar.tail <-> _X < 0)
+    0:nat = new_bar.tail -> (__Xm1 < new_bar.tail <-> __Xm1 < 0)
+    __fml:y = __ts0__ts0__ts0__new_bar.tail_a_a -> (_X = __ts0__ts0__ts0__new_bar.tail_a_a <-> _X = __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.tail_a_a -> (__Xm1 = __ts0__ts0__ts0__new_bar.tail_a_a <-> __Xm1 = __fml:y)
+    __fml:y ~= __ts0__ts0__ts0__new_bar.tail_a_a -> ~(_X = __ts0__ts0__ts0__new_bar.tail_a_a & _X = __fml:y)
+    __fml:y ~= __ts0__ts0__ts0__new_bar.tail_a_a -> ~(__Xm1 = __ts0__ts0__ts0__new_bar.tail_a_a & __Xm1 = __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.tail_a_a -> (_X < __ts0__ts0__ts0__new_bar.tail_a_a <-> _X < __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.tail_a_a -> (__Xm1 < __ts0__ts0__ts0__new_bar.tail_a_a <-> __Xm1 < __fml:y)
+    ~(bar.head < bar.tail & bar.tail < bar.head)
+    bar.head < bar.tail | bar.head = bar.tail | bar.tail < bar.head
+    _X < _X = (bar.head < bar.tail) | _X ~= bar.head | _X ~= bar.tail
+    __Xm1 < _X = (bar.head < bar.tail) | __Xm1 ~= bar.head | _X ~= bar.tail
+    _X < __Xm1 = (bar.head < bar.tail) | _X ~= bar.head | __Xm1 ~= bar.tail
+    __Xm1 < __Xm1 = (bar.head < bar.tail) | __Xm1 ~= bar.head | __Xm1 ~= bar.tail
+    ~(bar.head < bar.tail & ~_X < bar.tail & (_X < bar.head | _X = bar.head))
+    ~(bar.head < bar.tail & ~__Xm1 < bar.tail & (__Xm1 < bar.head | __Xm1 = bar.head))
+    ~(~bar.head < bar.tail & ((~_X < bar.head & _X < bar.tail) | (~_X < bar.head & _X ~= bar.head & _X = bar.tail)))
+    ~(~bar.head < bar.tail & ((~__Xm1 < bar.head & __Xm1 < bar.tail) | (~__Xm1 < bar.head & __Xm1 ~= bar.head & __Xm1 = bar.tail)))
+    nat.succ(_X,_X) = nat.succ(__ts0__ts0__new_fml:x,__fml:y) | _X ~= __ts0__ts0__new_fml:x | _X ~= __fml:y
+    nat.succ(__Xm1,_X) = nat.succ(__ts0__ts0__new_fml:x,__fml:y) | __Xm1 ~= __ts0__ts0__new_fml:x | _X ~= __fml:y
+    nat.succ(_X,__Xm1) = nat.succ(__ts0__ts0__new_fml:x,__fml:y) | _X ~= __ts0__ts0__new_fml:x | __Xm1 ~= __fml:y
+    nat.succ(__Xm1,__Xm1) = nat.succ(__ts0__ts0__new_fml:x,__fml:y) | __Xm1 ~= __ts0__ts0__new_fml:x | __Xm1 ~= __fml:y
+    nat.succ(__ts0__ts0__new_fml:x,__fml:y) -> (~(_X = __fml:y & _X ~= __ts0__ts0__new_fml:x & _X - 1 = _X) & ~(_X = __ts0__ts0__new_fml:x & _X ~= __fml:y & _X - 1 = _X))
+    nat.succ(__ts0__ts0__new_fml:x,__fml:y) -> (~(_X = __fml:y & __Xm1 ~= __ts0__ts0__new_fml:x & _X - 1 = __Xm1) & ~(__Xm1 = __ts0__ts0__new_fml:x & _X ~= __fml:y & _X - 1 = __Xm1))
+    nat.succ(__ts0__ts0__new_fml:x,__fml:y) -> (~(__Xm1 = __fml:y & _X ~= __ts0__ts0__new_fml:x & __Xm1 - 1 = _X) & ~(_X = __ts0__ts0__new_fml:x & __Xm1 ~= __fml:y & __Xm1 - 1 = _X))
+    nat.succ(__ts0__ts0__new_fml:x,__fml:y) -> (~(__Xm1 = __fml:y & __Xm1 ~= __ts0__ts0__new_fml:x & __Xm1 - 1 = __Xm1) & ~(__Xm1 = __ts0__ts0__new_fml:x & __Xm1 ~= __fml:y & __Xm1 - 1 = __Xm1))
+    true | ~true
+    l2s_g_4(_X) = l2s_g_4(__Xm1) | _X ~= __Xm1
+    (__Xm1 = bar.tail & _X = bar.tail) -> _X = __Xm1
+    (__Xm1 = bar.tail & __Xm1 = bar.tail) -> true
+    __Xm1 = bar.tail -> (_X = bar.tail <-> _X = __Xm1)
+    __Xm1 = bar.tail -> (__Xm1 = bar.tail <-> true)
+    __Xm1 ~= bar.tail -> ~(_X = bar.tail & _X = __Xm1)
+    __Xm1 ~= bar.tail -> ~(__Xm1 = bar.tail & true)
+    __Xm1 = bar.tail -> (_X < bar.tail <-> _X < __Xm1)
+    __Xm1 = bar.tail -> (__Xm1 < bar.tail <-> __Xm1 < __Xm1)
+    __Xm1 = bar.tail -> (~bar.tail < __Xm1 & ~__Xm1 < bar.tail)
+    new_l2s_w_4(_X) = new_l2s_w_4(__Xm1) | _X ~= __Xm1
+    new__old_l2s_g_4(_X) = new__old_l2s_g_4(__Xm1) | _X ~= __Xm1
+    _old_l2s_g_4(_X) = _old_l2s_g_4(__Xm1) | _X ~= __Xm1
+    l2s_w_4(_X) = l2s_w_4(__Xm1) | _X ~= __Xm1
+    new_l2s_g_4(_X) = new_l2s_g_4(__Xm1) | _X ~= __Xm1
+    (__Xm1 = bar.head & _X = bar.head) -> _X = __Xm1
+    (__Xm1 = bar.head & __Xm1 = bar.head) -> true
+    __Xm1 = bar.head -> (_X = bar.head <-> _X = __Xm1)
+    __Xm1 = bar.head -> (__Xm1 = bar.head <-> true)
+    __Xm1 ~= bar.head -> ~(_X = bar.head & _X = __Xm1)
+    __Xm1 ~= bar.head -> ~(__Xm1 = bar.head & true)
+    __Xm1 = bar.head -> (_X < bar.head <-> _X < __Xm1)
+    __Xm1 = bar.head -> (__Xm1 < bar.head <-> __Xm1 < __Xm1)
+    __Xm1 = bar.head -> (~bar.head < __Xm1 & ~__Xm1 < bar.head)
+    (__Xm1 = new_bar.head & _X = new_bar.head) -> _X = __Xm1
+    (__Xm1 = new_bar.head & __Xm1 = new_bar.head) -> true
+    __Xm1 = new_bar.head -> (_X = new_bar.head <-> _X = __Xm1)
+    __Xm1 = new_bar.head -> (__Xm1 = new_bar.head <-> true)
+    __Xm1 ~= new_bar.head -> ~(_X = new_bar.head & _X = __Xm1)
+    __Xm1 ~= new_bar.head -> ~(__Xm1 = new_bar.head & true)
+    __Xm1 = new_bar.head -> (_X < new_bar.head <-> _X < __Xm1)
+    __Xm1 = new_bar.head -> (__Xm1 < new_bar.head <-> __Xm1 < __Xm1)
+    __Xm1 = new_bar.head -> (~new_bar.head < __Xm1 & ~__Xm1 < new_bar.head)
+    ~(__ts0__ts0__new_fml:x < __fml:y & __fml:y < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x < __fml:y | __fml:y = __ts0__ts0__new_fml:x | __fml:y < __ts0__ts0__new_fml:x
+    _X < _X = (__ts0__ts0__new_fml:x < __fml:y) | _X ~= __ts0__ts0__new_fml:x | _X ~= __fml:y
+    __Xm1 < _X = (__ts0__ts0__new_fml:x < __fml:y) | __Xm1 ~= __ts0__ts0__new_fml:x | _X ~= __fml:y
+    _X < __Xm1 = (__ts0__ts0__new_fml:x < __fml:y) | _X ~= __ts0__ts0__new_fml:x | __Xm1 ~= __fml:y
+    __Xm1 < __Xm1 = (__ts0__ts0__new_fml:x < __fml:y) | __Xm1 ~= __ts0__ts0__new_fml:x | __Xm1 ~= __fml:y
+    ~(__ts0__ts0__new_fml:x < __fml:y & ~_X < __fml:y & (_X < __ts0__ts0__new_fml:x | _X = __ts0__ts0__new_fml:x))
+    ~(__ts0__ts0__new_fml:x < __fml:y & ~__Xm1 < __fml:y & (__Xm1 < __ts0__ts0__new_fml:x | __Xm1 = __ts0__ts0__new_fml:x))
+    ~(~__ts0__ts0__new_fml:x < __fml:y & ((~_X < __ts0__ts0__new_fml:x & _X < __fml:y) | (~_X < __ts0__ts0__new_fml:x & _X ~= __ts0__ts0__new_fml:x & _X = __fml:y)))
+    ~(~__ts0__ts0__new_fml:x < __fml:y & ((~__Xm1 < __ts0__ts0__new_fml:x & __Xm1 < __fml:y) | (~__Xm1 < __ts0__ts0__new_fml:x & __Xm1 ~= __ts0__ts0__new_fml:x & __Xm1 = __fml:y)))
+    ~(__ts0__ts0__new_fml:x < _X & _X < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x < _X | _X = __ts0__ts0__new_fml:x | _X < __ts0__ts0__new_fml:x
+    _X < _X = (__ts0__ts0__new_fml:x < _X) | _X ~= __ts0__ts0__new_fml:x | ~true
+    __Xm1 < _X = (__ts0__ts0__new_fml:x < _X) | __Xm1 ~= __ts0__ts0__new_fml:x | ~true
+    _X < __Xm1 = (__ts0__ts0__new_fml:x < _X) | _X ~= __ts0__ts0__new_fml:x | _X ~= __Xm1
+    __Xm1 < __Xm1 = (__ts0__ts0__new_fml:x < _X) | __Xm1 ~= __ts0__ts0__new_fml:x | _X ~= __Xm1
+    ~(__ts0__ts0__new_fml:x < _X & ~_X < _X & (_X < __ts0__ts0__new_fml:x | _X = __ts0__ts0__new_fml:x))
+    ~(__ts0__ts0__new_fml:x < _X & ~__Xm1 < _X & (__Xm1 < __ts0__ts0__new_fml:x | __Xm1 = __ts0__ts0__new_fml:x))
+    ~(~__ts0__ts0__new_fml:x < _X & ((~_X < __ts0__ts0__new_fml:x & _X < _X) | (~_X < __ts0__ts0__new_fml:x & _X ~= __ts0__ts0__new_fml:x & true)))
+    ~(~__ts0__ts0__new_fml:x < _X & ((~__Xm1 < __ts0__ts0__new_fml:x & __Xm1 < _X) | (~__Xm1 < __ts0__ts0__new_fml:x & __Xm1 ~= __ts0__ts0__new_fml:x & _X = __Xm1)))
+    ~(__fml:y < _X & _X < __fml:y)
+    __fml:y < _X | _X = __fml:y | _X < __fml:y
+    _X < _X = (__fml:y < _X) | _X ~= __fml:y | ~true
+    __Xm1 < _X = (__fml:y < _X) | __Xm1 ~= __fml:y | ~true
+    _X < __Xm1 = (__fml:y < _X) | _X ~= __fml:y | _X ~= __Xm1
+    __Xm1 < __Xm1 = (__fml:y < _X) | __Xm1 ~= __fml:y | _X ~= __Xm1
+    ~(__fml:y < _X & ~_X < _X & (_X < __fml:y | _X = __fml:y))
+    ~(__fml:y < _X & ~__Xm1 < _X & (__Xm1 < __fml:y | __Xm1 = __fml:y))
+    ~(~__fml:y < _X & ((~_X < __fml:y & _X < _X) | (~_X < __fml:y & _X ~= __fml:y & true)))
+    ~(~__fml:y < _X & ((~__Xm1 < __fml:y & __Xm1 < _X) | (~__Xm1 < __fml:y & __Xm1 ~= __fml:y & _X = __Xm1)))
+    (_X = __fml:y & _X = __fml:y) -> true
+    (_X = __fml:y & __Xm1 = __fml:y) -> _X = __Xm1
+    _X = __fml:y -> (_X = __fml:y <-> true)
+    _X = __fml:y -> (__Xm1 = __fml:y <-> _X = __Xm1)
+    _X ~= __fml:y -> ~(_X = __fml:y & true)
+    _X ~= __fml:y -> ~(__Xm1 = __fml:y & _X = __Xm1)
+    _X = __fml:y -> (_X < __fml:y <-> _X < _X)
+    _X = __fml:y -> (__Xm1 < __fml:y <-> __Xm1 < _X)
+    _X = __fml:y -> (~__fml:y < _X & ~_X < __fml:y)
+    ~(__ts0__ts0__new_fml:x < __Xm1 & __Xm1 < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x < __Xm1 | __Xm1 = __ts0__ts0__new_fml:x | __Xm1 < __ts0__ts0__new_fml:x
+    _X < _X = (__ts0__ts0__new_fml:x < __Xm1) | _X ~= __ts0__ts0__new_fml:x | _X ~= __Xm1
+    __Xm1 < _X = (__ts0__ts0__new_fml:x < __Xm1) | __Xm1 ~= __ts0__ts0__new_fml:x | _X ~= __Xm1
+    _X < __Xm1 = (__ts0__ts0__new_fml:x < __Xm1) | _X ~= __ts0__ts0__new_fml:x | ~true
+    __Xm1 < __Xm1 = (__ts0__ts0__new_fml:x < __Xm1) | __Xm1 ~= __ts0__ts0__new_fml:x | ~true
+    ~(__ts0__ts0__new_fml:x < __Xm1 & ~_X < __Xm1 & (_X < __ts0__ts0__new_fml:x | _X = __ts0__ts0__new_fml:x))
+    ~(__ts0__ts0__new_fml:x < __Xm1 & ~__Xm1 < __Xm1 & (__Xm1 < __ts0__ts0__new_fml:x | __Xm1 = __ts0__ts0__new_fml:x))
+    ~(~__ts0__ts0__new_fml:x < __Xm1 & ((~_X < __ts0__ts0__new_fml:x & _X < __Xm1) | (~_X < __ts0__ts0__new_fml:x & _X ~= __ts0__ts0__new_fml:x & _X = __Xm1)))
+    ~(~__ts0__ts0__new_fml:x < __Xm1 & ((~__Xm1 < __ts0__ts0__new_fml:x & __Xm1 < __Xm1) | (~__Xm1 < __ts0__ts0__new_fml:x & __Xm1 ~= __ts0__ts0__new_fml:x & true)))
+    ~(__fml:y < __Xm1 & __Xm1 < __fml:y)
+    __fml:y < __Xm1 | __Xm1 = __fml:y | __Xm1 < __fml:y
+    _X < _X = (__fml:y < __Xm1) | _X ~= __fml:y | _X ~= __Xm1
+    __Xm1 < _X = (__fml:y < __Xm1) | __Xm1 ~= __fml:y | _X ~= __Xm1
+    _X < __Xm1 = (__fml:y < __Xm1) | _X ~= __fml:y | ~true
+    __Xm1 < __Xm1 = (__fml:y < __Xm1) | __Xm1 ~= __fml:y | ~true
+    ~(__fml:y < __Xm1 & ~_X < __Xm1 & (_X < __fml:y | _X = __fml:y))
+    ~(__fml:y < __Xm1 & ~__Xm1 < __Xm1 & (__Xm1 < __fml:y | __Xm1 = __fml:y))
+    ~(~__fml:y < __Xm1 & ((~_X < __fml:y & _X < __Xm1) | (~_X < __fml:y & _X ~= __fml:y & _X = __Xm1)))
+    ~(~__fml:y < __Xm1 & ((~__Xm1 < __fml:y & __Xm1 < __Xm1) | (~__Xm1 < __fml:y & __Xm1 ~= __fml:y & true)))
+    (__Xm1 = __fml:y & _X = __fml:y) -> _X = __Xm1
+    (__Xm1 = __fml:y & __Xm1 = __fml:y) -> true
+    __Xm1 = __fml:y -> (_X = __fml:y <-> _X = __Xm1)
+    __Xm1 = __fml:y -> (__Xm1 = __fml:y <-> true)
+    __Xm1 ~= __fml:y -> ~(_X = __fml:y & _X = __Xm1)
+    __Xm1 ~= __fml:y -> ~(__Xm1 = __fml:y & true)
+    __Xm1 = __fml:y -> (_X < __fml:y <-> _X < __Xm1)
+    __Xm1 = __fml:y -> (__Xm1 < __fml:y <-> __Xm1 < __Xm1)
+    __Xm1 = __fml:y -> (~__fml:y < __Xm1 & ~__Xm1 < __fml:y)
+    (__Xm1 = new_bar.tail & _X = new_bar.tail) -> _X = __Xm1
+    (__Xm1 = new_bar.tail & __Xm1 = new_bar.tail) -> true
+    __Xm1 = new_bar.tail -> (_X = new_bar.tail <-> _X = __Xm1)
+    __Xm1 = new_bar.tail -> (__Xm1 = new_bar.tail <-> true)
+    __Xm1 ~= new_bar.tail -> ~(_X = new_bar.tail & _X = __Xm1)
+    __Xm1 ~= new_bar.tail -> ~(__Xm1 = new_bar.tail & true)
+    __Xm1 = new_bar.tail -> (_X < new_bar.tail <-> _X < __Xm1)
+    __Xm1 = new_bar.tail -> (__Xm1 < new_bar.tail <-> __Xm1 < __Xm1)
+    __Xm1 = new_bar.tail -> (~new_bar.tail < __Xm1 & ~__Xm1 < new_bar.tail)
+new state: _X - 1 = __Xm1
+new state: _X = __Xm1
+new state: _X < _X
+new state: __Xm1 < _X
+new state: _X - 1 = _X
+new state: _X - _X = _X
+new state: 1:nat = _X
+new state: __Xm1 - _X = _X
+new state: _X - __Xm1 = _X
+new state: 1:nat = __Xm1
+new state: __Xm1 - __Xm1 = _X
+new state: _X - _X = __Xm1
+new state: __Xm1 - _X = __Xm1
+new state: _X - __Xm1 = __Xm1
+new state: __Xm1 - __Xm1 = __Xm1
+new state: _X - 1 = _X - _X
+new state: _X - 1 = __Xm1 - _X
+new state: _X - 1 = _X - __Xm1
+new state: _X - 1 = __Xm1 - __Xm1
+new state: _X < _X - 1
+new state: _X < _X - _X
+new state: _X < __Xm1 - _X
+new state: _X < _X - __Xm1
+new state: _X < __Xm1 - __Xm1
+new state: __Xm1 < _X - 1
+new state: __Xm1 < _X - _X
+new state: __Xm1 < __Xm1 - _X
+new state: __Xm1 < _X - __Xm1
+new state: __Xm1 < __Xm1 - __Xm1
+new state: _X - 1 = 0
+new state: _X - _X = 0
+new state: __Xm1 - _X = 0
+new state: _X - __Xm1 = 0
+new state: __Xm1 - __Xm1 = 0
+new state: _X < __Xm1
+new state: __Xm1 < __Xm1
+new state: _X - 1 < __Xm1
+new state: 0:nat = _X
+new state: 0:nat = __Xm1
+new state: _X < 0
+new state: __Xm1 < 0
+new state: nat.succ(_X,_X)
+new state: nat.succ(__Xm1,_X)
+new state: nat.succ(_X,__Xm1)
+new state: nat.succ(__Xm1,__Xm1)
+new state: __Xm1 - 1 = _X
+new state: __Xm1 - 1 = __Xm1
+
+instantiations:
+axiom [index.spec.prop4] index.succ(X,Z) -> (X < Z & ~(X < Y & Y < Z))
+axiom [index.spec.transitivity] (T:index < U & U < V) -> T < V
+axiom [index.spec.antisymmetry] ~(T:index < U & U < T)
+axiom [index.spec.totality] T:index < U | T = U | U < T
+axiom [index.spec.prop1] 0:index <= X
+axiom [nat.spec.prop4] nat.succ(X,Z) -> (X < Z & ~(X < Y & Y < Z))
+axiom [nat.spec.transitivity] (T:nat < U & U < V) -> T < V
+axiom [nat.spec.antisymmetry] ~(T:nat < U & U < T)
+axiom [nat.spec.totality] T:nat < U | T = U | U < T
+axiom [nat.spec.prop1] 0:nat <= X
+axiom [trans1] (_Y = X & _Y = X) -> _Y = _Y
+axiom [trans1] (_X = X & _X = X) -> _X = _X
+axiom [trans2] Y:nat = X -> (_Y = X <-> _Y = Y)
+axiom [trans2] Y:id = X -> (_X = X <-> _X = Y)
+axiom [contra] Y:nat ~= X -> ~(_Y = X & _Y = Y)
+axiom [contra] Y:id ~= X -> ~(_X = X & _X = Y)
+axiom [cong1] (new_l2s_s_4(X) = _X <-> new_l2s_s_4(_Y) = _X) | _Y ~= X
+axiom [cong1] (l2s_s_4(X) = _X <-> l2s_s_4(_Y) = _X) | _Y ~= X
+axiom [cong1] (bar.queue(X) = _X <-> bar.queue(_Y) = _X) | _Y ~= X
+axiom [cong1b] new__old_l2s_g_5(X) = new__old_l2s_g_5(_Y) | _Y ~= X
+axiom [cong1b] l2s_g_6(X) = l2s_g_6(_Y) | _Y ~= X
+axiom [cong1b] l2s_g_4(X) = l2s_g_4(_X) | _X ~= X
+axiom [cong1b] __m_l2s_g_4(X) = __m_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] new_l2s_w_5(X) = new_l2s_w_5(_Y) | _Y ~= X
+axiom [cong1b] _old_l2s_g_6(X) = _old_l2s_g_6(_Y) | _Y ~= X
+axiom [cong1b] __ts0__ts0__ts0__m_l2s_w_4_a(X) = __ts0__ts0__ts0__m_l2s_w_4_a(_X) | _X ~= X
+axiom [cong1b] new_l2s_g_6(X) = new_l2s_g_6(_Y) | _Y ~= X
+axiom [cong1b] __m_l2s_g_4_a(X) = __m_l2s_g_4_a(_X) | _X ~= X
+axiom [cong1b] l2s_w_6(X) = l2s_w_6(_Y) | _Y ~= X
+axiom [cong1b] l2s_w_5(X) = l2s_w_5(_Y) | _Y ~= X
+axiom [cong1b] new_l2s_g_4(X) = new_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] l2s_g_5(X) = l2s_g_5(_Y) | _Y ~= X
+axiom [cong1b] _old_l2s_g_5(X) = _old_l2s_g_5(_Y) | _Y ~= X
+axiom [cong1b] new_l2s_w_6(X) = new_l2s_w_6(_Y) | _Y ~= X
+axiom [cong1b] new__old_l2s_g_6(X) = new__old_l2s_g_6(_Y) | _Y ~= X
+axiom [cong1b] __ts0__ts0__ts0__m_l2s_w_4(X) = __ts0__ts0__ts0__m_l2s_w_4(_X) | _X ~= X
+axiom [cong1b] new_l2s_w_4(X) = new_l2s_w_4(_X) | _X ~= X
+axiom [cong1b] __ts0__ts0__ts0__m__old_l2s_g_4(X) = __ts0__ts0__ts0__m__old_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] _old_l2s_g_4(X) = _old_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] __ts0__ts0__ts0new__old_l2s_g_4_a(X) = __ts0__ts0__ts0new__old_l2s_g_4_a(_X) | _X ~= X
+axiom [cong1b] l2s_w_4(X) = l2s_w_4(_X) | _X ~= X
+axiom [cong1b] new__old_l2s_g_4(X) = new__old_l2s_g_4(_X) | _X ~= X
+axiom [cong1b] new_l2s_g_5(X) = new_l2s_g_5(_Y) | _Y ~= X
+axiom [cong2b] nat.succ(X1,X2) = nat.succ(_Y,_Y) | _Y ~= X1 | _Y ~= X2
+axiom [cong2b] X1:nat < X2 = (_Y < _Y) | _Y ~= X1 | _Y ~= X2
+axiom [cong2b] X1:nat <= X2 = (_Y <= _Y) | _Y ~= X1 | _Y ~= X2
+axiom [lt1] ~(X:nat < Y & ~_Y < Y & (_Y < X | _Y = X))
+axiom [lt2] ~(~X:nat < Y & ((~_Y < X & _Y < Y) | (~_Y < X & _Y ~= X & _Y = Y)))
+axiom [lt3] Y:nat = X -> (_Y < X <-> _Y < Y)
+axiom [lt5] X:nat = _Y -> (~X < _Y & ~_Y < X)
+axiom [succ_minus] nat.succ(X,Y) -> (~(_Y = Y & X ~= _Y & _Y = _Y - 1) & ~(_Y = X & Y ~= _Y & _Y = _Y - 1))
+    (_X = new_bar.receiving.value & _X = new_bar.receiving.value) -> true
+    _X = new_bar.receiving.value -> (_X = new_bar.receiving.value <-> true)
+    _X ~= new_bar.receiving.value -> ~(_X = new_bar.receiving.value & true)
+    (_Y = bar.tail & _Y = bar.tail) -> true
+    _Y = bar.tail -> (_Y = bar.tail <-> true)
+    _Y ~= bar.tail -> ~(_Y = bar.tail & true)
+    _Y = bar.tail -> (_Y < bar.tail <-> _Y < _Y)
+    _Y = bar.tail -> (~bar.tail < _Y & ~_Y < bar.tail)
+    (_X = new_bar.sending.value & _X = new_bar.sending.value) -> true
+    _X = new_bar.sending.value -> (_X = new_bar.sending.value <-> true)
+    _X ~= new_bar.sending.value -> ~(_X = new_bar.sending.value & true)
+    (_X = bar.sending.value & _X = bar.sending.value) -> true
+    _X = bar.sending.value -> (_X = bar.sending.value <-> true)
+    _X ~= bar.sending.value -> ~(_X = bar.sending.value & true)
+    (_Y = new_bar.tail & _Y = new_bar.tail) -> true
+    _Y = new_bar.tail -> (_Y = new_bar.tail <-> true)
+    _Y ~= new_bar.tail -> ~(_Y = new_bar.tail & true)
+    _Y = new_bar.tail -> (_Y < new_bar.tail <-> _Y < _Y)
+    _Y = new_bar.tail -> (~new_bar.tail < _Y & ~_Y < new_bar.tail)
+    (_X = bar.receiving.value & _X = bar.receiving.value) -> true
+    _X = bar.receiving.value -> (_X = bar.receiving.value <-> true)
+    _X ~= bar.receiving.value -> ~(_X = bar.receiving.value & true)
+    bar.sending.value = new_l2s_s_3 -> (_X = new_l2s_s_3 <-> _X = bar.sending.value)
+    bar.sending.value ~= new_l2s_s_3 -> ~(_X = new_l2s_s_3 & _X = bar.sending.value)
+    bar.receiving.value = new_l2s_s_1 -> (_X = new_l2s_s_1 <-> _X = bar.receiving.value)
+    bar.receiving.value ~= new_l2s_s_1 -> ~(_X = new_l2s_s_1 & _X = bar.receiving.value)
+    __fml:x = __ts0__ts0__new_fml:val -> (_X = __ts0__ts0__new_fml:val <-> _X = __fml:x)
+    __fml:x ~= __ts0__ts0__new_fml:val -> ~(_X = __ts0__ts0__new_fml:val & _X = __fml:x)
+    (bar.queue(bar.head) = _X <-> bar.queue(_Y) = _X) | _Y ~= bar.head
+    bar.queue(bar.head) = __ts0__ts0__new_fml:val -> (_X = __ts0__ts0__new_fml:val <-> bar.queue(bar.head) = _X)
+    bar.queue(bar.head) ~= __ts0__ts0__new_fml:val -> ~(_X = __ts0__ts0__new_fml:val & bar.queue(bar.head) = _X)
+    bar.receiving.value = new_bar.receiving.value -> (_X = new_bar.receiving.value <-> _X = bar.receiving.value)
+    bar.receiving.value ~= new_bar.receiving.value -> ~(_X = new_bar.receiving.value & _X = bar.receiving.value)
+    __ts0__ts0__new_fml:val = new_bar.receiving.value -> (_X = new_bar.receiving.value <-> _X = __ts0__ts0__new_fml:val)
+    __ts0__ts0__new_fml:val ~= new_bar.receiving.value -> ~(_X = new_bar.receiving.value & _X = __ts0__ts0__new_fml:val)
+    __ts0__ts0__new_fml:x = bar.tail -> (_Y = bar.tail <-> _Y = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x ~= bar.tail -> ~(_Y = bar.tail & _Y = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.tail -> (_Y < bar.tail <-> _Y < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.head -> (_Y = bar.head <-> _Y = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x ~= bar.head -> ~(_Y = bar.head & _Y = __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x = bar.head -> (_Y < bar.head <-> _Y < __ts0__ts0__new_fml:x)
+    __fml:y = __ts0__ts0__ts0__new_bar.head_a -> (_Y = __ts0__ts0__ts0__new_bar.head_a <-> _Y = __fml:y)
+    __fml:y ~= __ts0__ts0__ts0__new_bar.head_a -> ~(_Y = __ts0__ts0__ts0__new_bar.head_a & _Y = __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.head_a -> (_Y < __ts0__ts0__ts0__new_bar.head_a <-> _Y < __fml:y)
+    bar.head = new_bar.head -> (_Y = new_bar.head <-> _Y = bar.head)
+    bar.head ~= new_bar.head -> ~(_Y = new_bar.head & _Y = bar.head)
+    bar.head = new_bar.head -> (_Y < new_bar.head <-> _Y < bar.head)
+    __ts0__ts0__ts0__new_bar.head_a = new_bar.head -> (_Y = new_bar.head <-> _Y = __ts0__ts0__ts0__new_bar.head_a)
+    __ts0__ts0__ts0__new_bar.head_a ~= new_bar.head -> ~(_Y = new_bar.head & _Y = __ts0__ts0__ts0__new_bar.head_a)
+    __ts0__ts0__ts0__new_bar.head_a = new_bar.head -> (_Y < new_bar.head <-> _Y < __ts0__ts0__ts0__new_bar.head_a)
+    0:nat = new_bar.head -> (_Y = new_bar.head <-> 0:nat = _Y)
+    0:nat ~= new_bar.head -> ~(_Y = new_bar.head & 0:nat = _Y)
+    0:nat = new_bar.head -> (_Y < new_bar.head <-> _Y < 0)
+    bar.sending.value = new_bar.sending.value -> (_X = new_bar.sending.value <-> _X = bar.sending.value)
+    bar.sending.value ~= new_bar.sending.value -> ~(_X = new_bar.sending.value & _X = bar.sending.value)
+    __ts0__ts0__new_fml:val = new_bar.sending.value -> (_X = new_bar.sending.value <-> _X = __ts0__ts0__new_fml:val)
+    __ts0__ts0__new_fml:val ~= new_bar.sending.value -> ~(_X = new_bar.sending.value & _X = __ts0__ts0__new_fml:val)
+    bar.tail = new_bar.tail -> (_Y = new_bar.tail <-> _Y = bar.tail)
+    bar.tail ~= new_bar.tail -> ~(_Y = new_bar.tail & _Y = bar.tail)
+    bar.tail = new_bar.tail -> (_Y < new_bar.tail <-> _Y < bar.tail)
+    __ts0__ts0__ts0__new_bar.tail_a_a = new_bar.tail -> (_Y = new_bar.tail <-> _Y = __ts0__ts0__ts0__new_bar.tail_a_a)
+    __ts0__ts0__ts0__new_bar.tail_a_a ~= new_bar.tail -> ~(_Y = new_bar.tail & _Y = __ts0__ts0__ts0__new_bar.tail_a_a)
+    __ts0__ts0__ts0__new_bar.tail_a_a = new_bar.tail -> (_Y < new_bar.tail <-> _Y < __ts0__ts0__ts0__new_bar.tail_a_a)
+    0:nat = new_bar.tail -> (_Y = new_bar.tail <-> 0:nat = _Y)
+    0:nat ~= new_bar.tail -> ~(_Y = new_bar.tail & 0:nat = _Y)
+    0:nat = new_bar.tail -> (_Y < new_bar.tail <-> _Y < 0)
+    __fml:y = __ts0__ts0__ts0__new_bar.tail_a_a -> (_Y = __ts0__ts0__ts0__new_bar.tail_a_a <-> _Y = __fml:y)
+    __fml:y ~= __ts0__ts0__ts0__new_bar.tail_a_a -> ~(_Y = __ts0__ts0__ts0__new_bar.tail_a_a & _Y = __fml:y)
+    __fml:y = __ts0__ts0__ts0__new_bar.tail_a_a -> (_Y < __ts0__ts0__ts0__new_bar.tail_a_a <-> _Y < __fml:y)
+    l2s_s_3 = new_l2s_s_3 -> (_X = new_l2s_s_3 <-> _X = l2s_s_3)
+    l2s_s_3 ~= new_l2s_s_3 -> ~(_X = new_l2s_s_3 & _X = l2s_s_3)
+    l2s_s_1 = new_l2s_s_1 -> (_X = new_l2s_s_1 <-> _X = l2s_s_1)
+    l2s_s_1 ~= new_l2s_s_1 -> ~(_X = new_l2s_s_1 & _X = l2s_s_1)
+    ~(bar.head < bar.tail & bar.tail < bar.head)
+    bar.head < bar.tail | bar.head = bar.tail | bar.tail < bar.head
+    _Y < _Y = (bar.head < bar.tail) | _Y ~= bar.head | _Y ~= bar.tail
+    ~(bar.head < bar.tail & ~_Y < bar.tail & (_Y < bar.head | _Y = bar.head))
+    ~(~bar.head < bar.tail & ((~_Y < bar.head & _Y < bar.tail) | (~_Y < bar.head & _Y ~= bar.head & _Y = bar.tail)))
+    nat.succ(_Y,_Y) = nat.succ(__ts0__ts0__new_fml:x,__fml:y) | _Y ~= __ts0__ts0__new_fml:x | _Y ~= __fml:y
+    nat.succ(__ts0__ts0__new_fml:x,__fml:y) -> (~(_Y = __fml:y & _Y ~= __ts0__ts0__new_fml:x & _Y - 1 = _Y) & ~(_Y = __ts0__ts0__new_fml:x & _Y ~= __fml:y & _Y - 1 = _Y))
+    true | ~true
+    (bar.queue(_Y) = _X <-> bar.queue(_Y) = _X) | ~true
+    (new_l2s_s_4(_Y) = _X <-> new_l2s_s_4(_Y) = _X) | ~true
+    bar.queue(_Y) = new_l2s_s_4(_Y) -> (new_l2s_s_4(_Y) = _X <-> bar.queue(_Y) = _X)
+    bar.queue(_Y) ~= new_l2s_s_4(_Y) -> ~(new_l2s_s_4(_Y) = _X & bar.queue(_Y) = _X)
+    (_Y = bar.head & _Y = bar.head) -> true
+    _Y = bar.head -> (_Y = bar.head <-> true)
+    _Y ~= bar.head -> ~(_Y = bar.head & true)
+    _Y = bar.head -> (_Y < bar.head <-> _Y < _Y)
+    _Y = bar.head -> (~bar.head < _Y & ~_Y < bar.head)
+    (_Y = new_bar.head & _Y = new_bar.head) -> true
+    _Y = new_bar.head -> (_Y = new_bar.head <-> true)
+    _Y ~= new_bar.head -> ~(_Y = new_bar.head & true)
+    _Y = new_bar.head -> (_Y < new_bar.head <-> _Y < _Y)
+    _Y = new_bar.head -> (~new_bar.head < _Y & ~_Y < new_bar.head)
+    bar.queue(_Y) = new_bar.queue(_Y) -> (new_bar.queue(_Y) = _X <-> bar.queue(_Y) = _X)
+    bar.queue(_Y) ~= new_bar.queue(_Y) -> ~(new_bar.queue(_Y) = _X & bar.queue(_Y) = _X)
+    new_bar.queue(_Y) = __fml:x -> (_X = __fml:x <-> new_bar.queue(_Y) = _X)
+    new_bar.queue(_Y) ~= __fml:x -> ~(_X = __fml:x & new_bar.queue(_Y) = _X)
+    (l2s_s_4(_Y) = _X <-> l2s_s_4(_Y) = _X) | ~true
+    l2s_s_4(_Y) = new_l2s_s_4(_Y) -> (new_l2s_s_4(_Y) = _X <-> l2s_s_4(_Y) = _X)
+    l2s_s_4(_Y) ~= new_l2s_s_4(_Y) -> ~(new_l2s_s_4(_Y) = _X & l2s_s_4(_Y) = _X)
+    ~(__ts0__ts0__new_fml:x < __fml:y & __fml:y < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x < __fml:y | __fml:y = __ts0__ts0__new_fml:x | __fml:y < __ts0__ts0__new_fml:x
+    _Y < _Y = (__ts0__ts0__new_fml:x < __fml:y) | _Y ~= __ts0__ts0__new_fml:x | _Y ~= __fml:y
+    ~(__ts0__ts0__new_fml:x < __fml:y & ~_Y < __fml:y & (_Y < __ts0__ts0__new_fml:x | _Y = __ts0__ts0__new_fml:x))
+    ~(~__ts0__ts0__new_fml:x < __fml:y & ((~_Y < __ts0__ts0__new_fml:x & _Y < __fml:y) | (~_Y < __ts0__ts0__new_fml:x & _Y ~= __ts0__ts0__new_fml:x & _Y = __fml:y)))
+    ~(__ts0__ts0__new_fml:x < _Y & _Y < __ts0__ts0__new_fml:x)
+    __ts0__ts0__new_fml:x < _Y | _Y = __ts0__ts0__new_fml:x | _Y < __ts0__ts0__new_fml:x
+    _Y < _Y = (__ts0__ts0__new_fml:x < _Y) | _Y ~= __ts0__ts0__new_fml:x | ~true
+    ~(__ts0__ts0__new_fml:x < _Y & ~_Y < _Y & (_Y < __ts0__ts0__new_fml:x | _Y = __ts0__ts0__new_fml:x))
+    ~(~__ts0__ts0__new_fml:x < _Y & ((~_Y < __ts0__ts0__new_fml:x & _Y < _Y) | (~_Y < __ts0__ts0__new_fml:x & _Y ~= __ts0__ts0__new_fml:x & true)))
+    ~(__fml:y < _Y & _Y < __fml:y)
+    __fml:y < _Y | _Y = __fml:y | _Y < __fml:y
+    _Y < _Y = (__fml:y < _Y) | _Y ~= __fml:y | ~true
+    ~(__fml:y < _Y & ~_Y < _Y & (_Y < __fml:y | _Y = __fml:y))
+    ~(~__fml:y < _Y & ((~_Y < __fml:y & _Y < _Y) | (~_Y < __fml:y & _Y ~= __fml:y & true)))
+    (_Y = __fml:y & _Y = __fml:y) -> true
+    _Y = __fml:y -> (_Y = __fml:y <-> true)
+    _Y ~= __fml:y -> ~(_Y = __fml:y & true)
+    _Y = __fml:y -> (_Y < __fml:y <-> _Y < _Y)
+    _Y = __fml:y -> (~__fml:y < _Y & ~_Y < __fml:y)
+new state: _Y < _Y
+new state: 0:nat = _Y
+new state: _Y < 0
+new state: nat.succ(_Y,_Y)
+new state: _Y - 1 = _Y

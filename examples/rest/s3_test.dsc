@@ -1,1 +1,0 @@
-{"processes": [{"indices": [], "binary": "s3_test", "params": [], "name": "extract"}]}
