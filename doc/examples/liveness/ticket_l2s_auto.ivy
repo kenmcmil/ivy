@@ -1,0 +1,207 @@
+#lang ivy1.8
+
+# This file contains a liveness proof of the ticket protocol, and
+# illustrates Ivy's liveness to safety tactic on an infinite-state
+# system that requires dynamic abstraction. The example is discussed
+# in the following papers:
+#
+# Oded Padon, Jochen Hoenicke, Giuliano Losa, Andreas Podelski, Mooly
+# Sagiv, and Sharon Shoham: Reducing Liveness to Safety in First-Order
+# Logic. POPL 2018: Article 26.
+#
+# Oded Padon, Jochen Hoenicke, Kenneth L. McMillan, Andreas Podelski,
+# Mooly Sagiv, Sharon Shoham: Temporal Prophecy for Proving Temporal
+# Properties of Infinite-State Systems. FMCAD 2018: 1-11
+#
+# To verify this file, run:
+#
+#     $ ivy_check ticket.ivy
+#     ...
+#     OK
+#
+
+################################################################################
+# A liveness proof of the ticket protocol
+################################################################################
+
+
+################################################################################
+# Module for axiomatizing a total order
+################################################################################
+
+include order
+
+
+instance nat : unbounded_sequence
+
+module signal(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+################################################################################
+#
+# Types, relations and functions describing the state
+#
+################################################################################
+
+isolate ticket_protocol = {
+
+    finite type thread
+    instance ticket : unbounded_sequence
+
+    action step12(t:thread)
+    action step22(t:thread, k:ticket)
+    action step23(t:thread, k:ticket)
+    action step31(t:thread)
+
+    specification {
+
+        instance scheduled : signal(thread)
+
+	relation pc1(T:thread)
+	relation pc2(T:thread)
+	relation pc3(T:thread)
+
+	individual service:ticket
+	individual next_ticket:ticket
+	relation m(T:thread, K:ticket)  # use relation and not a function to be in EPR
+
+
+	after init {
+            pc1(T) := true;
+            pc2(T) := false;
+            pc3(T) := false;
+            service := 0;
+            next_ticket := 0;
+            m(T,K) := K = 0;
+	}
+
+	before step12 {
+            require pc1(t);
+            scheduled.raise(t);
+            m(t,K) := K = next_ticket;
+            next_ticket := next_ticket.next;
+            pc1(t) := false;
+            pc2(t) := true;
+	}
+
+	before step22 {
+            require pc2(t);
+            require m(t,k);
+            require k > service;
+            scheduled.raise(t);
+            # stay in pc2
+	}
+
+	before step23 {
+            require pc2(t);
+            require m(t,k);
+            require k <= service;
+            scheduled.raise(t);
+            pc2(t) := false;
+            pc3(t) := true;
+	}
+
+	before step31 {
+            require pc3(t);
+            scheduled.raise(t);
+            service := service.next;
+            pc3(t) := false;
+            pc1(t) := true;
+	}
+
+	################################################################################
+	#
+	# Invariants for proving safety (also help for liveness)
+	#
+	################################################################################
+
+	# basic
+	invariant pc1(T) | pc2(T) | pc3(T)
+	invariant ~pc1(T) | ~pc2(T)
+	invariant ~pc1(T) | ~pc3(T)
+	invariant ~pc2(T) | ~pc3(T)
+	invariant m(T,K1) & m(T,K2) -> K1 = K2
+
+	# safety property
+	invariant pc3(T1) & pc3(T2) -> T1 = T2
+
+	# inductive invariant for proving safety
+	invariant next_ticket = 0 -> m(T,0)
+	invariant next_ticket ~= 0 & m(T,M) -> next_ticket > M
+	invariant (pc2(T) | pc3(T)) -> next_ticket ~= 0
+	invariant m(T1,M) & m(T2,M) & M ~= 0 -> T1 = T2
+	invariant pc2(T) & m(T,M) -> service <= M
+	invariant pc3(T) -> m(T,service)
+	invariant service <= next_ticket
+	invariant ~(~pc1(T1) & ~pc1(T2) & m(T1,0) & m(T2,0) & T1 ~= T2)
+
+
+        ################################################################################
+	#
+	# Temporal property and its proof
+	#
+	################################################################################
+
+
+        temporal property [lemma1]
+        (forall T. globally (eventually scheduled.now & scheduled.value = T)) 
+        -> forall T,X. (globally pc2(T) & m(T,X) -> eventually pc3(T))
+        proof {
+            tactic skolemizenp;
+            tactic l2s_auto5 with {
+
+                # How to decode the following predicates:
+                # - work_created is R, the reached set, in the notes
+                # - work_needed is delta, the ranking
+                # - work_invar is phi, the liveness invariant
+                # - work_progress is r, the justice condition(s)
+                # - work_helpful is psi, the stable scheduler
+                #
+                # The number in square brackets are subscripts.
+                # Notice we actually have an R_i for each delta_i,
+                # rather that a single R to prove finiteness of all
+                # the delta_i. In this case R_i is the same for both
+                # rankings.
+
+                definition work_created[0](X) = X <= next_ticket
+                definition work_needed[0](X) = service <= X & X <= _X & exists T. (m(T,X) & pc2(T))
+                definition work_invar[0] = _X < next_ticket & pc2(_T) & m(_T,_X)
+                definition work_progress[0](T) = scheduled.now & scheduled.value = T
+                definition work_helpful[0](T) = m(T,service) & pc2(T)
+                
+                definition work_created[1](X) = X <= next_ticket
+                definition work_needed[1](X) = service <= X & X < _X & exists T. (m(T,X) & (pc2(T) | pc3(T)))
+                definition work_invar[1] = _X < next_ticket & pc2(_T) & m(_T,_X)
+                definition work_progress[1](T) = scheduled.now & scheduled.value = T
+                definition work_helpful[1](T) = m(T,service) & pc3(T)
+                
+                # These invariants are rho, the safety invariant in
+                # the notes.  The invariants used to prove safety
+                # (above) are also included in rho.
+
+                invariant pc1(T) & m(T,M) & M ~= 0 -> service >  M
+                invariant forall K:ticket. next_ticket > K & service <= K -> exists T:thread. m(T,K) & ~pc1(T)
+            }
+        }   
+    }
+}
+
+export ticket_protocol.step12
+export ticket_protocol.step22
+export ticket_protocol.step23
+export ticket_protocol.step31
+
+

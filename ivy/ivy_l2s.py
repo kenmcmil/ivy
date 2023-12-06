@@ -189,6 +189,12 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
     # Add invariants for l2s_auto tactic
 
     if tactic_name.startswith("l2s_auto"):
+
+        def dict_put(dct,sfx,name,dfn):
+            if sfx not in dct:
+                dct[sfx] = dict()
+            dct[sfx][name] = dfn
+
         def get_aux_defn(name,dct):
             for prem in ipr.goal_prems(goal):
                 if not isinstance(prem,ivy_ast.ConstantDecl) and hasattr(prem,"definition") and prem.definition:
@@ -203,9 +209,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                         lhs = (lg.Const(name,tmp.args[0].rep.sort))(*tmp.args[0].args)
                         dfn = tmp.clone([lhs,tmp.args[1]])
                         sfx = dname[len(name):]
-                        if sfx not in dct:
-                            dct[sfx] = dict()
-                        dct[sfx][name] = dfn
+                        dict_put(dct,sfx,name,dfn)
 
         tasks = dict()
         triggers = dict()
@@ -215,8 +219,9 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         get_aux_defn('work_done',tasks)
         get_aux_defn('work_progress',tasks)
         get_aux_defn('work_end',tasks)
+        get_aux_defn('work_invar',tasks)
         if tactic_name in ["l2s_auto5"]:
-            get_aux_defn('work_depends',tasks)
+            get_aux_defn('work_helpful',tasks)
         get_aux_defn('work_start',triggers)
         
         def get_work_was_done(defn,work_done):
@@ -232,7 +237,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
         # create a substituion replacing work_done[sfx](X) with
         # $was (work_needed[sfx](X) -> work_done[sfx](X)). This will
-        # be used to preprocess "work_depends".
+        # be used to preprocess "work_helpful".
         
         # depends_subst = dict()
         # for sfx in tasks:
@@ -245,17 +250,43 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         #         depends_subst[lhs] = rhs
         #         print ('foo: {} = {}'.format(lhs,rhs))
                 
-        for sfx in tasks:
-            for name in ['work_created','work_needed','work_done','work_progress']:
-                if name not in tasks[sfx]:
-                    raise iu.IvyError(proof,"tactic ls_auto requires a definition of " + name + sfx)
-
         waiting_for_start = lg.Or(*[l2s_w((),triggers[sfx]['work_start'].args[1]) for sfx in triggers])
         not_all_done_preds = []
         not_all_was_done_preds = []
         sched_exists_preds = []
 
         sorted_tasks = list(sorted(x for x in tasks))
+
+        # infer some predicates
+
+        if sorted_tasks:
+            sfx = sorted_tasks[0]
+            if not(sfx in triggers and 'work_start' in triggers[sfx]):
+                gfmla = fmla
+                while isinstance(gfmla,lg.Implies):
+                    gfmla = gfmla.args[1]
+                if isinstance(gfmla,lg.Globally):
+                    work_start = ilg.Definition(ilg.Symbol('work_start'+sfx,lg.Boolean),lg.Not(gfmla.body))
+                    print('defining: {}'.format(work_start))
+                    dict_put(triggers,sfx,'work_start',work_start)
+        
+        if tactic_name in ["l2s_auto5"]:
+            for idx,sfx in enumerate(sorted_tasks):
+                task = tasks[sfx]
+                if 'work_needed' in task and 'work_done' not in task:
+                    work_needed = task['work_needed']
+                    lhs = work_needed.args[0]
+                    work_done = ilu.Definition(ilu.Symbol('work_done'+sfx,lhs.rep.sort)(*lhs.args),lg.false)
+                    print('defining: {}'.format(work_done))
+                    dict_put(tasks,sfx,'work_done',work_done)
+
+        for sfx in tasks:
+            for name in ['work_created','work_needed','work_done','work_progress']:
+                if name not in tasks[sfx]:
+                    raise iu.IvyError(proof,"tactic ls_auto requires a definition of " + name + sfx)
+
+        # generate the l2s invariants
+
         for idx,sfx in enumerate(sorted_tasks):
             task = tasks[sfx] 
             work_created = task['work_created']
@@ -264,8 +295,10 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             work_progress = task['work_progress']
             work_end = (tasks[sfx]['work_end']
                             if sfx in tasks and 'work_end' in tasks[sfx] else None)
-            work_depends = (tasks[sfx]['work_depends']
-                            if sfx in tasks and 'work_depends' in tasks[sfx] else None)
+            work_invar = (tasks[sfx]['work_invar']
+                            if sfx in tasks and 'work_invar' in tasks[sfx] else None)
+            work_helpful = (tasks[sfx]['work_helpful']
+                            if sfx in tasks and 'work_helpful' in tasks[sfx] else None)
             work_start = (triggers[sfx]['work_start']
                             if sfx in triggers and 'work_start' in triggers[sfx] else None)
 
@@ -275,8 +308,11 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 raise iu.IvyError(proof,"work_created"+sfx+" and work_needed"+sfx+" must have same signature")
             if work_created.args[0].rep.sort != work_done.args[0].rep.sort:
                 raise iu.IvyError(proof,"work_created"+sfx+" and work_done"+sfx+" must have same signature")
-            if work_depends is not None and work_depends.args[0].rep.sort != work_progress.args[0].rep.sort:
-                raise iu.IvyError(proof,"work_depends"+sfx+" and work_progress"+sfx+" must have same signature")
+            if work_helpful is not None and work_helpful.args[0].rep.sort != work_progress.args[0].rep.sort:
+                raise iu.IvyError(proof,"work_helpful"+sfx+" and work_progress"+sfx+" must have same signature")
+            if work_invar is not None and work_invar.args[0].args:
+                raise iu.IvyError(proof,"work_invar"+sfx+" may not have arguments")
+
 
            
             # says that all elements used in defn are in l2s_d
@@ -305,6 +341,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 if work_end is not None:
                     subs = dict(zip(work_end.args[0].args,work_done.args[0].args))
                     tmp = lg.Implies(lu.substitute(work_end.args[1],subs),tmp)
+                if work_invar is not None:
+                    tmp = lg.Implies(work_invar.args[1],tmp)
                 tmp = lg.Not(forall(work_done.args[0].args[skip:],tmp))
                 if tactic_name in ["l2s_auto2","l2s_auto3","l2s_auto4","l2s_auto5"]:
                     tmp = lg.Or(lg.Not(not_waiting_for_start),tmp)
@@ -318,11 +356,11 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 return lg.Not(forall(work_done.args[0].args[skip:],tmp))
 
             def get_depends():
-                # prep = ipr.apply_match(depends_subst,work_depends.args[1])
+                # prep = ipr.apply_match(depends_subst,work_helpful.args[1])
                 # print ('prep: {}'.format(prep))
-                subs = dict(zip(work_depends.args[0].args,work_progress.args[0].args))
+                subs = dict(zip(work_helpful.args[0].args,work_progress.args[0].args))
                 # print ('subs: {}'.format(subs))
-                prep = lu.substitute(work_depends.args[1],subs)
+                prep = lu.substitute(work_helpful.args[1],subs)
                 # print ('prep: {}'.format(prep))
                 return prep
 
