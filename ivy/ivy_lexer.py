@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All Rights Reserved.
 #
 import ply.lex as lex
+import re
 from . import ivy_utils as iu
 
 tokens = (
@@ -218,6 +219,16 @@ def t_PRESYMBOL(t):
     t.type = reserved.get(t.value,'PRESYMBOL')
     return t
 
+def t_GLOBALLY(t):
+    '\u25A1'
+    t.type = 'GLOBALLY'
+    return t
+
+def t_EVENTUALLY(t):
+    '\u25C7'
+    t.type = 'EVENTUALLY'
+    return t
+
 def t_VARIABLE(t):
     r'[A-Z][_a-zA-Z0-9]*(\[[ab-zA-Z_0-9]*\])*'
     t.type = reserved.get(t.value,'VARIABLE')
@@ -237,7 +248,7 @@ def t_error(t):
     raise iu.IvyError(TokenErrorNode(t),"illegal character '{}'".format(t.value[0]))
     print("Illegal character '%s'" % t.value[0])
 
-lexer = lex.lex(errorlog=lex.NullLogger())
+lexer = lex.lex(reflags=re.UNICODE | re.VERBOSE, errorlog=lex.NullLogger())
 
 class LexerVersion(object):
     """ Context Manager that sets the lexer based on the given language version

@@ -379,7 +379,7 @@ def check_fcs_in_state(mod,ag,post,fcs):
             act.match_annotation(action,annot,handler)
             handler.end()
             if hasattr(mod,"trace_hook"):
-                handler = mod.trace_hook(handler)
+                handler = mod.trace_hook(handler,ffcs)
             ff = failed[0]
             handler.is_cti = (lut.formula_to_clauses(ff.lf.formula) if isinstance(ff,ConjChecker)
                               else None)

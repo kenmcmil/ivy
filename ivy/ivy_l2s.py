@@ -94,7 +94,7 @@ def l2s_tactic_auto(prover,goals,proof):
 # This hides the auxiliary variables in an error trace. Also, we
 # mark the loop start state.
 
-def trace_hook(tr):
+def trace_hook(tr,fcs):
     # tr.hidden_symbols = lambda sym: sym.name.startswith('l2s_') or sym.name.startswith('_old_l2s_')
     for idx,state in enumerate(tr.states):
         for c in state.clauses.fmlas:
@@ -161,7 +161,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
 #    assert hasattr(proof,'labels') and len(proof.labels) == 1
 #    proof_label = proof.labels[0]
-    proof_label = None
+    proof_label = ""
 #    print 'proof label: {}'.format(proof_label)
     invars = [ilg.label_temporal(ipr.compile_with_goal_vocab(inv,goal),proof_label) for inv in tactic_invars]
 #    invars = [ilg.label_temporal(inv.compile(),proof_label) for inv in proof.tactic_decls]
@@ -267,7 +267,6 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                     gfmla = gfmla.args[1]
                 if isinstance(gfmla,lg.Globally):
                     work_start = ilg.Definition(ilg.Symbol('work_start'+sfx,lg.Boolean),lg.Not(gfmla.body))
-                    print('defining: {}'.format(work_start))
                     dict_put(triggers,sfx,'work_start',work_start)
         
         if tactic_name in ["l2s_auto5"]:
@@ -277,7 +276,6 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                     work_needed = task['work_needed']
                     lhs = work_needed.args[0]
                     work_done = ilu.Definition(ilu.Symbol('work_done'+sfx,lhs.rep.sort)(*lhs.args),lg.false)
-                    print('defining: {}'.format(work_done))
                     dict_put(tasks,sfx,'work_done',work_done)
 
         for sfx in tasks:
@@ -387,7 +385,10 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                                                lg.Or(lg.Not(l2s_waiting),
                                                      lg.Not(l2s_w((),work_start.args[1]))))
             # tmp = lg.Implies(lg.And(l2s_waiting,lg.Not(waiting_for_start)),all_d(work_needed))
-            tmp = lg.Implies(not_waiting_for_start,all_created(work_needed))
+            if tactic_name not in ["l2s_auto5"]:
+                tmp = lg.Implies(not_waiting_for_start,all_created(work_needed))
+            else:
+                tmp = lg.Implies(not_waiting_for_start,all_d(work_needed))
             invars.append(ivy_ast.LabeledFormula(ivy_ast.Atom("l2s_needed_when_start"+sfx),tmp).sln(proof.lineno))
 
             # invariant ls2_created
@@ -423,9 +424,10 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
             # invariant needed_implies_created
 
-            subs = dict(zip(work_needed.args[0].args,work_created.args[0].args))
-            tmp = lg.Implies(not_waiting_for_start,lg.Implies(lu.substitute(work_needed.args[1],subs),work_created.args[1]))
-            invars.append(ivy_ast.LabeledFormula(ivy_ast.Atom("l2s_needed_implies_created"+sfx),tmp).sln(proof.lineno))
+            if tactic_name not in ["l2s_auto5"]:
+                subs = dict(zip(work_needed.args[0].args,work_created.args[0].args))
+                tmp = lg.Implies(not_waiting_for_start,lg.Implies(lu.substitute(work_needed.args[1],subs),work_created.args[1]))
+                invars.append(ivy_ast.LabeledFormula(ivy_ast.Atom("l2s_needed_implies_created"+sfx),tmp).sln(proof.lineno))
 
             # invariant done_implies_needed
 
@@ -1290,7 +1292,10 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
     goal = ipr.remove_unused_definitions_goal(goal)
 
-    goal.trace_hook = lambda tr: renaming_hook(subs,tr)
+    if tactic_name.startswith("l2s_auto5"):
+        goal.trace_hook = lambda tr,fcs: auto_hook(tasks,triggers,subs,tr,fcs)
+    else:
+        goal.trace_hook = lambda tr,fcs: renaming_hook(subs,tr,fcs)
 
     # Return the new goal stack
 
@@ -1300,9 +1305,193 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 # Hook to convert temporary symbols back to named binders. Argument
 # 'subs' is the map from named binders to temporary symbols.
 
-def renaming_hook(subs,tr):
+def renaming_hook(subs,tr,fcs):
     return tr.rename(dict((x,y) for (y,x) in subs.items()))
 
+def temporal_and_l2s(sym):
+    return (sym.name.startswith('l2s') and not sym.name.startswith('l2s_g')
+            or sym.name.startswith('_old_l2s'))
+
+def ls2_g_to_globally(ast):
+    def g2g(ast):
+        if isinstance(ast,lg.NamedBinder) and ast.name == 'l2s_g':
+            return lg.Globally(ast.environ,ast.body)
+        return ast
+    res = ilu.expand_named_binders_ast(ast,g2g)
+    return ilu.denormalize_temporal(res)
+
+def auto_hook(tasks,triggers,subs,tr,fcs):
+    tr = renaming_hook(subs,tr,fcs)
+    tr.pp = ls2_g_to_globally
+    rsubs = dict((x,y) for (y,x) in subs.items())
+    # Figure out which property failed
+    failed_fc = None
+    for fc in fcs:
+        if fc.failed:
+            failed_fc = fc
+            break
+    if failed_fc is None or not hasattr(failed_fc,'lf'):
+        return tr # shouldn't happen
+
+    # Find the justice conditions
+
+    justice_pred_map = dict()
+    for fc in fcs:
+        lf = fc.lf
+        if lf.name.startswith('l2s_progress_invar'):
+            sfx = lf.name[len('l2s_progress_invar'):]
+            gfmla = rsubs[lf.formula.args[1].rep]
+            gargs = lf.formula.args[1].args
+            jfmla = gfmla.body.args[0]
+            jfmla = subs[jfmla.rep]
+            justice_pred_map[sfx] = jfmla
+
+    lf = failed_fc.lf
+    invar = lf.formula
+    name = lf.name
+    if name.startswith('l2s_created'):
+        sfx = name[len('l2s_created'):]
+        print ('\n\nFailed to prove that work_created{} is finite by induction.\n'.format(sfx))
+        work_created = tasks[sfx]['work_created']
+        vs = work_created.args[0].args
+        sks = [ilg.Symbol('@'+v.name,v.sort) for v in vs]
+        post_state = tr.states[-1]
+        vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+        if None not in vals:
+            pred = (work_created.args[0].rep)(*vals)
+            print ('Note: {} is true in the post-state of the action, but not in the pre-state,'.format(pred))
+            print ('and its argument(s) are not visited during the action execution.\n')
+        tr.hidden_symbols = temporal_and_l2s
+            
+    elif name.startswith('l2s_needed_when_start'):
+        sfx = name[len('l2s_needed_when_start'):]
+
+        # TODO: handle the case where we have already started and needed increases
+
+        print ('\n\nFailed to prove that work_needed{} is a subset of work_created{} when the start condition has occurred.\n'.format(sfx,sfx))
+        work_needed = tasks[sfx]['work_needed']
+        work_created = tasks[sfx]['work_created']
+        vs = work_needed.args[0].args
+        sks = [ilg.Symbol('@'+v.name,v.sort) for v in vs]
+        post_state = tr.states[-1]
+        vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+        if None not in vals:
+            pred1 = (work_needed.args[0].rep)(*vals)
+            pred2 = (work_created.args[0].rep)(*vals)
+            print ('Note: the start condition occurs during the action and {} is true in the post-state of the action, but {} is not true.'.format(pred1,pred2))
+        tr.hidden_symbols = temporal_and_l2s
+
+    elif name.startswith('l2s_work_preserved'):
+        sfx = name[len('l2s_work_preserved'):]
+
+        print ('\n\nFailed to prove that work_needed{} is preserved.\n'.format(sfx,sfx))
+        work_needed = tasks[sfx]['work_needed']
+        vs = work_needed.args[0].args
+        sks = [ilg.Symbol('@'+v.name,v.sort) for v in vs]
+        post_state = tr.states[-1]
+        vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+        if None not in vals:
+            pred = (work_needed.args[0].rep)(*vals)
+            print ('Note: work_invar{} is true and {} changes from false to true.\n'.format(sfx,pred))
+        tr.hidden_symbols = temporal_and_l2s
+
+    elif name.startswith('l2s_needed_are_frozen'):
+        sfx = name[len('l2s_needed_are_frozen'):]
+
+        print ('\n\nFailed to prove that work_needed{} is preserved.\n'.format(sfx,sfx))
+        work_needed = tasks[sfx]['work_needed']
+        vs = work_needed.args[0].args
+        sks = [ilg.Symbol('@'+v.name,v.sort) for v in vs]
+        post_state = tr.states[-1]
+        vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+        if None not in vals:
+            pred = (work_needed.args[0].rep)(*vals)
+            print ('Note: work_invar{} is true and {} changes from false to true.\n'.format(sfx,pred))
+        tr.hidden_symbols = temporal_and_l2s
+        
+    elif name.startswith('l2s_progress_made'):
+        sfx = name[len('l2s_progress_made'):]
+
+        print ('\n\nFailed to prove that work_needed{} decreases when a helpful transition occurs\n'.format(sfx,sfx))
+        lhs = invar.args[0]
+        all_helpful_happened = lhs.args[4]
+        was_helpful_pred_nonce = all_helpful_happened.body.args[0].rep
+        work_helpful = tasks[sfx]['work_helpful']
+        helpful_map = dict()
+        for eqn in tr.states[0].clauses.fmlas:
+            if eqn.args[0].rep == was_helpful_pred_nonce:
+                helpful_map[tuple(eqn.args[0].args)] = eqn.args[1]
+                print ('{} = {}'.format(work_helpful.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+        trigger_happened_pred_nonce = all_helpful_happened.body.args[1].args[0].rep
+        work_progress = tasks[sfx]['work_progress']
+        happened_maps = [dict(),dict()]
+        for idx in range(2):
+            print ('')
+            for eqn in tr.states[idx].clauses.fmlas:
+                if eqn.args[0].rep == trigger_happened_pred_nonce:
+                    happened_maps[idx][tuple(eqn.args[0].args)] = eqn.args[1]
+                    print ('~happened {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+        justice_map = dict()
+        if sfx in justice_pred_map:
+            print ('')
+            justice_pred = justice_pred_map[sfx]
+            for eqn in tr.states[0].clauses.fmlas:
+                if eqn.args[0].rep == justice_pred:
+                    justice_map[tuple(eqn.args[0].args)] = eqn.args[1]
+                    print ('~eventually {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+        for args in helpful_map:
+            if ilg.is_true(helpful_map[args]):
+                if all(args in happened_maps[idx] for idx in range(2)):
+                    if ilg.is_true(happened_maps[0][args]) and ilg.is_false(happened_maps[1][args]):
+                        print ('\nNote: {} is true and {} occurs during the action, but work_needed is not reduced.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
+                        break
+        for args in helpful_map:
+            if ilg.is_true(helpful_map[args]):
+                if args in justice_map:
+                    if ilg.is_true(happened_maps[0][args]) and ilg.is_true(justice_map[args]):
+                        print ('\nNote: {} is true and eventually {} is false.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
+                        break
+        work_needed = tasks[sfx]['work_needed']
+        vs = work_needed.args[0].args
+        sks = [ilg.Symbol('@'+v.name,v.sort) for v in vs]
+        post_state = tr.states[-1]
+        vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+        if None not in vals:
+            pred = (work_needed.args[0].rep)(*vals)
+            print ('Note: work_invar{} is true and {} changes from false to true.\n'.format(sfx,pred))
+        tr.hidden_symbols = temporal_and_l2s
+
+    elif name.startswith('l2s_sched_stable'):
+        sfx = name[len('l2s_sched_stable'):]
+
+        print ('\n\nFailed to prove that work_helpful{} is stable until helpful transition occurs\n'.format(sfx))
+
+        work_progress = tasks[sfx]['work_progress']
+        vs = work_progress.args[0].args
+        work_helpful = tasks[sfx]['work_helpful']
+        sks = [ilg.Symbol('@'+v.name,v.sort) for v in vs]
+        post_state = tr.states[-1]
+        vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+        if None not in vals:
+            pred = (work_helpful.args[0].rep)(*vals)
+            print ('Note: work_invar{} is true and {} changes from true to false, but {} does not occur during the action.\n'.format(sfx,pred,work_progress.args[0].rep(*vals)))
+        tr.hidden_symbols = temporal_and_l2s
+
+    elif name.startswith('l2s_not_all_done'):
+        rank_names = ' and '.join('work_needed'+sfx for sfx in tasks if 'work_needed' in tasks[sfx])
+        print ('The ranking(s) {} have become empty, but termination has not occurred.'.format(rank_names))
+        tr.hidden_symbols = temporal_and_l2s
+        
+    elif name.startswith('l2s_sched_exists'):
+        rank_names = ' and '.join('work_helpful'+sfx for sfx in tasks if 'work_helpful' in tasks[sfx])
+        print ('The helpful set(s)  {} have become empty, but termination has not occurred'.format(rank_names))
+        tr.hidden_symbols = temporal_and_l2s
+
+    return tr
+            
+        
+        
+    
             
             
 

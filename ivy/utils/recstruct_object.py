@@ -66,15 +66,19 @@ class {typename}(object):
         return not self.__eq__(other)
 
     def __lt__(self, other):
-        return (({typename},) + self._tup) < other
+        return type(self) is type(other) and (self._tup) < (other._tup) or type(self).__name__ < type(other).__name__
+        # return ((type(self).__name__,) + self._tup) < other
 
     def __le__(self, other):
-        return (({typename},) + self._tup) <= other
+        return type(self) is type(other) and (self._tup) <= (other._tup) or type(self).__name__ < type(other).__name__
+        # return (({typename},) + self._tup) <= other
 
     def __gt__(self, other):
-        return (({typename},) + self._tup) > other
+        return type(self) is type(other) and (self._tup) > (other._tup) or type(self).__name__ > type(other).__name__
+        #return (({typename},) + self._tup) > other
 
     def __ge__(self, other):
+        return type(self) is type(other) and (self._tup) >=(other._tup) or type(self).__name__ > type(other).__name__
         return (({typename},) + self._tup) >= other
 
     def __hash__(self):

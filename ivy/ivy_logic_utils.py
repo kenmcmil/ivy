@@ -343,6 +343,56 @@ def replace_named_binders_ast(ast,subs):
         return subs.get(ast.rep,ast.rep)(*args)
     return ast.clone(args)
 
+def expand_named_binders_ast(ast,fun):
+    """
+    Expand nullary named binders by applying function fun. Recurs into the
+    result of fun.
+    """
+    if is_named_binder(ast):
+        return expand_named_binders_ast(fun(ast),fun)
+    args = [expand_named_binders_ast(x, fun) for x in ast.args]
+    return ast.clone(args)
+
+def denormalize_temporal(ast):
+    """
+    Expand nullary named binders by applying function fun. Recurs into the
+    result of fun.
+    """
+    args = [denormalize_temporal(x) for x in ast.args]
+    if isinstance(ast,lg.Not) and isinstance(args[0],lg.Globally) and isinstance(args[0].body,lg.Not):
+        return lg.Eventually(args[0].environ,args[0].body.body)
+    if isinstance(ast,(lg.Iff,lg.Eq)):
+        lhs,rhs = args
+        if isinstance(lhs,lg.Globally) and isinstance(lhs.body,lg.Not):
+            if is_true(rhs):
+                return ast.clone([lg.Eventually(lhs.environ,lhs.body.body),
+                                  lg.Or()])
+            if is_false(rhs):
+                return ast.clone([lg.Eventually(lhs.environ,lhs.body.body),
+                                  lg.And()])
+    return ast.clone(args)
+
+# Simplify formula assuming (perhaps falsely) that the arithmertic operators
+# actually represent standard arithmetic. For the moment, this just interprets
+# the relational operators over numerals.
+
+def boolean_constant(x):
+    return And() if x else Or()
+
+def reduce_numerically(ast):
+    args = [reduce_numerically(x) for x in ast.args]
+    if is_app(ast):
+        if all(is_numeral(x) and x.name.isdigit() for x in args):
+            vs = [int(x.name) for x in args]
+            if ast.rep.name == '<':
+                return boolean_constant(vs[0] < vs[1])
+            if ast.rep.name == '=':
+                return boolean_constant(vs[0] == vs[1])
+            if ast.rep.name.endswith('.succ'):
+                return boolean_constant(vs[0]+1 == vs[1])
+                
+    return ast.clone(args)
+
 def resort_sort(sort,subs):
     """
     Substitute sorts for sorts in a sort.

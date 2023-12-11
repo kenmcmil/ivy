@@ -38,6 +38,7 @@ class TraceBase(art.AnalysisGraph):
         self.returned = None
         self.hidden_symbols = lambda sym: False
         self.renaming = None
+        self.pp = None
         self.is_full_trace = False
         
     def rename(self,map):
@@ -84,8 +85,9 @@ class TraceBase(art.AnalysisGraph):
                 return c.args[1]
         return None
 
-    def to_lines(self,lines,hash,indent,hidden,failed=False,renaming=None):
+    def to_lines(self,lines,hash,indent,hidden,failed=False,renaming=None,pp=None):
         renaming = renaming or self.renaming
+        pp = pp or self.pp
         for idx,state in enumerate(self.states):
             if hasattr(state,'expr') and state.expr is not None:
                 expr = state.expr
@@ -156,7 +158,7 @@ class TraceBase(art.AnalysisGraph):
                 if hasattr(expr,'subgraph'):
                     if option_detailed.get():
                         lines.append(indent * '    ' + '{\n')
-                    expr.subgraph.to_lines(lines,hash,indent+1,hidden,failed=failed,renaming=renaming)
+                    expr.subgraph.to_lines(lines,hash,indent+1,hidden,failed=failed,renaming=renaming,pp=pp)
                     if option_detailed.get():
                         lines.append(indent * '    ' + '}\n')
                 if option_detailed.get():
@@ -165,12 +167,19 @@ class TraceBase(art.AnalysisGraph):
                 foo = False
                 if hasattr(state,"loop_start") and state.loop_start:
                     lines.append('\n--- the following repeats infinitely ---\n\n')
+                line_eqns = []
                 for c in state.clauses.fmlas:
                     if hidden(c.args[0].rep):
                         continue
                     if renaming is not None:
                         c = lut.rename_ast(c,renaming)
                     c = lut.reduce_named_binders(c)
+                    if pp is not None:
+                        c = pp(c)
+                    if lut.reduce_numerically(c.args[0]) == c.args[1]:
+                        continue
+                    line_eqns.append(c)
+                for c in sorted(line_eqns,key=str):
                     s1,s2 = list(map(str,c.args))
                     if not(s1 in hash and hash[s1] == s2): # or state is self.states[0]:
                         hash[s1] = s2

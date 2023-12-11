@@ -1312,8 +1312,8 @@ lg.Or.ugly = lambda self,prec: nary_ugly('|',self.args,4,prec) if self.args else
 lg.Not.ugly = lambda self,prec: (nary_ugly('~=',self.body.args,8,prec)
                                if type(self.body) is lg.Eq
                                else '~{}'.format(self.body.ugly(6)))
-lg.Globally.ugly = lambda self,prec: ('globally{} {}'.format(ugly_environ(self),self.body.ugly(2)))
-lg.Eventually.ugly = lambda self,prec: ('eventually{} {}'.format(ugly_environ(self),self.body.ugly(2)))
+lg.Globally.ugly = lambda self,prec: ('\u25A1{} {}'.format(ugly_environ(self),self.body.ugly(2)))
+lg.Eventually.ugly = lambda self,prec: ('\u2B26{} {}'.format(ugly_environ(self),self.body.ugly(2)))
 lg.WhenOperator.ugly = lambda self,prec: nary_ugly('when'+self.name,self.args,2,prec)
 lg.Implies.ugly = lambda self,prec: nary_ugly('->',self.args,3,prec)
 lg.Iff.ugly = lambda self,prec: nary_ugly('<->',self.args,3,prec)
@@ -1323,7 +1323,8 @@ lg.Cond.ugly = lambda self,prec:  '({} => {})'.format(*[self.args[idx].ugly(9) f
 
 def ugly_environ(self):
     environ = self.environ
-    return '' if environ is None else '['+str(environ)+']'
+    return ''
+    # return '' if environ is None else '['+str(environ)+']'
 
 lg.Apply.ugly = app_ugly
 
