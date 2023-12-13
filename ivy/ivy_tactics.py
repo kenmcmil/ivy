@@ -68,7 +68,7 @@ def tempind_fmla(fmla,cond,params,vs=[]):
         gbly = fmla.clone([body])
         whencond = lg.Not(lg.ForAll(vs,fmla.body))
         return lg.ForAll(vs+params,lg.Or(gbly,lg.WhenOperator("next",body,whencond)))
-    return lg.Forall(vs,fmla) if vs else fmla
+    return lg.ForAll(vs,fmla) if vs else fmla
         
 def apply_tempind(goal,proof):
     if proof.tactic_decls:

@@ -1415,14 +1415,20 @@ def auto_hook(tasks,triggers,subs,tr,fcs):
         print ('\n\nFailed to prove that work_needed{} decreases when a helpful transition occurs\n'.format(sfx,sfx))
         lhs = invar.args[0]
         all_helpful_happened = lhs.args[4]
-        was_helpful_pred_nonce = all_helpful_happened.body.args[0].rep
+        if (ilg.is_forall(all_helpful_happened)):
+            was_helpful_pred_nonce = all_helpful_happened.body.args[0].rep
+        else:
+            was_helpful_pred_nonce = all_helpful_happened.args[0].rep
         work_helpful = tasks[sfx]['work_helpful']
         helpful_map = dict()
         for eqn in tr.states[0].clauses.fmlas:
             if eqn.args[0].rep == was_helpful_pred_nonce:
                 helpful_map[tuple(eqn.args[0].args)] = eqn.args[1]
                 print ('{} = {}'.format(work_helpful.args[0].rep(*eqn.args[0].args),eqn.args[1]))
-        trigger_happened_pred_nonce = all_helpful_happened.body.args[1].args[0].rep
+        if (ilg.is_forall(all_helpful_happened)):
+            trigger_happened_pred_nonce = all_helpful_happened.body.args[1].args[0].rep
+        else:
+            trigger_happened_pred_nonce = all_helpful_happened.args[1].args[0].rep
         work_progress = tasks[sfx]['work_progress']
         happened_maps = [dict(),dict()]
         for idx in range(2):
