@@ -22,6 +22,7 @@ logfile = None
 verbose = False
 
 opt_unfold_macros = iu.BooleanParameter("unfold_macros",True)
+opt_simplify = iu.BooleanParameter("simplify",False)
 
 # Ivy symbols have dots in them (due to the module system)
 # but mypyvy doesn't allow dots in names, so we replace
@@ -609,7 +610,11 @@ class Translation:
 
     def simplify_via_smt(fmla: z3.BoolRef, syms: dict[str, Any]) -> z3.BoolRef:
         '''Simplify an SMT formula.'''
-        fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
+        if opt_simplify.get():
+            # This can be very expensive, so it is off by default.
+            fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
+        else:
+            fmla = z3.Tactic('ctx-simplify').apply(fmla).as_expr()
         fmla = z3.Tactic('propagate-values').apply(fmla).as_expr()
         return fmla
 
@@ -825,7 +830,7 @@ def check_isolate():
     # mod.initializers -> after init
     # mod.public_actions
     # mod.actions
-    print("The translation performs simplification via SMT. It might take on the order of minutes!")
+    print("If you pass simplify=true, the translation performs simplification via SMT. It might take on the order of minutes!")
     if opt_unfold_macros.get():
         print("Will remove intermediary relations in initializer and transition definitions.")
     else:
