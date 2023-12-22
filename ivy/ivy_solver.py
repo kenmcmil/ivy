@@ -41,7 +41,10 @@ opt_seed.set_callback(set_seed)
 
 def set_macro_finder(truth):
     z3.set_param('smt.macro_finder',truth)
-    
+
+def set_ematching(truth):
+    z3.set_param('smt.ematching',truth)
+
 opt_incremental = iu.BooleanParameter("incremental",True)
 opt_show_vcs = iu.BooleanParameter("show_vcs",False)
 
@@ -49,6 +52,10 @@ opt_show_vcs = iu.BooleanParameter("show_vcs",False)
 opt_macro_finder = iu.BooleanParameter("macro_finder",True)
 set_macro_finder(True)
 opt_macro_finder.set_callback(set_macro_finder)
+
+opt_ematching = iu.BooleanParameter("ematching",False)
+set_ematching(False)
+opt_ematching.set_callback(set_ematching)
 
 def set_use_native_enums(t):
     global use_z3_enums
