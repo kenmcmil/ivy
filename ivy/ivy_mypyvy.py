@@ -347,7 +347,7 @@ class Translation:
             with_fn = lambda x: x
         if pred(fmla):
             with_fmla = with_fn(fmla)
-            print("replace {} with {}... ".format(fmla, with_fmla), end='\n', flush=True)
+            # print("replace {} with {}... ".format(fmla, with_fmla), end='\n', flush=True)
             return with_fmla
         
         if isinstance(fmla, lg.ForAll):
@@ -388,7 +388,7 @@ class Translation:
         # (using this code path), because we need more filtering to properly
         # identify equalities for constants (e.g., they shouldn't be under negation).
         if len(vs) == 0:
-            return False
+            return Translation.is_temp_equality(f)
         
         if il.is_eq(f) or isinstance(f, il.Iff):
             lhs, rhs = f.args
@@ -404,25 +404,55 @@ class Translation:
                         or lhs.name.startswith(IVY_TSEITIN_INDICATOR)
         return False
 
-    def reduce_skolem_macros(fmla: lg.And) -> lg.And:
+    def reduce_skolem_macros(fmla: lg.And, keep_symbols: set) -> lg.And:
         '''Reduce Skolem macros in an Ivy formula.'''
-        # TODO: eliminate equalities between constants
+        def get_macro(f):
+            '''Returns the macro definition for the given formula.
+            This only has work to do for "macros" that are simply equalities,
+            e.g. `const_a = integer.zero`. We want certain symbols to never be rewritten.'''
+            if not Translation.is_temp_equality(f):
+                return f
+            else:
+                # return None
+                lhs, rhs = f.args
+                if lhs in keep_symbols and rhs in keep_symbols:
+                    return None
+                # We want fmla to retain all instances of LHS, so we flip the equality
+                if lhs in keep_symbols:
+                    lhs, rhs = rhs, lhs
+                assert lhs not in keep_symbols, "lhs {} should not be in keep_symbols: {}".format(lhs, keep_symbols)
+                return lg.Eq(lhs, rhs)
+
         _sfmla = fmla
         while True:
+            _sfmla = Translation.remove_evident_tautologies(_sfmla)
             # Call unfold one by one; otherwise it seems there's some kind
             # of assertion failure; it seems the code wasn't tested for
             # multiple simoultaneous unfoldings.
-            macros = set(Translation.filter_positive_conjucts(_sfmla, Translation.is_skolem_macro))
+            macros = [get_macro(x) for x in Translation.filter_positive_conjucts(_sfmla, Translation.is_skolem_macro) if get_macro(x) is not None]
             macro_defs = [ast.LabeledFormula(ast.Atom(f'_macro_{i}'), macro_fmla) for (i, macro_fmla) in enumerate(macros)]
             try:
                 m = macro_defs.pop()
-                _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == m.formula, lambda x: _true)
+                print(m)
             except:
                 break
-            _sfmla = pf.unfold_fmla(_sfmla, [[m]])
+            print("unfolding macro {}... ".format(m.formula), end='\n', flush=True)
+            new_sfmla = pf.unfold_fmla(_sfmla, [[m]])
+            check_simpl_equiv(_sfmla, new_sfmla)
+            _sfmla = new_sfmla
+        return _sfmla
+
+    def remove_evident_tautologies(fmla: lg.And) -> lg.And:
+        _sfmla = fmla
+        tautologies = Translation.filter_positive_conjucts(fmla, Translation.is_evident_tautology)
+        for t in tautologies:
+            print("removing tautology {}... ".format(t), end='\n', flush=True)
+            _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == t, lambda x: _true)
         return _sfmla
 
     def filter_positive_conjucts(fmla, pred):
+        # FIXME: make this into a generator, since we only
+        # take the first element anyway
         s = set()
         if pred(fmla):
             s.add(fmla)
@@ -432,46 +462,21 @@ class Translation:
             return s | set.union(*[Translation.filter_subterms(x, pred) for x in fmla.terms])
         return s
 
-    def is_informative_temp_equality(f) -> bool:
+    def is_evident_tautology(f) -> bool:
+        if il.is_eq(f) or isinstance(f, il.Iff):
+            lhs, rhs = f.args
+            return lhs == rhs
+
+    def is_temp_equality(f) -> bool:
+        # FIXME: we DO want to identify equalities like
+        # `__fml_c_r = token_a_balance_pre(__fml_c_addr)`
         if il.is_eq(f) or isinstance(f, il.Iff):
             lhs, rhs = f.args
             if il.is_app(lhs) and il.is_app(rhs) and len(lhs.args) == 0 and len(rhs.args) == 0:
                 is_informative_eq = (is_temporary_constant(lhs) or is_temporary_constant(rhs)) and (lhs != rhs)
-                print("{} equality: {} = {}".format(is_informative_eq, lhs, rhs), end='\n', flush=True)
+                # print("{} equality: {} = {}".format(is_informative_eq, lhs, rhs), end='\n', flush=True)
                 return is_informative_eq
         return False
-
-    def reduce_constants(fmla: lg.And, keep_symbols: set) -> lg.And:
-        _sfmla = fmla
-        # If we have an equality between constants, replace all instances of
-        # RHS with LHS in the formula.
-        num_replacements = 0
-        while True:
-            # FIXME: we have a check in the caller to make sure we don't create
-            # formulas that are not equivalent (so this is not correctness-critical),
-            # but we should really make sure here that our "equality" is not behind a negation.
-            eqs = list(Translation.filter_positive_conjucts(_sfmla, Translation.is_informative_temp_equality))
-            try:
-                eq = eqs.pop()
-                # Get rid of the equality
-                # _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == eq, lambda x: _true)
-
-                # Replace LHS with RHS throughout the formula
-                lhs, rhs = eq.args
-                if lhs in keep_symbols and rhs in keep_symbols:
-                    print("skipping {} = {}... ".format(lhs, rhs), end='\n', flush=True)
-                    continue
-                # We want fmla to retain all instances of LHS, so we flip the equality
-                if lhs in keep_symbols:
-                    lhs, rhs = rhs, lhs
-                print("must replace {} with {}... ".format(lhs, rhs), end='\n', flush=True)
-                num_replacements += 1
-                _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == lhs, lambda x: rhs)
-            except:
-                break
-
-        print("reduced {} constants!".format(num_replacements))
-        return _sfmla
 
     def pyv_globals_under_new(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
         '''Returns the set of global names that appear in a mypyvy formula
@@ -539,8 +544,9 @@ class Translation:
         # Remove intermediary variables
         if opt_unfold_macros.get():
             print("unfolding macros... ", end='', flush=True)
-            supd = Translation.reduce_skolem_macros(upd)
-            check_simpl_equiv(upd, supd)
+            keep_symbols = set(im.module.sig.symbols.values())
+            supd = Translation.reduce_skolem_macros(upd, keep_symbols)
+            # check_simpl_equiv(upd, supd)
             upd = supd
 
         # Simplify via SMT
@@ -592,12 +598,8 @@ class Translation:
             keep_symbols = set(action.formal_params) | set(action.formal_returns) \
                 | set(im.module.sig.symbols.values()) \
                 | set(map(itr.new, im.module.sig.symbols.values()))
-            # sfmla = Translation.reduce_constants(fmla, keep_symbols)
+            sfmla = Translation.reduce_skolem_macros(fmla, keep_symbols)
             # check_simpl_equiv(fmla, sfmla)
-
-            # sfmla = Translation.reduce_skolem_macros(sfmla)
-            sfmla = Translation.reduce_skolem_macros(fmla)
-            check_simpl_equiv(fmla, sfmla)
             fmla = sfmla
 
         # Make sure round-tripping through SMT works        
