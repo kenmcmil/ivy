@@ -112,6 +112,12 @@ class IntegerTheory(Theory):
     def schemata():
         return theories()['int']
     
+class NaturalTheory(Theory):
+    num_params = 0
+    @property
+    def schemata():
+        return theories()['int']
+    
 class BitVectorTheory(Theory):
     num_params = 1
     @property
@@ -126,6 +132,7 @@ class BitVectorTheory(Theory):
 
 theory_classes = {
     'int' : IntegerTheory,
+    'nat' : NaturalTheory,
     'bv' : BitVectorTheory,
 }
 
