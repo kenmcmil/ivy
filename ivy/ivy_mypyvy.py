@@ -38,6 +38,24 @@ _false = lg.Or()
 IVY_TEMPORARY_INDICATOR = '__m_'
 IVY_TSEITIN_INDICATOR = '__ts'
 
+def is_temporary_constant(f) -> bool:
+    TEMP_INDICATORS = [IVY_TEMPORARY_INDICATOR, IVY_TSEITIN_INDICATOR, '__fml', '__new']
+    return any(f.name.startswith(x) for x in TEMP_INDICATORS)
+
+def check_simpl_equiv(orig, simp):
+    '''Check that orig and simp are equivalent, via SMT'''
+    orig_z3 = ivy_solver.formula_to_z3(orig)
+    simp_z3 = ivy_solver.formula_to_z3(simp)
+    s = z3.Solver()
+    s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
+    res = s.check()
+    if res != z3.unsat:
+        with open('orig.smt2', 'w') as f:
+            f.write(orig_z3.sexpr())
+        with open('simp.smt2', 'w') as f:
+            f.write(simp_z3.sexpr())
+    assert res == z3.unsat, "Solver returned {} | orig and simp are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+
 class Translation:
     '''Helper class for translating Ivy expressions to mypyvy expressions.'''
     def sort_type(ivy_sort):
@@ -324,12 +342,13 @@ class Translation:
         else:
             raise NotImplementedError("Translation.filter_subterms: {}".format(repr(fmla)))
 
-
     def replace_subterms(fmla: il.And, pred, with_fn=None) -> il.And:
         if with_fn is None:
             with_fn = lambda x: x
         if pred(fmla):
-            return with_fn(fmla)
+            with_fmla = with_fn(fmla)
+            print("replace {} with {}... ".format(fmla, with_fmla), end='\n', flush=True)
+            return with_fmla
         
         if isinstance(fmla, lg.ForAll):
             return lg.ForAll(fmla.variables, Translation.replace_subterms(fmla.body, pred, with_fn))
@@ -365,7 +384,9 @@ class Translation:
             vs.update(f.variables)
             f = f.body
 
-        # This code can handle constants as well, but we don't need it
+        # This code can handle constants as well, but we don't want it to
+        # (using this code path), because we need more filtering to properly
+        # identify equalities for constants (e.g., they shouldn't be under negation).
         if len(vs) == 0:
             return False
         
@@ -385,12 +406,13 @@ class Translation:
 
     def reduce_skolem_macros(fmla: lg.And) -> lg.And:
         '''Reduce Skolem macros in an Ivy formula.'''
+        # TODO: eliminate equalities between constants
         _sfmla = fmla
         while True:
             # Call unfold one by one; otherwise it seems there's some kind
             # of assertion failure; it seems the code wasn't tested for
             # multiple simoultaneous unfoldings.
-            macros = set(Translation.filter_subterms(_sfmla, Translation.is_skolem_macro))
+            macros = set(Translation.filter_positive_conjucts(_sfmla, Translation.is_skolem_macro))
             macro_defs = [ast.LabeledFormula(ast.Atom(f'_macro_{i}'), macro_fmla) for (i, macro_fmla) in enumerate(macros)]
             try:
                 m = macro_defs.pop()
@@ -398,6 +420,57 @@ class Translation:
             except:
                 break
             _sfmla = pf.unfold_fmla(_sfmla, [[m]])
+        return _sfmla
+
+    def filter_positive_conjucts(fmla, pred):
+        s = set()
+        if pred(fmla):
+            s.add(fmla)
+        if isinstance(fmla, lg.And):
+            if len(fmla.terms) == 0:
+                return s
+            return s | set.union(*[Translation.filter_subterms(x, pred) for x in fmla.terms])
+        return s
+
+    def is_informative_temp_equality(f) -> bool:
+        if il.is_eq(f) or isinstance(f, il.Iff):
+            lhs, rhs = f.args
+            if il.is_app(lhs) and il.is_app(rhs) and len(lhs.args) == 0 and len(rhs.args) == 0:
+                is_informative_eq = (is_temporary_constant(lhs) or is_temporary_constant(rhs)) and (lhs != rhs)
+                print("{} equality: {} = {}".format(is_informative_eq, lhs, rhs), end='\n', flush=True)
+                return is_informative_eq
+        return False
+
+    def reduce_constants(fmla: lg.And, keep_symbols: set) -> lg.And:
+        _sfmla = fmla
+        # If we have an equality between constants, replace all instances of
+        # RHS with LHS in the formula.
+        num_replacements = 0
+        while True:
+            # FIXME: we have a check in the caller to make sure we don't create
+            # formulas that are not equivalent (so this is not correctness-critical),
+            # but we should really make sure here that our "equality" is not behind a negation.
+            eqs = list(Translation.filter_positive_conjucts(_sfmla, Translation.is_informative_temp_equality))
+            try:
+                eq = eqs.pop()
+                # Get rid of the equality
+                # _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == eq, lambda x: _true)
+
+                # Replace LHS with RHS throughout the formula
+                lhs, rhs = eq.args
+                if lhs in keep_symbols and rhs in keep_symbols:
+                    print("skipping {} = {}... ".format(lhs, rhs), end='\n', flush=True)
+                    continue
+                # We want fmla to retain all instances of LHS, so we flip the equality
+                if lhs in keep_symbols:
+                    lhs, rhs = rhs, lhs
+                print("must replace {} with {}... ".format(lhs, rhs), end='\n', flush=True)
+                num_replacements += 1
+                _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == lhs, lambda x: rhs)
+            except:
+                break
+
+        print("reduced {} constants!".format(num_replacements))
         return _sfmla
 
     def pyv_globals_under_new(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
@@ -465,14 +538,9 @@ class Translation:
 
         # Remove intermediary variables
         if opt_unfold_macros.get():
+            print("unfolding macros... ", end='', flush=True)
             supd = Translation.reduce_skolem_macros(upd)
-            # Check that upd and supd are equivalent, via SMT
-            orig_z3 = ivy_solver.formula_to_z3(upd)
-            simp_z3 = ivy_solver.formula_to_z3(supd)
-            s = z3.Solver()
-            s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
-            res = s.check()
-            assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+            check_simpl_equiv(upd, supd)
             upd = supd
 
         # Simplify via SMT
@@ -519,14 +587,17 @@ class Translation:
 
         # Remove intermediary variables
         if opt_unfold_macros.get():
+            print("unfolding macros... ", end='', flush=True)
+            # import pdb; pdb.set_trace()
+            keep_symbols = set(action.formal_params) | set(action.formal_returns) \
+                | set(im.module.sig.symbols.values()) \
+                | set(map(itr.new, im.module.sig.symbols.values()))
+            # sfmla = Translation.reduce_constants(fmla, keep_symbols)
+            # check_simpl_equiv(fmla, sfmla)
+
+            # sfmla = Translation.reduce_skolem_macros(sfmla)
             sfmla = Translation.reduce_skolem_macros(fmla)
-            # Check that upd and supd are equivalent, via SMT
-            orig_z3 = ivy_solver.formula_to_z3(fmla)
-            simp_z3 = ivy_solver.formula_to_z3(sfmla)
-            s = z3.Solver()
-            s.add(z3.Not(z3.Implies(orig_z3, simp_z3)))
-            res = s.check()
-            assert res == z3.unsat, "Solver returned {} | upd and supd are not equivalent: {}\n not equivalent to\n{}".format(res, orig_z3, simp_z3)
+            check_simpl_equiv(fmla, sfmla)
             fmla = sfmla
 
         # Make sure round-tripping through SMT works        
@@ -610,11 +681,14 @@ class Translation:
 
     def simplify_via_smt(fmla: z3.BoolRef, syms: dict[str, Any]) -> z3.BoolRef:
         '''Simplify an SMT formula.'''
+        # TODO: check the options https://microsoft.github.io/z3guide/docs/strategies/summary/#tactic-ctx-solver-simplify
         if opt_simplify.get():
             # This can be very expensive, so it is off by default.
-            fmla = z3.Tactic('ctx-solver-simplify').apply(fmla).as_expr()
+            print("simplifying via SMT... ", end='', flush=True)
+            simpl = lambda goal: z3.Tactic('ctx-solver-simplify').apply(goal)
         else:
-            fmla = z3.Tactic('ctx-simplify').apply(fmla).as_expr()
+            simpl = lambda goal: z3.Tactic('ctx-simplify').apply(goal, propagate_eq=True)
+        fmla = simpl(fmla).as_expr()
         fmla = z3.Tactic('propagate-values').apply(fmla).as_expr()
         return fmla
 
@@ -770,9 +844,9 @@ class MypyvyProgram:
     def add_public_actions(self, mod: im.Module):
         '''Add public actions to the mypyvy program.'''
         public_actions = filter(lambda x: x[0] in mod.public_actions, mod.actions.items())
-        mutable_symbols = self.mutable_symbols()
+        pyv_mutable_symbols = self.mutable_symbols()
         for (name, action) in public_actions:
-            (decl, sec_ord_exs) = Translation.translate_action(mutable_symbols, name, action)
+            (decl, sec_ord_exs) = Translation.translate_action(pyv_mutable_symbols, name, action)
             self.second_order_existentials |= sec_ord_exs
             self.actions.append(decl)
 
