@@ -459,7 +459,7 @@ class Translation:
         if isinstance(fmla, lg.And):
             if len(fmla.terms) == 0:
                 return s
-            return s | set.union(*[Translation.filter_subterms(x, pred) for x in fmla.terms])
+            return s | set.union(*[Translation.filter_positive_conjucts(x, pred) for x in fmla.terms])
         return s
 
     def is_evident_tautology(f) -> bool:
@@ -594,8 +594,12 @@ class Translation:
         # Remove intermediary variables
         if opt_unfold_macros.get():
             print("unfolding macros... ", end='', flush=True)
-            # import pdb; pdb.set_trace()
-            keep_symbols = set(action.formal_params) | set(action.formal_returns) \
+            # NOTE: `action.formal_params` do not show up in the formula with
+            # their own names (e.g. `fml:depositor`), but with a `__` prefix
+            # (`__fml:depositor`), i.e. as Skolems. Similarly, `action.formal_returns`
+            # show up as `__new_fml:out`.
+            keep_symbols = set(map(lambda sym: sym.prefix('__'), action.formal_params)) \
+                | set(map(lambda sym: sym.prefix('__new_'), action.formal_returns)) \
                 | set(im.module.sig.symbols.values()) \
                 | set(map(itr.new, im.module.sig.symbols.values()))
             sfmla = Translation.reduce_skolem_macros(fmla, keep_symbols)
