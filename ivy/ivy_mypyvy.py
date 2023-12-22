@@ -388,7 +388,7 @@ class Translation:
         # (using this code path), because we need more filtering to properly
         # identify equalities for constants (e.g., they shouldn't be under negation).
         if len(vs) == 0:
-            return Translation.is_temp_equality(f)
+            return Translation.is_temp_definitional_equality(f)
         
         if il.is_eq(f) or isinstance(f, il.Iff):
             lhs, rhs = f.args
@@ -410,17 +410,39 @@ class Translation:
             '''Returns the macro definition for the given formula.
             This only has work to do for "macros" that are simply equalities,
             e.g. `const_a = integer.zero`. We want certain symbols to never be rewritten.'''
-            if not Translation.is_temp_equality(f):
+            if not Translation.is_temp_definitional_equality(f):
                 return f
             else:
-                # return None
+                # LHS MUST be a constant
                 lhs, rhs = f.args
+                if not(il.is_app(lhs) and len(lhs.args) == 0 and is_temporary_constant(lhs)):
+                    lhs, rhs = rhs, lhs
+
+                assert il.is_app(lhs) and len(lhs.args) == 0 and is_temporary_constant(lhs), "lhs {} should be a temporary constant".format(lhs)
+
+                # Two cases:
+                # LHS (constant) = constant
+                # LHS (constant) = expr
+
+                # If this is a definition where we must keep the LHS,
+                # and we can't flip the equation because the RHS is
+                # a constant that must be kept as well, there's nothing to do.
                 if lhs in keep_symbols and rhs in keep_symbols:
                     return None
-                # We want fmla to retain all instances of LHS, so we flip the equality
-                if lhs in keep_symbols:
+
+                # If LHS must be kept and RHS is a constant
+                # that does not need to be kept, we flip the equality
+                if lhs in keep_symbols and il.is_app(rhs) and len(rhs.args) == 0 and is_temporary_constant(rhs) and rhs not in keep_symbols:
                     lhs, rhs = rhs, lhs
                 assert lhs not in keep_symbols, "lhs {} should not be in keep_symbols: {}".format(lhs, keep_symbols)
+
+                # try:
+                #     iff_ver = lg.Iff(lhs, rhs)
+                # except:
+                #     iff_ver = None
+                # if f != lg.Eq(lhs, rhs) and f != iff_ver:
+                #     print("rewrote {} to {}... ".format(f, lg.Eq(lhs, rhs)), end='\n', flush=True)
+
                 return lg.Eq(lhs, rhs)
 
         _sfmla = fmla
@@ -433,12 +455,12 @@ class Translation:
             macro_defs = [ast.LabeledFormula(ast.Atom(f'_macro_{i}'), macro_fmla) for (i, macro_fmla) in enumerate(macros)]
             try:
                 m = macro_defs.pop()
-                print(m)
+                # print(m)
             except:
                 break
-            print("unfolding macro {}... ".format(m.formula), end='\n', flush=True)
+            # print("unfolding macro {}... ".format(m.formula), end='\n', flush=True)
             new_sfmla = pf.unfold_fmla(_sfmla, [[m]])
-            check_simpl_equiv(_sfmla, new_sfmla)
+            # check_simpl_equiv(_sfmla, new_sfmla)
             _sfmla = new_sfmla
         return _sfmla
 
@@ -446,7 +468,7 @@ class Translation:
         _sfmla = fmla
         tautologies = Translation.filter_positive_conjucts(fmla, Translation.is_evident_tautology)
         for t in tautologies:
-            print("removing tautology {}... ".format(t), end='\n', flush=True)
+            # print("removing tautology {}... ".format(t), end='\n', flush=True)
             _sfmla = Translation.replace_subterms(_sfmla, lambda x: x == t, lambda x: _true)
         return _sfmla
 
@@ -467,15 +489,16 @@ class Translation:
             lhs, rhs = f.args
             return lhs == rhs
 
-    def is_temp_equality(f) -> bool:
-        # FIXME: we DO want to identify equalities like
-        # `__fml_c_r = token_a_balance_pre(__fml_c_addr)`
+    def is_temp_definitional_equality(f) -> bool:
+        '''
+        Is this an equality that has a temporary constant on at least one side?
+        '''
         if il.is_eq(f) or isinstance(f, il.Iff):
             lhs, rhs = f.args
-            if il.is_app(lhs) and il.is_app(rhs) and len(lhs.args) == 0 and len(rhs.args) == 0:
-                is_informative_eq = (is_temporary_constant(lhs) or is_temporary_constant(rhs)) and (lhs != rhs)
-                # print("{} equality: {} = {}".format(is_informative_eq, lhs, rhs), end='\n', flush=True)
-                return is_informative_eq
+            if il.is_app(lhs) and len(lhs.args) == 0 and is_temporary_constant(lhs):
+                return True
+            elif il.is_app(rhs) and len(rhs.args) == 0 and is_temporary_constant(rhs):
+                return True
         return False
 
     def pyv_globals_under_new(globals: set[str], e: pyv.Expr, under_new=False) -> set[str]:
@@ -546,7 +569,7 @@ class Translation:
             print("unfolding macros... ", end='', flush=True)
             keep_symbols = set(im.module.sig.symbols.values())
             supd = Translation.reduce_skolem_macros(upd, keep_symbols)
-            # check_simpl_equiv(upd, supd)
+            check_simpl_equiv(upd, supd)
             upd = supd
 
         # Simplify via SMT
@@ -603,7 +626,7 @@ class Translation:
                 | set(im.module.sig.symbols.values()) \
                 | set(map(itr.new, im.module.sig.symbols.values()))
             sfmla = Translation.reduce_skolem_macros(fmla, keep_symbols)
-            # check_simpl_equiv(fmla, sfmla)
+            check_simpl_equiv(fmla, sfmla)
             fmla = sfmla
 
         # Make sure round-tripping through SMT works        
@@ -690,9 +713,10 @@ class Translation:
         # TODO: check the options https://microsoft.github.io/z3guide/docs/strategies/summary/#tactic-ctx-solver-simplify
         if opt_simplify.get():
             # This can be very expensive, so it is off by default.
-            print("simplifying via SMT... ", end='', flush=True)
+            print("simplifying via expensive SMT call... ", end='', flush=True)
             simpl = lambda goal: z3.Tactic('ctx-solver-simplify').apply(goal)
         else:
+            print("simplifying via cheap SMT call... ", end='', flush=True)
             simpl = lambda goal: z3.Tactic('ctx-simplify').apply(goal, propagate_eq=True)
         fmla = simpl(fmla).as_expr()
         fmla = z3.Tactic('propagate-values').apply(fmla).as_expr()
