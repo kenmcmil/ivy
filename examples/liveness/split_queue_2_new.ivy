@@ -1,0 +1,189 @@
+#lang ivy1.8
+include order
+
+instance lclock : unbounded_sequence
+
+module signal0 = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# This version has a value we can reference in formulas.
+
+module signal1(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+
+module isolate split_queue2(nat) with nat = {
+
+
+    # add a work element to the queue n position `lt` of kind `kind`.
+    action send(lt:nat,kind:bool)
+
+    # receive work elements of kinds kind1 and kind2 respectively
+    action recv1
+    action recv2
+
+    specification {
+        # begun(X) indicates work in cell X has begun (has been sent)
+        var begun(X:nat) : bool
+        # done(X) indicates the work in cell X is done (has been received)
+        var done(X:nat) : bool
+        # queue(X) indicates the kind of work in cell X
+        var queue(X:nat) : bool
+
+        after init {
+            begun(X) := false;
+            done(X) := false;
+        }
+
+        # Signals raised then trying to receive kind1 and kind2 resp.
+        instance trying1 : signal0
+        instance trying2 : signal0
+
+        # When we send, we begin a new work element that must have index
+        # greater that any existing element (but we can leave gaps).
+        before send {
+            require begun(X) -> X < lt;
+            queue(lt) := kind;
+            begun(lt) := true;
+        }
+
+        # When receiving a kind1 element, we find the first work element
+        # that is not done, if any, and if it is of kind kind1, we mark it done.
+        before recv1 {
+            trying1.raise;
+            if some x:nat. ~done(x) & begun(x) minimizing x {
+                if queue(x) {
+                    done(x) := true;
+                }
+            }
+        }
+
+        # When receiving a kind2 element, we find the first work element
+        # that is not done, if any, and if it is of kind kind2, we mark it done.
+        before recv2 {
+            trying2.raise;
+            if some x:nat. ~done(x) & begun(x) minimizing x {
+                if ~queue(x) {
+                    done(x) := true;
+                }
+            }
+        }
+
+    }
+
+    implementation {
+        # prophecy variable telling us the next element to mark as done.
+        var firstq : nat 
+
+        after init {
+            firstq := 0;
+        }
+        
+        implement send {
+            if some y:nat. ~done(y) & begun(y) minimizing y {
+                firstq := y;
+            }
+        }
+        implement recv1 {
+            if some y:nat. ~done(y) & begun(y) minimizing y {
+                firstq := y;
+            }
+        }
+        implement recv2 {
+            if some y:nat. ~done(y) & begun(y) minimizing y {
+                firstq := y;
+            }
+        }
+
+        invariant (begun(firstq) & ~done(firstq)) -> forall X. (X<firstq -> ~begun(X) | done(X))
+        invariant forall X. (begun(X) & ~done(X)) -> (begun(firstq) & ~done(firstq)) 
+    }
+
+
+    # Here are some useful invariants. These invariants
+    # help the model checker, since it absracts away information about all but
+    # a finite set of queue indices.
+    #
+    # Also, we state the obvious (that there are no nats less than 0)
+    # to help the model checker, without adding 0 to the list of
+    # skolem symbols in the model checker. These invariants are proved
+    # by Z3, not by the model checker. 
+
+    # invariant lastq < X & begun(X) -> false
+    # invariant begun(X) -> begun(lastq)
+    invariant begun(X) & done(X) & Y < X & begun(Y) -> done(Y)
+    invariant done(X) -> begun(X)
+    invariant ~(X:nat < 0)
+    
+    # Now we can prove liveness with the model checker. We concretize the
+    # following individuals:
+    #
+    # - X is the cell of the element to be completed
+    # - Y is the predecessor of this cell
+    #
+    # The idea of the proof is this: we know by induction on time
+    # that the predecessor cell Y is eventually done (since it was
+    # begun first). Since there are no begun cells between Y and X
+    # (an invariant stated above) we know the next cell to be
+    # processed is X.
+    #
+    # The tactic `mc` performs some significant transformations on the
+    # formula to be proved. In particular, it applies temporal
+    # induction, capturing the values of X,Y at the *first* time at
+    # which the globally property is false. In effect, this is
+    # assuming that Y is eventually done, since it is begun before X.
+    # Note, we could have done the proof by induction on X (using the least
+    # element principle of ltime) but doing it by induction in time is simpler with
+    # the model checker.
+    
+
+    explicit temporal property [lemma1]
+    (globally eventually trying1.now) &
+    (globally eventually trying2.now) ->
+    forall X. (globally begun(X) -> eventually done(X))
+    proof {
+        tactic skolemizenp
+        tactic l2s_auto5 with {
+            definition work_created[0](X) = begun(X)
+            definition work_created[1](X) = begun(X)
+            definition work_needed[0](X) = X <= _X & (begun(X) & ~done(X))
+            definition work_needed[1](X) = X <= _X & (begun(X) & ~done(X))
+            definition work_invar[0] = begun(_X) & ~done(_X)
+            definition work_invar[1] = begun(_X) & ~done(_X)
+            definition work_progress[0] = trying1.now
+            definition work_progress[1] = trying2.now 
+            definition work_helpful[0] = queue(firstq)
+            definition work_helpful[1] = ~queue(firstq) 
+        }
+    }
+} 
+
+instance m : split_queue2(lclock)
+
+export m.send
+export m.recv1 
+export m.recv2 
