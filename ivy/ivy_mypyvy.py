@@ -21,7 +21,7 @@ from ivy.z3 import z3
 logfile = None
 verbose = False
 
-opt_unfold_macros = iu.BooleanParameter("unfold_macros",True)
+opt_unfold_macros = iu.BooleanParameter("unfold_macros",False)
 opt_simplify = iu.BooleanParameter("simplify",False)
 
 # Ivy symbols have dots in them (due to the module system)
@@ -453,15 +453,19 @@ class Translation:
                     return None
 
         _sfmla = fmla
+        # TODO: improve this loop to not traverse the formula so many times
+        # We would need an in-place replacement of the macro definition to remove it
+        # from the formula without having to traverse the whole thing again.
         while True:
             _sfmla = Translation.remove_evident_tautologies(_sfmla)
             # Call unfold one by one; otherwise it seems there's some kind
             # of assertion failure; it seems the code wasn't tested for
             # multiple simoultaneous unfoldings.
-            macros = [get_macro(x) for x in Translation.filter_positive_conjucts(_sfmla, Translation.is_skolem_macro) if get_macro(x) is not None]
-            macro_defs = [ast.LabeledFormula(ast.Atom(f'_macro_{i}'), macro_fmla) for (i, macro_fmla) in enumerate(macros)]
+            pos_conjuncts = Translation.filter_positive_conjucts(_sfmla, Translation.is_skolem_macro)
+            macros = filter(lambda m: m is not None, map(get_macro, pos_conjuncts))
+            macro_defs = map(lambda macro_fmla: ast.LabeledFormula(ast.Atom(f'_macro_'), macro_fmla), macros)
             try:
-                m = macro_defs.pop()
+                m = next(macro_defs)
                 # print(m)
             except:
                 break
@@ -480,16 +484,11 @@ class Translation:
         return _sfmla
 
     def filter_positive_conjucts(fmla, pred):
-        # FIXME: make this into a generator, since we only
-        # take the first element anyway
-        s = set()
         if pred(fmla):
-            s.add(fmla)
+            yield fmla
         if isinstance(fmla, lg.And):
-            if len(fmla.terms) == 0:
-                return s
-            return s | set.union(*[Translation.filter_positive_conjucts(x, pred) for x in fmla.terms])
-        return s
+            for t in fmla.terms:
+              yield from Translation.filter_positive_conjucts(t, pred)
 
     def is_evident_tautology(f) -> bool:
         if il.is_eq(f) or isinstance(f, il.Iff):
@@ -941,11 +940,16 @@ def check_isolate():
     # mod.initializers -> after init
     # mod.public_actions
     # mod.actions
-    print("If you pass simplify=true, the translation performs simplification via SMT. It might take on the order of minutes!")
+    print("If you pass unfold_macros=true, the translation removes intermediary variables, which generates easier-to-read mypyvy specifications and may improve solver times.")
+    print("If you pass simplify=true, the translation performs expensive simplification via SMT. It might take on the order of hours!")
     if opt_unfold_macros.get():
         print("Will remove intermediary relations in initializer and transition definitions.")
     else:
         print("Will NOT remove intermediary relations in initializer and transition definitions.")
+    if opt_simplify.get():
+        print("Will simplify transitions via expensive SMT call.")
+    else:
+        print("Will simplify transitions via cheap SMT call.")
 
     prog.add_initializers(mod)
     prog.add_public_actions(mod)
