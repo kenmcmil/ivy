@@ -434,7 +434,11 @@ class Translation:
                 # that does not need to be kept, we flip the equality
                 if lhs in keep_symbols and il.is_app(rhs) and len(rhs.args) == 0 and is_temporary_constant(rhs) and rhs not in keep_symbols:
                     lhs, rhs = rhs, lhs
-                assert lhs not in keep_symbols, "lhs {} should not be in keep_symbols: {}".format(lhs, keep_symbols)
+
+                # The assertion below doesn't hold because we can have something of
+                # the form __fml_owner = owner(key), where __fml_owner is in keep_symbols.
+                # TODO: do we want to rewrite using such equalities?
+                # assert lhs not in keep_symbols, "lhs {} should not be in keep_symbols: {}".format(lhs, keep_symbols)
 
                 # try:
                 #     iff_ver = lg.Iff(lhs, rhs)
@@ -443,7 +447,10 @@ class Translation:
                 # if f != lg.Eq(lhs, rhs) and f != iff_ver:
                 #     print("rewrote {} to {}... ".format(f, lg.Eq(lhs, rhs)), end='\n', flush=True)
 
-                return lg.Eq(lhs, rhs)
+                if lhs not in keep_symbols:
+                    return lg.Eq(lhs, rhs)
+                else:
+                    return None
 
         _sfmla = fmla
         while True:
