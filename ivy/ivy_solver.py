@@ -588,7 +588,10 @@ def formula_to_z3_int(fmla):
     #         return formula_to_z3_int(fmla.args[0])
     #     if ivy_logic.is_false(fmla.args[1]):
     #         return z3.Not(formula_to_z3_int(fmla.args[0]))
-    if ivy_logic.is_atom(fmla):
+    if ivy_logic.is_atom(fmla) and not ivy_logic.is_eq(fmla):
+        # Atoms include equalities; this code path can correctly
+        # handle equalities, but we would rather handle them
+        # in the branch a bit below.
         return atom_to_z3(fmla)
     if isinstance(fmla,ivy_logic.Definition) and ivy_logic.is_enumerated(fmla.args[0]) and not use_z3_enums:
         return encode_equality(*fmla.args)
@@ -603,7 +606,7 @@ def formula_to_z3_int(fmla):
         return z3.Or(args)
     if isinstance(fmla,ivy_logic.Not):
         return z3.Not(args[0])
-    if isinstance(fmla,ivy_logic.Definition or ivy_logic.is_eq(fmla)):
+    if isinstance(fmla,ivy_logic.Definition) or ivy_logic.is_eq(fmla):
         # if ivy_logic.is_true(fmla.args[1]):
         #     return args[0]
         # if ivy_logic.is_false(fmla.args[1]):
