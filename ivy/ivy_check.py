@@ -29,6 +29,7 @@ from . import ivy_mc
 from . import ivy_vmt
 from . import ivy_bmc
 from . import ivy_tactics
+from . import ivy_mypyvy
 
 import sys
 from collections import defaultdict
@@ -858,6 +859,8 @@ def check_module():
             if opt_trusted.get():
                 continue
             method_name = get_isolate_method(isolate)
+            if method_name == 'convert_to_mypyvy':
+                ivy_mypyvy.check_isolate()
             if method_name == 'mc':
                 mc_isolate(isolate)
             elif method_name == 'vmt':
