@@ -864,6 +864,10 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         for vs, t in to_wait
     ]
 
+    print ('reset_w:')
+    for x in reset_w:
+        print (x)
+        
     fair_cycle = [l2s_saved]
     fair_cycle += done_waiting
     # projection of relations
@@ -1469,7 +1473,7 @@ def auto_hook(tasks,triggers,subs,tr,fcs):
         if None not in vals:
             pred = (work_needed.args[0].rep)(*vals)
             print ('Note: work_invar{} is true and {} changes from false to true.\n'.format(sfx,pred))
-        tr.hidden_symbols = temporal_and_l2s
+        # tr.hidden_symbols = temporal_and_l2s
 
     elif name.startswith('l2s_sched_stable'):
         sfx = name[len('l2s_sched_stable'):]

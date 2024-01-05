@@ -31,9 +31,9 @@ include order
 
 instance lclock : unbounded_sequence
 
-type proc
-type mem_type
-type addr_type
+finite type proc
+finite type mem_type
+finite type addr_type
 
 # Need to record write->wr_cmp and read->rrsp termination time, i.e. when
 # write data becomes visible, and when read data is read at target/destination
@@ -425,55 +425,55 @@ module arm_mod = {
 
 	ordser := ordser0 | ordser1 | ordser2 | ordser3 | ordser4 | ordser5 | ordser6 | ordser7 | ordser8 | ordser9 | ordser10 | ordser11 | ordser12 | ordser13 | ordser14 | ordser15 | ordser16;
 
-	if ph=wr_ph & wr & ~ordser {
-	    ref.lt := ref.lt.next;
+	# if ph=wr_ph & wr & ~ordser {
+	#     ref.lt := ref.lt.next;
 	    
-            issue_hook(p,ref.lt);
-	    isd.wr(p,m,a,ref.lt) := true;
+        #     issue_hook(p,ref.lt);
+	#     isd.wr(p,m,a,ref.lt) := true;
 	    
-  	    if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
-		#		cfabric.t_rd_min := tt;
-	    } else {
-		cfabric.t_rd_min := ref.lt.next;
-	    }
+  	#     if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
+	# 	#		cfabric.t_rd_min := tt;
+	#     } else {
+	# 	cfabric.t_rd_min := ref.lt.next;
+	#     }
 
-	    if mem_loc=mem_memc {
-		call ref.create(p,write,op_ack,m,a,mem_loc,cf_mem_l);
-	    } else {
-		call ref.create(p,write,op_ack,m,a,mem_loc,cf_pio_l);
-	    };
-	} else if ph=rd_ph & rd & ~ordser {
-	    ref.lt := ref.lt.next;
+	#     if mem_loc=mem_memc {
+	# 	call ref.create(p,write,op_ack,m,a,mem_loc,cf_mem_l);
+	#     } else {
+	# 	call ref.create(p,write,op_ack,m,a,mem_loc,cf_pio_l);
+	#     };
+	# } else if ph=rd_ph & rd & ~ordser {
+	#     ref.lt := ref.lt.next;
 	    
-            issue_hook(p,ref.lt);
-	    isd.rd(p,m,a,ref.lt)  := true;
-	    isd.rsp(p,m,a,ref.lt) := false;
+        #     issue_hook(p,ref.lt);
+	#     isd.rd(p,m,a,ref.lt)  := true;
+	#     isd.rsp(p,m,a,ref.lt) := false;
 	    
-	    if mem_loc=mem_memc {
-	        ref.lt_tar_cf := ref.lt_tar_cf.next;
+	#     if mem_loc=mem_memc {
+	#         ref.lt_tar_cf := ref.lt_tar_cf.next;
 		
-  		if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l {
-		    # cfabric.t_rd_min unchanged
-		} else {
-		    cfabric.t_rd_min     := ref.lt;		
-		    cfabric.t_rd_arr_min := ref.lt_tar_cf;		
-		};
+  	# 	if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l {
+	# 	    # cfabric.t_rd_min unchanged
+	# 	} else {
+	# 	    cfabric.t_rd_min     := ref.lt;		
+	# 	    cfabric.t_rd_arr_min := ref.lt_tar_cf;		
+	# 	};
 		
 		
-		call ref.create(p,read,op_ack,m,a,mem_loc,cf_mem_l);
+	# 	call ref.create(p,read,op_ack,m,a,mem_loc,cf_mem_l);
 		
-                ref.evs(ref.lt).lt_arr_cf  := ref.lt_tar_cf;
+        #         ref.evs(ref.lt).lt_arr_cf  := ref.lt_tar_cf;
 		
-	    } else {
-  		if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
-		    #		cfabric.t_rd_min := tt;
-		} else {
-		    cfabric.t_rd_min := ref.lt.next;
-		};
+	#     } else {
+  	# 	if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
+	# 	    #		cfabric.t_rd_min := tt;
+	# 	} else {
+	# 	    cfabric.t_rd_min := ref.lt.next;
+	# 	};
 		
-		call ref.create(p,read,op_ack,m,a,mem_loc,cf_pio_l);
-	    }
-	}	
+	# 	call ref.create(p,read,op_ack,m,a,mem_loc,cf_pio_l);
+	#     }
+	# }	
     }
 
 # receive read and write response and check ordering
@@ -1664,19 +1664,41 @@ isolate sys_live = {
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
     & ref.evs(T).l_cmp = cf_cmp_l
 
+    function memc_cpl(T) =
+#    ref.evs(T).mem_loc=mem_memc &
+    (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp) &
+    ref.evs(T).l_cmp = memc_l
+
+    function is_io(T) = ref.evs(T).mem_loc=pio_memc
+
+    explicit temporal axiom [lemma4] 
+    forall T.
+    globally pending(T) -> eventually completed(T)
+
     explicit temporal axiom [lemma3a]
-    globally pending(T) -> eventually cf_cpl(T)
+    globally pending(T) & ~is_io(T) -> eventually memc_cpl(T)
+
+    explicit temporal axiom [lemma3b]
+    globally pending(T) & is_io(T) -> eventually cf_cpl(T)
+
+    explicit temporal axiom [memc_cpl_fair] 
+       forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)
 
     explicit temporal axiom [cf_cpl_fair]
     globally eventually cfabric.cpl_fair
     
-    explicit temporal axiom [lemma4] 
-    forall T.
-    globally pending(T) -> eventually completed(T)
-    
     explicit temporal axiom [cpl_fair] 
       forall P. globally eventually arm.cpl_fair(P)
     
+    # var p : proc
+    # axiom P:proc = p 
+
+    # var m : mem_type
+    # axiom M:mem_type = m
+    
+    # var a : addr_type
+    # axiom A:addr_type = a
+
     explicit temporal property [live]
     forall P,T. 
         globally ref.evs(T).p=P & pending(T) -> eventually ~pending(T)
@@ -1685,26 +1707,40 @@ isolate sys_live = {
         tactic skolemizenp
         instantiate cpl_fair with P=_P
         instantiate lemma3a
+        instantiate lemma3b
         instantiate cf_cpl_fair
+        instantiate memc_cpl_fair
         tactic l2s_auto5 with {
             
-            definition work_created[0](T) = pending(T)
-            definition work_needed[0](T) = T <= _T & pending(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_created[0](T) = T <= ref.lt
+            definition work_needed[0](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
             definition work_invar[0] = pending(_T) & ref.evs(_T).p=_P 
-            definition work_progress[0](T) = cf_cpl(T)
-            definition work_helpful[0](T) = T <= _T & pending(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_progress[0](T) = memc_cpl(T)
+            definition work_helpful[0](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
 
             definition work_created[1](T) = pending(T)
-            definition work_needed[1](T) = T <= _T & pending(T) & ~completed(T)
+            definition work_needed[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
             definition work_invar[1] = pending(_T) & ref.evs(_T).p=_P 
-            definition work_progress[1] = cfabric.cpl_fair
-            definition work_helpful[1] = exists T. T <= _T & cf_cpl(T)
+            definition work_progress[1](T) = cf_cpl(T)
+            definition work_helpful[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
 
-            definition work_created[2](T) = pending(T)
-            definition work_needed[2](T) = T <= _T & pending(T) & ref.evs(T).p=_P
-            definition work_invar[2] = pending(_T) & ref.evs(_T).p=_P
-            definition work_progress[2] = arm.cpl_fair(_P)
-            definition work_helpful[2] =
+            definition work_created[7](T) = pending(T)
+            definition work_needed[7](T) = T <= _T & pending(T) & ~is_io(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_invar[7] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[7](P,M,A,T) = memc.cpl_fair(P,M,A,T)
+            definition work_helpful[7](P,M,A,T) = T <= _T & memc_cpl(T) & ~is_io(T) & P=ref.evs(T).p & M=ref.evs(T).m & A=ref.evs(T).a
+
+            definition work_created[8](T) = pending(T)
+            definition work_needed[8](T) = T <= _T & pending(T) & ~completed(T)
+            definition work_invar[8] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[8] = cfabric.cpl_fair
+            definition work_helpful[8] = exists T. T <= _T & cf_cpl(T)
+
+            definition work_created[9](T) = pending(T)
+            definition work_needed[9](T) = T <= _T & pending(T) & ref.evs(T).p=_P
+            definition work_invar[9] = pending(_T) & ref.evs(_T).p=_P
+            definition work_progress[9] = arm.cpl_fair(_P)
+            definition work_helpful[9] =
               forall T. ~( T <= _T
                          & ref.evs(T).p=_P
                          & pending(T)
@@ -1712,7 +1748,11 @@ isolate sys_live = {
 
             invariant ~arm.cpl_fair(P)
             invariant ~cfabric.cpl_fair
-            
+            invariant ~memc.cpl_fair(P,M,A,T)
+
+            invariant ~l2s_waiting -> pending(_T) & ref.evs(_T).p=_P
+            invariant ~l2s_waiting & T <= _T -> l2s_a(T)
+            invariant l2s_saved -> _T <= ref.lt
         }
     }
     
