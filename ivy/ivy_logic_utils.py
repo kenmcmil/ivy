@@ -349,7 +349,9 @@ def expand_named_binders_ast(ast,fun):
     result of fun.
     """
     if is_named_binder(ast):
-        return expand_named_binders_ast(fun(ast),fun)
+        res = fun(ast)
+        if res is not None:
+            return expand_named_binders_ast(res,fun)
     args = [expand_named_binders_ast(x, fun) for x in ast.args]
     return ast.clone(args)
 

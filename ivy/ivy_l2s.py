@@ -142,22 +142,26 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
     # operators. Here, we compile the invariants in the tactic, using the given
     # label.
 
+    # compiled definitions into goal
+
+    for defn in tactic_defns:
+        goal = ipr.compile_definition_goal_vocab(defn,goal) 
+
     # compile definition dependcies
 
     defn_deps = defaultdict(list)
 
-    for defn in list(prover.definitions.values()) + [x.args[0] for x in tactic_defns]:
+    prem_defns = [prem for prem in ipr.goal_prems(goal)
+                  if not isinstance(prem,ivy_ast.ConstantDecl)
+                  and hasattr(prem,"definition") and prem.definition]
+
+    for defn in list(prover.definitions.values()) + prem_defns:
         fml = ilg.drop_universals(defn.formula)
         for sym in iu.unique(ilu.symbols_ast(fml.args[1])):
             defn_deps[sym].append(fml.args[0].rep)
             
     def dependencies(syms):
         return iu.reachable(syms,lambda x: defn_deps.get(x) or [])
-
-    # compiled definitions into goal
-
-    for defn in tactic_defns:
-        goal = ipr.compile_definition_goal_vocab(defn,goal) 
 
 #    assert hasattr(proof,'labels') and len(proof.labels) == 1
 #    proof_label = proof.labels[0]
@@ -1316,7 +1320,7 @@ def ls2_g_to_globally(ast):
     def g2g(ast):
         if isinstance(ast,lg.NamedBinder) and ast.name == 'l2s_g':
             return lg.Globally(ast.environ,ast.body)
-        return ast
+        return None
     res = ilu.expand_named_binders_ast(ast,g2g)
     return ilu.denormalize_temporal(res)
 
