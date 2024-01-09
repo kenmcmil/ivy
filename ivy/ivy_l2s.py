@@ -450,6 +450,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 was_done = get_was_done(work_needed)
                 is_done = get_is_done(work_needed)
             tmp = lg.Implies(lg.And(l2s_saved,was_done),is_done)
+            if tactic_name in ["l2s_auto5"]:
+                tmp = lg.Implies(eventually_start(),tmp)
             invars.append(ivy_ast.LabeledFormula(ivy_ast.Atom("l2s_work_preserved"+sfx),tmp).sln(proof.lineno))
 
             def next_task_has_trigger():
