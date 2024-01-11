@@ -254,7 +254,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         #         depends_subst[lhs] = rhs
         #         print ('foo: {} = {}'.format(lhs,rhs))
                 
-        waiting_for_start = lg.Or(*[l2s_w((),triggers[sfx]['work_start'].args[1]) for sfx in triggers])
+        # waiting_for_start = lg.Or(*[l2s_w((),triggers[sfx]['work_start'].args[1]) for sfx in triggers])
         not_all_done_preds = []
         not_all_was_done_preds = []
         sched_exists_preds = []
@@ -322,7 +322,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 raise iu.IvyError(proof,"work_created"+sfx+" and work_done"+sfx+" must have same signature")
             if work_helpful is not None and work_helpful.args[0].rep.sort != work_progress.args[0].rep.sort:
                 raise iu.IvyError(proof,"work_helpful"+sfx+" and work_progress"+sfx+" must have same signature")
-            if work_invar is not None and work_invar.args[0].args:
+            if work_invar is not None and work_invar.args[0].args and tactic_name not in ["l2s_auto6"]:
                 raise iu.IvyError(proof,"work_invar"+sfx+" may not have arguments")
 
 
@@ -395,16 +395,20 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 trigf = work_start
                 evf = lg.Eventually(proof_label,trigf.args[1])
                 vs = trigf.args[0].args
+                # TODO: this should not be quantified here
+                # TODO: free variables should match prefix of work_needed
                 return forall(vs,l2s_init(vs,evf)(*vs))
                 
             def eventually_start():
                 return eventually_start_task(work_start)
 
             not_waiting_for_start = lg.And()
+            start_args = work_start.args[0].args if work_start is not None else []
             if work_start is not None:
+                # TODO: this can have free variables. Make sure they match work_needed. Also, make sure work_done and work_needed args match for auto6.
                 not_waiting_for_start = lg.And(eventually_start(),
                                                lg.Or(lg.Not(l2s_waiting),
-                                                     lg.Not(l2s_w((),work_start.args[1]))))
+                                                     lg.Not(l2s_w(start_args,work_start.args[1])(*start_args))))
             # tmp = lg.Implies(lg.And(l2s_waiting,lg.Not(waiting_for_start)),all_d(work_needed))
             if tactic_name not in ["l2s_auto5","l2s_auto6"]:
                 tmp = lg.Implies(not_waiting_for_start,all_created(work_needed))
@@ -423,6 +427,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             # invariant l2s_needed_are_frozen
 
             if tactic_name not in ["l2s_auto4","l2s_auto5","l2s_auto6"]:
+                # TODO: close this universally
                 tmp = lg.Implies(lg.And(eventually_start(),lg.Not(l2s_waiting)),all_a(work_needed))
                 invars.append(ivy_ast.LabeledFormula(ivy_ast.Atom("l2s_needed_are_frozen"+sfx),tmp).sln(proof.lineno))
             else:
@@ -483,9 +488,19 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
             if work_start is not None:
                 not_all_was_done_preds = []
+            invar_args = work_invar.args[0].args if work_invar is not None else []
+            helpful_args = work_helpful.args[0].args if work_helpful is not None else []
             progress_args = work_progress.args[0].args
             if tactic_name not in ["l2s_auto5","l2s_auto6"] and tuple(progress_args) != tuple(done_args[:len(progress_args)]):
                 raise iu.IvyError(proof,"work_progess parameters must be a prefix of work_done parameters")
+            if tactic_name in ["l2s_auto6"] and tuple(start_args) != tuple(done_args[:len(start_args)]):
+                raise iu.IvyError(proof,"work_progess parameters must be a prefix of work_needed parameters")
+            if tactic_name in ["l2s_auto6"] and work_invar is not None  and tuple(start_args) != tuple(invar_args[:len(start_args)]):
+                raise iu.IvyError(proof,"work_progess parameters must be a prefix of work_needed parameters")
+            if tactic_name in ["l2s_auto6"] and work_helpful is not None  and tuple(start_args) != tuple(helpful_args[:len(start_args)]):
+                raise iu.IvyError(proof,"work_progess parameters must be a prefix of work_helpful parameters")
+            if tactic_name in ["l2s_auto5"] and start_args:
+                raise iu.IvyError(proof,"work_start may not have parameters")
             waiting_for_progress = l2s_w(progress_args,work_progress.args[1])
             if tactic_name != "l2s_auto3":
                 if tactic_name in ["l2s_auto5","l2s_auto6"]:
@@ -496,11 +511,11 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                             nad = lg.And(next_task_not_triggered(),nad)
                     tmp = lg.Implies(
                         lg.And(l2s_saved,eventually_start(),
-                               exists(progress_args,nad),
+                               exists(progress_args[len(start_args):],nad),
                                not_all_was_done(work_needed),
-                               forall(progress_args,
+                               forall(progress_args[len(start_args):],
                                       lg.Implies(nad,lg.Not(waiting_for_progress(*progress_args))))),
-                        exists(done_args,lg.And(lg.Not(was_done),is_done)))
+                        exists(done_args[len(start_args):],lg.And(lg.Not(was_done),is_done)))
                 elif progress_args or len(tasks) > 1:
                     nad = lg.And(not_all_was_done(work_needed,len(progress_args)),lg.Not(lg.Or(*not_all_was_done_preds)))
                     if next_task_has_trigger():
@@ -561,7 +576,10 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 
                 # keep track of schedulers
                 
-                tmp = exists(progress_args,was_nad)
+                if tactic_name in ["l2s_auto6"]:
+                    tmp = exists(progress_args,lg.And(eventually_start(),was_nad))
+                else:                    
+                    tmp = exists(progress_args,was_nad)
                 sched_exists_preds.append(tmp)
 
         tmp = lg.Or(*not_all_done_preds)
@@ -570,7 +588,11 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         invars.append(ivy_ast.LabeledFormula(ivy_ast.Atom("l2s_not_all_done"),tmp).sln(proof.lineno))
 
         if tactic_name in ["l2s_auto5","l2s_auto6"]:
-            tmp = lg.Implies(lg.And(l2s_saved,eventually_start()),lg.Or(*sched_exists_preds))
+            if tactic_name in ["l2s_auto6"]:
+                tmp = lg.Implies(l2s_saved,lg.Or(*sched_exists_preds))
+            else:
+                # TODO: should eventually_start be here? 
+                tmp = lg.Implies(lg.And(l2s_saved,eventually_start()),lg.Or(*sched_exists_preds))
             invars.append(ivy_ast.LabeledFormula(ivy_ast.Atom("l2s_sched_exists"),tmp).sln(proof.lineno))
 
         def init_globally(prop,res,pos=True):
