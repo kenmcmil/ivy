@@ -42,6 +42,7 @@ class Module(object):
         self.concept_spaces = []
         self.abstraction_predicates = []
         self.labeled_conjs = []  # conjectures
+        self.postconds = defaultdict(list) # action name -> list of LabeledFormula
         self.hierarchy = defaultdict(set)
         self.actions = {}
         self.predicates = {}
