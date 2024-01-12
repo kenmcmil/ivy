@@ -186,7 +186,11 @@ class NormalProgram(ia.AST):
         return dict((x.name,new_action_to_old(x.action)) for x in self.bindings)
     @property
     def fmlas(self):
-        return self.bindings + [self.init] + self.invars + self.asms
+        res = self.bindings + [self.init] + self.invars + self.asms
+        if hasattr(self,'postconds'):
+            for x in self.postconds.values():
+                res.extend(x)
+        return res
     def __str__(self):
         res = ['\nlet\n']
         for b in self.bindings:

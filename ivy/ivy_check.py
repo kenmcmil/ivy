@@ -25,6 +25,7 @@ from . import ivy_trace
 from . import ivy_temporal as itmp
 from . import ivy_printer
 from . import ivy_l2s
+from . import ivy_ranking
 from . import ivy_mc
 from . import ivy_vmt
 from . import ivy_bmc
@@ -408,9 +409,20 @@ def check_fcs_in_state(mod,ag,post,fcs):
             show_counterexample(ag,post,res)
     return not any(fc.failed for fc in fcs)
 
-def check_conjs_in_state(mod,ag,post,indent=8):
+def convert_postconds(state,postconds):
+    updated,postcond,pre = state.update
+    renaming = dict((s,itr.old_of(s))
+                    for s in lut.used_symbols_asts(x.formula for x in postconds)
+                    if itr.is_old(s))
+    for s in updated:
+        renaming[itr.old(s)] = s.prefix('__')
+    return [x.clone([x.args[0],lut.rename_ast(x.formula,renaming)])
+            for x in postconds]
+
+def check_conjs_in_state(mod,ag,post,indent=8,pcs=[]):
     conjs = mod.conj_subgoals if mod.conj_subgoals is not None else mod.labeled_conjs
     conjs = [x for x in conjs if is_check_mod_unprovable(x)]
+    conjs += convert_postconds(post,pcs)
     check_lineno = act.checked_assert.get()
     if check_lineno == "":
         check_lineno = None
@@ -621,7 +633,7 @@ def check_isolate(trace_hook = None):
                     with itp.EvalContext(check=False): # don't check safety
     #                    post = ag.execute(action, pre, None, actname)
                         post = ag.execute(action, pre)
-                    check_conjs_in_state(mod,ag,post,indent=12)
+                    check_conjs_in_state(mod,ag,post,indent=12,pcs=mod.postconds.get(actname,[]))
                 else:
                     print('')
 
@@ -723,6 +735,7 @@ def check_subgoals(goals,method=None):
             mod.labeled_props = []
             mod.concept_spaces = []
             mod.labeled_conjs = model.invars
+            mod.postconds = model.postconds if hasattr(model,'postconds') else {}
             mod.public_actions = set(model.calls)
             mod.actions = model.binding_map
             mod.initializers = [('init',model.init)]
