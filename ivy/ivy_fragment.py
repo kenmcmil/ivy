@@ -569,6 +569,10 @@ def get_assumes_and_asserts(preconds_only):
         if not ldf.explicit:
             assumes.append((ldf.formula,ldf))
 
+    # for action in im.module.postconds:
+    #     for ldf in im.module.postconds[action]:
+    #         asserts.append((ldf.formula,ldf))
+
 
     # TODO: check axioms, inits, conjectures
 

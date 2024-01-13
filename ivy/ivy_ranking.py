@@ -165,6 +165,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         get_aux_defn('work_invar',tasks)
         get_aux_defn('work_helpful',tasks)
         get_aux_defn('work_start',triggers)
+        get_aux_defn('work_witness',tasks)
         
         not_all_done_preds = []
         not_all_was_done_preds = []
@@ -191,6 +192,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         # Helpful: if the trigger implies a globally, then that globally must
         # continue hold during work_invar. We establish this by strengthening
         # work_invar.
+
+        D = 0
 
         def trig_glob(prop,res,pos):
             if pos and isinstance(prop,lg.Globally):
@@ -245,7 +248,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         # generate the l2s invariants
 
         postconds = []
-        invars = []
+        invars
         helps = []
         
         for idx,sfx in enumerate(sorted_tasks):
@@ -253,24 +256,31 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             work_created = task['work_created']
             work_needed = task['work_needed']
             work_progress = task['work_progress']
-            work_invar = task['work_invar'].args[0]
+            work_invar = task['work_invar'].args[D]
             work_helpful = tasks[sfx]['work_helpful']
             work_start = triggers[sfx]['work_start']
             progress_args = work_progress.args[0].args
             needed_args = work_needed.args[0].args
+            helpful_args = work_helpful.args[0].args
+            work_witness = tasks[sfx].get('work_witness',None)
 
             # work_created, work_needed and work_done must have same sort
            
             if work_created.args[0].rep.sort != work_needed.args[0].rep.sort:
                 raise iu.IvyError(proof,"work_created"+sfx+" and work_needed"+sfx+" must have same signature")
-            if work_helpful is not None and work_helpful.args[0].rep.sort != work_progress.args[0].rep.sort:
-                raise iu.IvyError(proof,"work_helpful"+sfx+" and work_progress"+sfx+" must have same signature")
+            if (len(work_helpful.args[0].args) < len(work_progress.args[0].args)
+                or any (x != y for x,y in zip(work_helpful.args[0].args,work_progress.args[0].args))):
+                raise iu.IvyError(proof,"work_helpful"+sfx+" parameters must begin with work_progress"+sfx+" parameters")
+            if any (x != y for x,y in zip(helpful_args[len(progress_args):],needed_args)):
+                raise iu.IvyError(proof,"extra work_helpful"+sfx+" parameters must match work_needed"+sfx+" parameters")
+            if work_witness is not None and tuple(x.sort for x in work_witness.args[0].args) != tuple(x.sort for x in work_progress.args[0].args):
+                raise iu.IvyError(proof,"work_witness"+sfx+" and work_progress"+sfx+" must have same signature")
 
             # says that all elements used in defn are in l2s_d
 
             def all_d(defn):
                 cons = [l2s_d(var.sort)(var) for var in defn.args[0].args if var.sort.name not in finite_sorts]
-                return lg.Implies(defn.args[0],lg.And(*cons))
+                return lg.Implies(defn.args[D],lg.And(*cons))
 
             def all_created(defn):
                 subs = dict(zip(defn.args[0].args,work_created.args[0].args))
@@ -295,8 +305,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                 evf = lg.Eventually(proof_label,work_start.args[1])
 
             # TODO: add eventually_start here
-            invars.append(mklfs("l2s_needed_implies_created",
-                                lg.Implies(lg.And(work_invar,work_needed[0]),work_created[0])))
+            postconds.append(mklfs("l2s_needed_implies_created",
+                                old_of(lg.Implies(lg.And(work_invar,work_needed.args[D]),work_created.args[D]))))
                           
             # postcond invar_established
 
@@ -309,17 +319,22 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
             no_help = old_of(lg.Not(lg.Or(*helps)))
 
-            tmp = lg.Implies(old_of(lg.And(work_invar,lg.Not(work_needed.args[0]))),lg.Not(work_needed.args[0]))
+            tmp = lg.Implies(old_of(lg.And(work_invar,lg.Not(work_needed.args[D]))),lg.Not(work_needed.args[D]))
             # tmp = lg.Implies(eventually_start(),tmp)
             tmp = lg.Implies(no_help,tmp)
             postconds.append(mklfs("l2s_needed_preserved",tmp))
 
-            helps.append(lg.And(work_invar,exists(progress_args,work_helpful.args[0])))
+            helps.append(lg.And(work_invar,exists(helpful_args,work_helpful.args[D])))
 
             # invariant l2s_progress_made
 
             waiting_for_progress = l2s_w(progress_args,work_progress.args[1])(*progress_args)
-            decreased = exists(needed_args,lg.And(old_of(work_needed.args[0]),lg.Not(work_needed.args[0])))
+            wpargs = needed_args[len(helpful_args)-len(progress_args):]
+            if work_witness is None:
+                decreased = exists(wpargs,lg.And(old_of(work_needed.args[D]),lg.Not(work_needed.args[D])))
+            else:
+                subs = {wpargs[0]:work_witness.args[1]}
+                decreased = exists(wpargs[1:],lu.substitute(lg.And(old_of(work_needed.args[D]),lg.Not(work_needed.args[D])),subs))
             # tmp = lg.And(
             #     old_of(work_invar),
             #     exists(progress_args,old_of(work_helpful.args[0])),
@@ -330,7 +345,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             # tmp = lg.Implies(tmp,decreased)
             tmp = lg.And(
                     old_of(work_invar),
-                    old_of(work_helpful.args[0]),
+                    old_of(work_helpful.args[D]),
                     lg.Not(waiting_for_progress))
             tmp = lg.Implies(tmp,decreased)
             postconds.append(mklfs("l2s_progress",tmp))
@@ -345,7 +360,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
             tmp = lg.And(
                 old_of(work_invar),
-                old_of(work_helpful.args[0]))
+                old_of(work_helpful.args[D]))
             tmp = lg.Implies(tmp, lg.Eventually(proof_label,work_progress.args[1]))
             postconds.append(mklfs("l2s_progress_eventually",tmp))
 
@@ -359,19 +374,19 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                          lg.Implies(
                              lg.And(
                                  old_of(work_invar),
-                                 old_of(work_helpful.args[0]),
-                                 waiting_for_progress(*progress_args)),
-                             work_helpful.args[0]))
+                                 old_of(work_helpful.args[D]),
+                                 waiting_for_progress),
+                             work_helpful.args[D]))
             postconds.append(mklfs("l2s_sched_stable",tmp))
                 
         # l2s_sched_exists
 
         if sorted_tasks:
             sfx = sorted_tasks[0]
-            work_invar = tasks[sfx]['work_invar'].args[0]
+            work_invar = tasks[sfx]['work_invar'].args[D]
             work_start = triggers[sfx]['work_start']
-            tmp = lg.Implies(work_invar,lg.Or(*helps))
-            invars.append(mklf("l2s_sched_exists",tmp))
+            tmp = old_of(lg.Implies(work_invar,lg.Or(*helps)))
+            # postconds.append(mklf("l2s_sched_exists",tmp))
 #            invars.append(mklf("l2s_eventually_start",l2s_init([],lg.Eventually(proof_label,work_start.args[1]))()))
             invars.append(mklf("l2s_eventually_start2",lg.Implies(lg.Not(work_invar),lg.Eventually(proof_label,work_start.args[1]))))
 
@@ -599,11 +614,6 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         ).set_lineno(lineno)
         for vs, t in to_wait
     ]
-
-    print ('reset_w:')
-    for x in reset_w:
-        print (x)
-        
 
     # tableau construction (sort of)
 
