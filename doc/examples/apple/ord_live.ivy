@@ -31,9 +31,9 @@ include order
 
 instance lclock : unbounded_sequence
 
-type proc
-type mem_type
-type addr_type
+finite type proc
+finite type mem_type
+finite type addr_type
 
 # Need to record write->wr_cmp and read->rrsp termination time, i.e. when
 # write data becomes visible, and when read data is read at target/destination
@@ -425,55 +425,55 @@ module arm_mod = {
 
 	ordser := ordser0 | ordser1 | ordser2 | ordser3 | ordser4 | ordser5 | ordser6 | ordser7 | ordser8 | ordser9 | ordser10 | ordser11 | ordser12 | ordser13 | ordser14 | ordser15 | ordser16;
 
-	if ph=wr_ph & wr & ~ordser {
-	    ref.lt := ref.lt.next;
+	# if ph=wr_ph & wr & ~ordser {
+	#     ref.lt := ref.lt.next;
 	    
-            issue_hook(p,ref.lt);
-	    isd.wr(p,m,a,ref.lt) := true;
+        #     issue_hook(p,ref.lt);
+	#     isd.wr(p,m,a,ref.lt) := true;
 	    
-  	    if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
-		#		cfabric.t_rd_min := tt;
-	    } else {
-		cfabric.t_rd_min := ref.lt.next;
-	    }
+  	#     if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
+	# 	#		cfabric.t_rd_min := tt;
+	#     } else {
+	# 	cfabric.t_rd_min := ref.lt.next;
+	#     }
 
-	    if mem_loc=mem_memc {
-		call ref.create(p,write,op_ack,m,a,mem_loc,cf_mem_l);
-	    } else {
-		call ref.create(p,write,op_ack,m,a,mem_loc,cf_pio_l);
-	    };
-	} else if ph=rd_ph & rd & ~ordser {
-	    ref.lt := ref.lt.next;
+	#     if mem_loc=mem_memc {
+	# 	call ref.create(p,write,op_ack,m,a,mem_loc,cf_mem_l);
+	#     } else {
+	# 	call ref.create(p,write,op_ack,m,a,mem_loc,cf_pio_l);
+	#     };
+	# } else if ph=rd_ph & rd & ~ordser {
+	#     ref.lt := ref.lt.next;
 	    
-            issue_hook(p,ref.lt);
-	    isd.rd(p,m,a,ref.lt)  := true;
-	    isd.rsp(p,m,a,ref.lt) := false;
+        #     issue_hook(p,ref.lt);
+	#     isd.rd(p,m,a,ref.lt)  := true;
+	#     isd.rsp(p,m,a,ref.lt) := false;
 	    
-	    if mem_loc=mem_memc {
-	        ref.lt_tar_cf := ref.lt_tar_cf.next;
+	#     if mem_loc=mem_memc {
+	#         ref.lt_tar_cf := ref.lt_tar_cf.next;
 		
-  		if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l {
-		    # cfabric.t_rd_min unchanged
-		} else {
-		    cfabric.t_rd_min     := ref.lt;		
-		    cfabric.t_rd_arr_min := ref.lt_tar_cf;		
-		};
+  	# 	if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l {
+	# 	    # cfabric.t_rd_min unchanged
+	# 	} else {
+	# 	    cfabric.t_rd_min     := ref.lt;		
+	# 	    cfabric.t_rd_arr_min := ref.lt_tar_cf;		
+	# 	};
 		
 		
-		call ref.create(p,read,op_ack,m,a,mem_loc,cf_mem_l);
+	# 	call ref.create(p,read,op_ack,m,a,mem_loc,cf_mem_l);
 		
-                ref.evs(ref.lt).lt_arr_cf  := ref.lt_tar_cf;
+        #         ref.evs(ref.lt).lt_arr_cf  := ref.lt_tar_cf;
 		
-	    } else {
-  		if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
-		    #		cfabric.t_rd_min := tt;
-		} else {
-		    cfabric.t_rd_min := ref.lt.next;
-		};
+	#     } else {
+  	# 	if some tt:lclock,pp:proc,mm:mem_type,aa:addr_type. isd.rd(pp,mm,aa,tt) & ref.evs(tt).req=read & ref.evs(tt).mem_loc=mem_memc & ref.evs(tt).l_req=cf_mem_l minimizing tt {
+	# 	    #		cfabric.t_rd_min := tt;
+	# 	} else {
+	# 	    cfabric.t_rd_min := ref.lt.next;
+	# 	};
 		
-		call ref.create(p,read,op_ack,m,a,mem_loc,cf_pio_l);
-	    }
-	}	
+	# 	call ref.create(p,read,op_ack,m,a,mem_loc,cf_pio_l);
+	#     }
+	# }	
     }
 
 # receive read and write response and check ordering
@@ -910,11 +910,14 @@ object ifabric = {
 	}
 	
   	if some t3:lclock,pp:proc,aa:addr_type. (isd.wr(pp,m,aa,t3) & ref.evs(t3).req=write | isd.rd(pp,m,aa,t3) & ref.evs(t3).req=read) & ref.evs(t3).l_req=dramc_l minimizing ref.evs(t3).lt_arr {
-	       dramc(m).t_min :=  ref.evs(t3).lt_arr;
+	    dramc_next := t3;
+	    dramc(m).t_min := ref.evs(t3).lt_arr;
 	}			
 	
     }
 }
+
+var dramc_next : lclock
 
 ################################################################################
 # DRAMC+DRAM
@@ -955,6 +958,7 @@ module dramc_mod(m) = {
 	};
 	
   	if some tt:lclock,pp:proc,aa:addr_type. (isd.wr(pp,m,aa,tt) & ref.evs(tt).req=write | isd.rd(pp,m,aa,tt) & ref.evs(tt).req=read) & ref.evs(tt).l_req=dramc_l minimizing ref.evs(tt).lt_arr {
+	    dramc_next := tt;
 	    t_min := ref.evs(tt).lt_arr;
 	}
     }
@@ -981,6 +985,7 @@ module dramc_mod(m) = {
 	};
 	
   	if some tt:lclock,pp:proc,aa:addr_type. (isd.wr(pp,m,aa,tt) & ref.evs(tt).req=write | isd.rd(pp,m,aa,tt) & ref.evs(tt).req=read) & ref.evs(tt).l_req=dramc_l minimizing ref.evs(tt).lt_arr {
+	    dramc_next := tt;
 	    t_min := ref.evs(tt).lt_arr;
 	}		    
     }
@@ -1088,18 +1093,36 @@ invariant (ref.evs(T).req=write | ref.evs(T).req=read) & ref.evs(T).m=M & ref.ev
            ->
            ref.evs(T).lt_arr=0
 
-invariant (ref.evs(T).req=write | ref.evs(T).req=read) & ref.evs(T).m=M & ref.evs(T).l_req=dramc_l
-           ->
-           ~(dramc.t_min(M)=0)
+# invariant (ref.evs(T).req=write | ref.evs(T).req=read) & ref.evs(T).m=M & ref.evs(T).l_req=dramc_l
+#            ->
+#            ~(dramc.t_min(M)=0)
 
-invariant  (
-            (ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l &
-            (ref.evs(T1).req=write | ref.evs(T1).req=read) & ref.evs(T1).l_req=dramc_l &
-            ref.evs(T0).m=ref.evs(T1).m &
-	    ref.evs(T0).a=ref.evs(T1).a
-           )
-           ->
-           ~(ref.evs(T0).lt_arr<dramc.t_min(ref.evs(T0).m) | ref.evs(T1).lt_arr<dramc.t_min(ref.evs(T0).m))
+# invariant  (
+#             (ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l &
+#             (ref.evs(T1).req=write | ref.evs(T1).req=read) & ref.evs(T1).l_req=dramc_l &
+#             ref.evs(T0).m=ref.evs(T1).m &
+# 	    ref.evs(T0).a=ref.evs(T1).a
+#            )
+#            ->
+#            ~(ref.evs(T0).lt_arr<dramc.t_min(ref.evs(T0).m) | ref.evs(T1).lt_arr<dramc.t_min(ref.evs(T0).m))
+
+# If there is any request in dramc(M), then dramc(M).t_min is the minimum arrival time in dramc(M)
+
+invariant  
+    ((ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l) & ref.evs(T0).m = M
+    ->
+    ref.evs(T0).lt_arr >= dramc(M).t_min
+
+# If there is any request in dramc(M), the dramc_next has the minimum arrival
+# time in dramc for its memory. This means dramc_next is ready to read or write.
+
+invariant  
+    ((ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l)
+    ->
+        (ref.evs(dramc_next).req=write | ref.evs(dramc_next).req=read)
+        & ref.evs(dramc_next).l_req=dramc_l
+        & ref.evs(dramc_next).lt_arr = dramc(ref.evs(dramc_next).m).t_min
+
 
 invariant ref.evs(T).req=read  -> ref.evs(T).l_cmp=init_l
 invariant ref.evs(T).req=write -> ref.evs(T).l_cmp=init_l
@@ -1612,8 +1635,6 @@ export dramc.step_rd
 # We include the file `mc_schemata` because this is needed for the model checker to
 # understand the equality and total order theories.
 
-include mc_schemata
-
 # We use these two modules to inject observable signals into the
 # model. We can use their statevariables in temporal formulas. Notice these
 # modules provid the invariant `~now`. That is, when the signal is not being raised,
@@ -1651,1636 +1672,140 @@ module signal1(data) = {
     }
 }
 
-################################################################################
-# 
-#
-# Here we prove liveness of cf for requests. That is, if a mem request
-# is issued, it eventually gets pushed into memc.
-#
 
-isolate cf_live = {
+isolate sys_live = {
+
+    function pending(T) =
+    (isd.rd(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T) |
+    isd.wr(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T))
     
-    # This predicate says that mem request at ltime T is in cfabric.
+    function completed(T) =
+    (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
+    & ref.evs(T).l_cmp = arm_l
 
-    function issued_memc(T) =
-    (ref.evs(T).req=read | ref.evs(T).req=write) & ref.evs(T).l_req=cf_mem_l &
-    ref.evs(T).mem_loc=mem_memc
+    function cf_cpl(T) =
+    (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
+    & ref.evs(T).l_cmp = cf_cmp_l
 
-    # We prove using l2s_auto2 that a request in cfabric at ltime T is eventually
-    # transfered to memc, assuming cfabric handles reads and writes infinitely
-    # often. We first skolemize so the logical time T becomes a symbolic constant _T.
-    # The work to be done is thus all of the logical times up to _T. When all work is
-    # done, we must have delevered the request at ltimr _T. Though requests are actually
-    # handled by arrival time, not ltime, we prove the invariant that arrival time agrees
-    # with ltime.
-    #
-    # TRICKY: Notice that there are two work sets here: work_needed and work_needed[2]. The first
-    # is for reads and the second is for writes. We need this because reads and writes are independent and
-    # make progress on different fairness conditions. If the operation at _T is a read, we make progress
-    # on cfabric.rd_fair, and if it is a write, we make progress on cfabric.wr_fair. This trick works
-    # when we can split the problem into two cases that have disjoint work sets. If reads and writes were
-    # ordered with respect to each other but had different fairness conditions, the trick wouldn't work.
-    #
-    # TODO: at present, only reads are ordered by arrival time. This needs to be made consistent
-    # and we need to add an invariant below for consistency of arrival time of writes.
-    #
-    # TRICKY: Also notice that all the temporal properties in this file are marked 'explicit'. This
-    # means that the won't be used as assumptions in any proof unless we explicitly ask for them
-    # (for example, by instantiating them in a proof), or putting them in a 'with' clause.
-    # This is important because sometimes that quantifiers in the properties can give us trouble
-    # with function cycles. If we only use the properties with the quantifiers explicitly
-    # instantiated with skole constants, we don't have this problem.
-    
-    explicit temporal property [cf_liveness]
-    forall T.
-    (globally eventually cfabric.rd_fair) &
-    (globally eventually cfabric.wr_fair)
-    ->
-    (globally ~(issued_memc(T) & globally ~(ref.evs(T).l_req=memc_l)))
-    
-    proof {
-        tactic skolemize
-        tactic l2s_auto2 with
-        definition work_start      = issued_memc(_T) & globally ~(ref.evs(_T).l_req=memc_l)
-
-        definition work_created(T) = T <= ref.lt
-        definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
-        definition work_done(T)    = ~issued_memc(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=read
-        definition work_end(T) = T=_T & issued_memc(_T) & ref.evs(_T).req=read
-        definition work_progress   = cfabric.rd_fair
-
-        definition work_created[2](T) = T <= ref.lt
-        definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
-        definition work_done[2](T)    = ~issued_memc(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=write
-        definition work_end[2](T) = T=_T & issued_memc(_T) & ref.evs(_T).req=write
-        definition work_progress[2]   = cfabric.wr_fair
-
-        invariant ~cfabric.rd_fair
-        invariant ~cfabric.wr_fair
-
-        invariant
-        issued_memc(T1) & ref.evs(T1).req=read & issued_memc(T2) & ref.evs(T2).req=read &
-        T1 < T2 -> ref.evs(T1).lt_arr_cf < ref.evs(T2).lt_arr_cf 
-        
-    }
-    
-} with this, lclock, tar_clock, tar_cf_clock
-
-# Notice the 'with' clause above. We need this to use the model and its invariants,
-# and also to use the properties of data types like lclock.
-
-################################################################################
-# 
-#
-# Here, we prove liveness of dramc by making an abstract model, proving its liveness
-# using model checking, and then showing that dramc is live by refinement.
-#
-# While it is extra work to create an abstract model, the model and its proof are
-# re-usable. The only parts of the proof that are really specific to dramc are
-# in isolate rfn (which proves refinement).
-#
-# Our abstract model consists of a work queue with elements of two different
-# kinds. We use an arbitrary predicate p to divide work elements into classes:
-#
-# - p(X) indicates the kind of work: false = kind1, true = kind2
-#
-# We can receive elements from the work queue using two methods:
-# - recv1 gets the first unreceived element if it is of kind1
-# - recv2 gets the first unreceived element if it is of kind2
-#
-# We want to show that every element in the queue is eventually received,
-# if *both* recv1 and recv2 are called infinitely often.
-#
-# Notice the module is parameterized by `nat`, the index type of the queue.
-
-
-module isolate split_queue2(nat) with nat = {
-
-    # To use the equality unbounded sequence theories in the model
-    # checker, we have to instantiate them.
-    
-    instantiate equality_schemata
-    instantiate unbounded_sequence_schemata(nat)
-
-    # add a work element to the queue n position `lt` of kind `kind`.
-    action send(lt:nat,kind:bool)
-
-    # receive work elements of kinds kind1 and kind2 respectively
-    action recv1
-    action recv2
-
-    specification {
-        # begun(X) indicates work in cell X has begun (has been sent)
-        var begun(X:nat) : bool
-        # done(X) indicates the work in cell X is done (has been received)
-        var done(X:nat) : bool
-        # queue(X) indicates the kind of work in cell X
-        var queue(X:nat) : bool
-
-        after init {
-            begun(X) := false;
-            done(X) := false;
-        }
-
-        # Signals raised then trying to receive kind1 and kind2 resp.
-        instance trying1 : signal0
-        instance trying2 : signal0
-
-        # When we send, we begin a new work element that must have index
-        # greater that any existing element (but we can leave gaps).
-        before send {
-            require begun(X) -> X < lt;
-        }
-
-        # TRICKY: proof requires that we set 'begun' after predq (see below). That
-        # means we need to do this in an "after" monitor.
-
-        after send {
-            queue(lt) := kind;
-            begun(lt) := true;
-        }
-
-        # When receiving a kind1 element, we find the first work element
-        # that is not done, if any, and if it is of kind kind1, we mark it done.
-        before recv1 {
-            trying1.raise;
-            if some x:nat. ~done(x) & begun(x) minimizing x {
-                if queue(x) {
-                    done(x) := true;
-                }
-            }
-        }
-
-        # When receiving a kind2 element, we find the first work element
-        # that is not done, if any, and if it is of kind kind2, we mark it done.
-        before recv2 {
-            trying2.raise;
-            if some x:nat. ~done(x) & begun(x) minimizing x {
-                if ~queue(x) {
-                    done(x) := true;
-                }
-            }
-        }
-
-    }
-
-    # Now we implement the above interface by adding some auxiliary
-    # variables that are not visible externally.
-    
-    implementation {
-        # Two axuliaries to help in the proof
-        # lastq indicates the cell of the last work element sent
-        var lastq : nat
-        # predq(X) gives the cell of the latest qualified element before
-        # cell X, if any (else it is zero)
-        var predq(X:nat) : nat
-
-        after init {
-            lastq := 0;
-        }
-        
-        # When we send, we record the predecessor of the new work element
-        # and update the lastq pointer.
-        implement send {
-            predq(lt) := lastq;
-            lastq := lt;
-        }
-
-        # We hide this invariant to avoid a function cycle since it uses
-        # the function predq from nat to nat. This is an improtant 'non-interference'
-        # invariant for the model checking proof. It says that there is no begun work
-        # between any element X and its predecessor. We can prove that every work element
-        # is eventually done by materializiong its predecessor. If the prodecessor X eventually
-        # completes, the X eventually completes, since the is no intervening work.
-        
-        invariant begun(X) & predq(X) < Y & Y < X -> ~begun(Y)
-    }
-
-    # Here are some useful invariants. These invariants
-    # help the model checker, since it absracts away information about all but
-    # a finite set of queue indices.
-    #
-    # Also, we state the obvious (that there are no nats less than 0)
-    # to help the model checker, without adding 0 to the list of
-    # skolem symbols in the model checker. These invariants are proved
-    # by Z3, not by the model checker. 
-
-    invariant lastq < X & begun(X) -> false
-    invariant begun(X) -> begun(lastq)
-    invariant begun(X) & done(X) & Y < X & begun(Y) -> done(Y)
-    invariant done(X) -> begun(X)
-    invariant ~(X:nat < 0)
-    
-    # Now we can prove liveness with the model checker. We concretize the
-    # following individuals:
-    #
-    # - X is the cell of the element to be completed
-    # - Y is the predecessor of this cell
-    #
-    # The idea of the proof is this: we know by induction on time
-    # that the predecessor cell Y is eventually done (since it was
-    # begun first). Since there are no begun cells between Y and X
-    # (an invariant stated above) we know the next cell to be
-    # processed is X.
-    #
-    # The tactic `mc` performs some significant transformations on the
-    # formula to be proved. In particular, it applies temporal
-    # induction, capturing the values of X,Y at the *first* time at
-    # which the globally property is false. In effect, this is
-    # assuming that Y is eventually done, since it is begun before X.
-    # Note, we could have done the proof by induction on X (using the least
-    # element principle of ltime) but doing it by induction in time is simpler with
-    # the model checker.
-    
-
-    explicit temporal property [lemma1]
-    (globally eventually trying1.now) &
-    (globally eventually trying2.now) ->
-    forall X. (globally begun(X) -> eventually done(X))
-    proof {
-        tactic mc with Y = predq(X) # , V1 = queue(X), V2 = queue(Y)
-    }
-
-    # Since one invariant breaks stratification, we turn off the fragment
-    # checker in this isolate. TODO: This should be fixed.
-
-    attribute complete = fo
-
-}
-
-
-isolate rfn =
-{
-
-    # Now that we have proved liveness of the abstract model, we will create an
-    # instance of it and use it to prove liveness of dramc.
-
-    # Notice that we have to instantiate one copy of split_queue2 for each dramc. The proof
-    # of liveness with model checking still goes through!
-
-    instance abs(M:mem_type) : split_queue2(tar_clock)
-
-    # This defines the events we are interested in (the reads and
-    # writes that are assigned to the given dramc)
-
-    function evqual(M,T) =
-    (ref.evs(T).req=read | ref.evs(T).req=write) & ref.evs(T).m=M &
-    ref.evs(T).l_req=dramc_l & ref.evs(T).mem_loc=mem_memc
-
-    # This defines when an event is completed by the dramc.
-
-    function evcomplete(T) =
-    ref.evs(T).mem_loc=mem_memc &
+    function memc_cpl(T) =
+#    ref.evs(T).mem_loc=mem_memc &
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp) &
     ref.evs(T).l_cmp = memc_l
 
-    # Here we put hooks into memc and dramc to tell is when work is
-    # being 'sent' (created) and 'received' (completed). This is part
-    # of the refinement prof -- it tells us when abstract operations are
-    # occurring in the concrete model. When we process a read in dramc, we
-    # call recv1 in the abstract model, and when we process a write, we call
-    # recv2.
+    function dramc_req(T) =
+    (ref.evs(T).req=read | ref.evs(T).req=write)  &
+    ref.evs(T).l_req=dramc_l
 
-    before dramc.step_rd(m:mem_type) {
-        abs.recv1(m);
-    }
+    function is_io(T) = ref.evs(T).mem_loc=pio_memc
 
-    before dramc.step_wr(m:mem_type) {
-        abs.recv2(m);
-    }
+    explicit temporal axiom [lemma4] 
+    forall T.
+    globally pending(T) -> eventually completed(T)
 
-    # When memc sends an operations to dramc, we call send of the abstract
-    # model with kind=true for reads and kind=false for writes. Note, we have
-    # to figure out which memc is actually doing the operation by looking
-    # at ref(lt).m. This tells us which instance of the abstract model to call.
+    explicit temporal axiom [lemma3a]
+    globally pending(T) & ~is_io(T) -> eventually memc_cpl(T)
+
+    explicit temporal axiom [lemma3b]
+    globally pending(T) & is_io(T) -> eventually cf_cpl(T)
+
+    explicit temporal axiom [lemma2a]
+    globally pending(T) & ~is_io(T) -> eventually dramc_req(T)
+
+    # TODO: this fairness constraint is bogus. Replace with something
+    # reasonable. 
+
+    explicit temporal axiom [dramc_rd_fair] 
+        globally eventually dramc(M).rd_fair
+
+    explicit temporal axiom [dramc_wr_fair] 
+        globally eventually dramc(M).wr_fair
+
+    explicit temporal axiom [memc_cpl_fair] 
+       forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)
+
+    explicit temporal axiom [cf_cpl_fair]
+    globally eventually cfabric.cpl_fair
     
-    before memc.memc_arr_hook(lt:lclock) {
-        var m := ref.evs(lt).m;
-        if evqual(m,lt){
-            abs(m).send(ref.evs(lt).lt_arr,ref.evs(lt).req=read);
-        }
-    }
-
+    explicit temporal axiom [cpl_fair] 
+      forall P. globally eventually arm.cpl_fair(P)
     
-    # Here are some invariants relating the abstract abstract and
-    # concrete state, as always in a refinement proof.
-
-    # Every operation maps to a begun event in abs(M) by its arrival
-    # time. Moreover if the event is done in abs(M), it is completed
-    # in M. It is of kind2 in abs(M) iff it is a write. Notice that we
-    # only say that *if* the abstract event is done, the concrete is
-    # completed. The converse is true, but we can't prove it without
-    # introducing a quantifier alternation. That's OK, because we only
-    # need the implication in one direction. That is, our invariants
-    # allow the possibility that there are more abstract events than
-    # concrete events, but since all the abstract ones are eventally
-    # done, we know all the concrete ones are also eventually done (by
-    # the liveness property of the abstract model).
-    
-    invariant
-    evqual(M,T) & Y = ref.evs(T).lt_arr
-    ->
-    abs(M).begun(Y) &
-    (abs(M).done(Y) -> evcomplete(T)) &
-    abs(M).queue(Y) = (ref.evs(T).req=read)
-
-    # Make sure we use arrival times in ascending order, otherwise we
-    # will violate the require clause in abs.send.
-    invariant
-    X > ref.lt_tar(M) -> ~abs(M).begun(X)
-    
-    # These invariants should probably be somewhere else!
-    invariant ~dramc(M).rd_fair
-    invariant ~dramc(M).wr_fair
-
-
-} with this, lclock, tar_clock, tar_cf_clock
-
-# Notice above, the 'with' clause lets us use all of the safety invariants
-# already proved when proving the refinement. 
-
-
-# TRICKY: The rest of the isolates are in a 'private' section. This trick prvents us from using them
-# by default when declaring 'with this' to pull in the model actions and safety invariants.
-#
-# TODO: we could put all of the above isolates in the private section, but this causes ivy to
-# complan about interference for a reason that isn't clear. This needs to be debugged.
-
-private {
-
-    isolate tprops = {
-
-        # Now here's the fun part. First we show that if the system
-        # receives infinitely often, then so does the abstract model. We
-        # do this for both kinds of receive (reads and writes).
-        #
-        # Notice in these l2s_auto proofs, work_start and work_end are the
-        # same condition. This is because the starting condition persists
-        # until the eventuality holds. We do the same proof for kind1 and
-        # kind2.
-
-        explicit temporal property [gf1]
-        forall M.
-        (globally eventually dramc(M).rd_fair) ->
-        (globally eventually rfn.abs(M).trying1.now)
-        proof {
-            tactic skolemizenp;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_end = ~eventually rfn.abs(_M).trying1.now
-                definition work_start = ~eventually rfn.abs(_M).trying1.now
-                definition work_progress = dramc(_M).rd_fair
-            }
-        }
-
-        explicit temporal property [gf2]
-        forall M.
-        (globally eventually dramc(M).wr_fair) ->
-        (globally eventually rfn.abs(M).trying2.now)
-        proof {
-            tactic skolemizenp;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_end = ~eventually rfn.abs(_M).trying2.now
-                definition work_start = ~eventually rfn.abs(_M).trying2.now
-                definition work_progress = dramc(_M).wr_fair
-            }
-        }
-
-        # With the above lemmas, we can use liveness of the abstract
-        # model to prove liveness of the concrete. Notice that the progress
-        # condition is that the abstract model is done. This immediately ensures
-        # that the concrete mode is done, because of our invariants relating
-        # abstract and concrete state.
-
-        # There is a slight trick however, to deal with the fact that the
-        # abstract model is using arrival time rather than logical
-        # time. We use the tactic 'tempcase' to capture the arrival time
-        # at the point when the globally property becomes false (i.e., when
-        # a new operation arrives at memc but is not eventually
-        # completed).  The tactic takes a formula of the form Gp and
-        # converts it to G (X=expr -> p) where expr is some arbitrary
-        # expression (in this case the arrival time of event T). This is
-        # the tactic that was called 'temporal case splitting' in Cadence
-        # SMV.
-        #
-        # Notice that in 'work_start', we take into account that the G property
-        # has been rewritten in this way. Also, notice that tactic works for
-        # formulas of the form 'q -> Gp', which is what we have here.
-        #
-        # There is also slight trickiness because we need to skolemize M and
-        # instantiate the assumptions for the skolem symbol _M. This gets rid of
-        # potentially unpleasant quantifier alternations. In particular, there are
-        # no quantifiers in work_start and work_end.
-        #
-        # Both of these tricks (tempcase and instantiation) are possibly useful
-        # for plain l2s.
-        
-        explicit temporal property [lemma1]
-        forall M.
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) ->
-        forall T. (globally rfn.evqual(M,T) -> eventually rfn.evcomplete(T))
-        proof {
-            tactic tempcase with X = ref.evs(T).lt_arr
-            tactic skolemizenp;
-            instantiate gf1 with M = _M;
-            instantiate gf2 with M = _M;
-            instantiate rfn.abs.lemma1 with M = _M, X = _X;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_end = ~(_X = ref.evs(_T).lt_arr -> (rfn.evqual(_M,_T) -> eventually rfn.evcomplete(_T)))
-                definition work_start = ~(_X = ref.evs(_T).lt_arr -> (rfn.evqual(_M,_T) -> eventually rfn.evcomplete(_T)))
-                definition work_progress = rfn.abs.done(_M,_X)
-            }
-        }
-
-
-        # That's it! Notice that we did the proof of the concrete model very simply with
-        # l2s_auto (in fact, everything except the progress condition is boilerplate).
-        # This means we should be able to do proofs like this for big systems (using the
-        # hgh capacity of l2s) while saving the tricky temporal reasoning for the abstract model
-        # using model checking (which has much lower capacity).
-
-        
-    } with this, rfn, rfn.abs, rfn.abs.trying1, rfn.abs.trying2, lclock, tar_clock, tar_cf_clock
-
-
-    isolate dramc_nb2 = {
-
-        ################################################################################
-        # 
-        #
-        # Now we're going to use the non-blocking property of dramc to prove liveness of
-        # memc. Here, we split the memory accesses by both memc index and address.
-        # This is because operations on the same address block each other. So we want
-        # to show that for a fixed memory/address pair, that all operations in memc
-        # eventually transfer to dramc.
-        #
-        # As before, we start by injecting some signals into memc so
-        # we can detect when it is trying to push a request into a dramc
-        # and when it succeeds
-
-        instance memc_pushing : signal1(lclock)
-        instance memc_arriving : signal1(lclock)
-
-        before memc.memc_push_hook {
-            memc_pushing.raise(lt);
-        }
-
-        before memc.memc_arr_hook {
-            memc_arriving.raise(lt);
-        }
-
-        # This predicate says the the operation at ltime T has memory M and
-        # address type A.
-
-        function evma(T,M,A) = ref.evs(T).m = M & ref.evs(T).a = A
-
-        # These predicates say we are trying to push an M/A read operation and succeeding
-        # to push an M/A read operation. We'll hande writes later, since these are handled
-        # by a different action.
-        
-        function push_trying_rd(M,A) =
-        memc_pushing.now & evma(memc_pushing.value,M,A) &
-        ref.evs(memc_pushing.value).req=read
-        function push_success_rd(M,A) =
-        memc_arriving.now & evma(memc_arriving.value,M,A) &
-        ref.evs(memc_arriving.value).req=read
-        
-        # This is the non-blocking property for reads. It says that if we infinitely often
-        # try to push a M/A readin into dramc, we infinitely often succeed.
-
-        # TRICKY: Here we use tactic l2s_auto4. This is similar to
-        # l2s_auto2, except it allows the work_needed predicate to
-        # decrease (but not increase!). This gives us a simple way to
-        # express work_needed here. With this tactic work_done is
-        # redundant. That is the work that is left to do is
-        # work_needed(T) & ~work_done(T) but we could just as well
-        # include ~work_done(T) in the work_needed(T).
-        #
-        # We have to show that every time the progress condition
-        # occurs, work_needed decreases.  (Technically, this means
-        # that we capture work_needed in the saved state, and we carry
-        # the invariant that the saved state is always frozen, i.e.,
-        # satisfies l2s_a).
-        #
-        # Generally speaking, if you find you have counterexamples to
-        # induction where work_needed decreases, it might be better to
-        # use l2s_auto4 (in fact, l2s_auto4 might be best for all new
-        # proofs).
-        #
-        # In this case, the fact that work_needed doesn't increase is a bit subtle.
-        # That is, you can't create new work_needed without pushing a read into dramc,
-        # but this satisfies the eventality property, and so terminates the proof by
-        # contradiction.
-        
-        explicit temporal property [nb_rd]
-        forall M,A. 
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually push_trying_rd(M,A))
-        ->
-        globally eventually push_success_rd(M,A)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate tprops.lemma1 with M = _M
-            tactic l2s_auto4 with {
-                definition work_created(T) = T <= ref.lt
-                definition work_needed(T) = ref.evs(T).req=read & rfn.evqual(_M,T) & ref.evs(T).a=_A
-                definition work_done(T:lclock) = false
-                definition work_start = ~eventually push_success_rd(_M,_A)
-                definition work_progress(T) = rfn.evcomplete(T)  
-                definition work_created[1] = true
-                definition work_needed[1] = true
-                definition work_done[1] = false
-                definition work_progress[1] = push_trying_rd(_M,_A)
-            }
-        }
-
-        # This predicate says that a read at ltime T is pending in
-        # drams, for a given M/A.
-
-        function evqual_rd(T,M,A) =
-        ref.evs(T).req=read & ref.evs(T).l_req=memc_l &
-        ref.evs(T).mem_loc=mem_memc & evma(T,M,A)
-
-        # Technical lemma stating if we have a read to to do in memc, for a
-        # given M/A pair, we eventually push *something* into dramc
-        # for that pair. This depends on the non-blocking property above.
-        #
-        # TRICKY: Here, we split the problem into to cases using prophecy.
-        # Notice the condition work_start[2]. THis says that we never again try
-        # to push a read. If this is true, we use the fairness condition memc.rd_fair
-        # to prove a contradictionon. That is, if we have a read to push, and if we
-        # eventually call memc.step for reads, then eventually, we try to push.
-        # Since we know we eventually try to push, by the non-blockng property
-        # we know we eventually push.
-
-        explicit temporal property [tech1_rd]
-        forall T,M,A.
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.rd_fair(M,A))
-        ->
-        globally eventually evqual_rd(T,M,A) -> push_success_rd(M,A)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate nb_rd with M = _M, A = _A
-            tactic l2s_auto with {
-                definition work_start[1] = ~eventually evqual_rd(_T,_M,_A) -> push_success_rd(_M,_A)
-                definition work_created[1] = true
-                definition work_needed[1] = true
-                definition work_done[1] = false
-                definition work_progress[1] = push_success_rd(_M,_A)
-                definition work_start[2] = (globally ~push_trying_rd(_M,_A))
-                definition work_created[2] = true
-                definition work_needed[2] = true
-                definition work_done[2] = false
-                definition work_progress[2] = memc.rd_fair(_M,_A)
-                invariant ~memc.rd_fair(M,A)
-            }
-        }
-
-        # These predicates say we are trying to push an M/A write operation and succeeding
-        # to push an M/A write operation. 
-        
-        function push_trying_wr(M,A) =
-        memc_pushing.now & evma(memc_pushing.value,M,A) &
-        ref.evs(memc_pushing.value).req=write
-        function push_success_wr(M,A) =
-        memc_arriving.now & evma(memc_arriving.value,M,A) &
-        ref.evs(memc_arriving.value).req=write
-        
-        # This is the non-blocking property for writes. It says that if
-        # we infinitely often try to push a M/A write into dramc, we
-        # infinitely often succeed. It is similar to nb_rd above.
-
-        explicit temporal property [nb_wr]
-        forall M,A. 
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually push_trying_wr(M,A))
-        ->
-        globally eventually push_success_wr(M,A)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate tprops.lemma1 with M = _M
-            tactic l2s_auto4 with {
-                definition work_created(T) = T <= ref.lt
-                definition work_needed(T) = ref.evs(T).req=write & rfn.evqual(_M,T) & ref.evs(T).a=_A
-                definition work_done(T:lclock) = false
-                definition work_start = ~eventually push_success_wr(_M,_A)
-                definition work_progress(T) = rfn.evcomplete(T)  
-                definition work_created[1] = true
-                definition work_needed[1] = true
-                definition work_done[1] = false
-                definition work_progress[1] = push_trying_wr(_M,_A)
-            }
-        }
-
-        # This predicate says that a write at ltime T is pending in
-        # drams, for a given M/A.
-
-        function evqual_wr(T,M,A) =
-        ref.evs(T).req=write & ref.evs(T).l_req=memc_l &
-        ref.evs(T).mem_loc=mem_memc & evma(T,M,A)
-
-        # Technical lemma stating if we have a write to to do in memc, for a
-        # given M/A pair, we eventually push *something* into dramc
-        # for that pair. This depends on the non-blocking property above
-        # and is similar to tech1_rd above.
-
-        explicit temporal property [tech1_wr]
-        forall T,M,A.
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.wr_fair(M,A))
-        ->
-        globally eventually evqual_wr(T,M,A) -> push_success_wr(M,A)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate nb_wr with M = _M, A = _A
-            tactic l2s_auto with {
-                definition work_start[1] = ~eventually evqual_wr(_T,_M,_A) -> push_success_wr(_M,_A)
-                definition work_created[1] = true
-                definition work_needed[1] = true
-                definition work_done[1] = false
-                definition work_progress[1] = push_success_wr(_M,_A)
-                definition work_start[2] = (globally ~push_trying_wr(_M,_A))
-                definition work_created[2] = true
-                definition work_needed[2] = true
-                definition work_done[2] = false
-                definition work_progress[2] = memc.wr_fair(_M,_A)
-                invariant ~memc.wr_fair(M,A)
-            }
-        }
-
-        # Using the technical lemmas, we prove the reads and
-        # writes in memc eventually are pushed to dramc.
-
-        temporal property [live_rd]
-        forall M,T,A.
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.rd_fair(M,A))
-        ->
-        globally evqual_rd(T,M,A) -> eventually rfn.evqual(M,T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate tech1_rd with T=_T, M=_M, A=_A;
-            tactic l2s_auto2 with {
-                definition work_created(T) = T <= ref.lt
-                definition work_needed(T) = T <= _T
-                definition work_done(T) = T <= ref.lt & T <= _T & ~evqual_rd(T,_M,_A)
-                definition work_end(T) = T = _T 
-                definition work_start = ~(evqual_rd(_T,_M,_A) -> eventually rfn.evqual(_M,_T))
-                definition work_progress = evqual_rd(_T,_M,_A) -> push_success_rd(_M,_A)
-            }
-        }
-
-        temporal property [live_wr]
-        forall M,T,A.
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.wr_fair(M,A))
-        ->
-        globally evqual_wr(T,M,A) -> eventually rfn.evqual(M,T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate tech1_wr with T=_T, M=_M, A=_A;
-            tactic l2s_auto2 with {
-                definition work_created(T) = T <= ref.lt
-                definition work_needed(T) = T <= _T
-                definition work_done(T) = T <= ref.lt & T <= _T & ~evqual_wr(T,_M,_A) & ~ref.evs(T).l_req=cf_mem_l
-                definition work_end(T) = T = _T &  ~ref.evs(T).l_req=cf_mem_l
-                definition work_start = ~(evqual_wr(_T,_M,_A) -> eventually rfn.evqual(_M,_T))
-                definition work_progress = evqual_wr(_T,_M,_A) -> push_success_wr(_M,_A)
-            }
-        }
-
-        # Finally, the liveness statement for mem requests in memc. If either a read or a write
-        # request is in memc for a give M/A, then it is eventally in dramc. This is immediate from
-        # the two lemmas, which imply the work_end condition. 
-
-        explicit temporal property [live]
-        forall M,T,A.
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.rd_fair(M,A)) &
-        (globally eventually memc.wr_fair(M,A))
-        ->
-        globally (evqual_rd(T,M,A) | evqual_wr(T,M,A)) -> eventually rfn.evqual(M,T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate live_rd with T=_T, M=_M, A=_A;
-            instantiate live_wr with T=_T, M=_M, A=_A;
-            tactic l2s_auto2 with {
-                definition work_start = ~((evqual_rd(_T,_M,_A) | evqual_wr(_T,_M,_A)) -> eventually rfn.evqual(_M,_T))
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_end = eventually rfn.evqual(_M,_T)
-                definition work_progress = rfn.evqual(_M,_T)
-            }
-        }
-
-    } with this, lclock, tar_clock, tar_cf_clock, tprops
-
-    isolate cmpl_live = {
-        
-        # instance memc_completing : signal1(lclock)
-        
-        # before memc.memc_cpl_hook {
-        #     memc_completing.raise(lt);
-        # }
-
+    explicit temporal property [live]
+    forall P,T. 
+        globally ref.evs(T).p=P & pending(T) -> eventually ~pending(T)
+    proof {
+        # tactic sorry;
+        tactic skolemizenp
+        instantiate cpl_fair with P=_P
+        instantiate lemma2a
+        instantiate lemma3b
+        instantiate cf_cpl_fair
+        instantiate memc_cpl_fair
+        instantiate dramc_rd_fair
+        instantiate dramc_wr_fair
+        tactic ranking with {
             
-        # This predicate says that a completion at ltime T is in cfabric
-        
-        function cf_cpl(T) =
-        (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
-        & ref.evs(T).l_cmp = cf_cmp_l
+            definition work_created[0](T) = T <= ref.lt
+            definition work_needed[0](T) = T <= _T & pending(T) & ~is_io(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_invar[0] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[0](T) = dramc_req(T)
+            definition work_helpful[0](T) = T <= _T & pending(T) & ~is_io(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
 
-        # This property says that a completion of a mem operation in memc
-        # eventually reaches cfabric. Notice the fairness constraint here
-        # is a little bogus. We don't want to assume any ordering
-        # of completions in memc, so we just assume every operation is
-        # eventually handled. That is, we have one fairness constraint for
-        # every P/M/A/T combination. A better way to handle this would
-        # be as it is handled in ifabric below, where we assume that
-        # for all T, if an operation is pending, we eventually deliver it.
-        # Notice here we do a temporal case split on P,M,A to capture
-        # the P,M,A values for the operation tha must be delivered.
-        
-        explicit temporal property [memc2cf_live]        
-        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T))
-        -> 
-        forall T. (globally rfn.evcomplete(T) -> eventually cf_cpl(T))
-        proof {
-            # tactic sorry;
-            tactic tempcase with P=ref.evs(T).p, M=ref.evs(T).m, A=ref.evs(T).a;
-            tactic skolemizenp;
-            instantiate with P=_P, M=_M, A=_A, T=_T
-            showgoals;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
-                ->(rfn.evcomplete(_T) -> eventually cf_cpl(_T)))
-                definition work_end = ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
-                ->(rfn.evcomplete(_T) -> eventually cf_cpl(_T)))
-                definition work_progress = memc.cpl_fair(_P,_M,_A,_T)
-                invariant ~memc.cpl_fair(_P,_M,_A,_T)
-            }
-        }
+            definition work_created[1](T) = pending(T)
+            definition work_needed[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_invar[1] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[1](T) = cf_cpl(T)
+            definition work_helpful[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
 
-        # This predicate says that an completion at ltime T is in arm, waiting
-        # to be retired by the ROB.
-        
-        function arm_cpl(T) =
-        (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
-        & ref.evs(T).l_cmp = arm_l
+            definition work_created[5](T,U) = T <= ref.lt & U <= ref.lt
+            definition work_needed[5](T,U) = U <= _T & dramc_req(T) & pending(U) & dramc_req(U) & ref.evs(T).lt_arr <= ref.evs(U).lt_arr & ref.evs(T).m = ref.evs(U).m
+            definition work_invar[5] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[5](M) = dramc(M).rd_fair
+            definition work_helpful[5](M,T,U) = work_needed[5](T,U) & ref.evs(T).m = M & ref.evs(T).lt_arr = dramc(M).t_min & ref.evs(T).req=read
+            # definition work_witness[5](M:mem_type) = dramc_t_min
 
-        # This predicate says that an operation has been retired
-        # (i.e., no longer exists).
+            definition work_created[6](T,U) = T <= ref.lt & U <= ref.lt
+            definition work_needed[6](T,U) = U <= _T & dramc_req(T) & pending(U) & dramc_req(U) & ref.evs(T).lt_arr <= ref.evs(U).lt_arr & ref.evs(T).m = ref.evs(U).m
+            definition work_invar[6] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[6](M) = dramc(M).wr_fair
+            definition work_helpful[6](M,T,U) = work_needed[6](T,U) & ref.evs(T).m = M & ref.evs(T).lt_arr = dramc(M).t_min & ref.evs(T).req=write
+            # definition work_witness[6](M:mem_type) = dramc_t_min
 
-        function retired(T) =
-        ~isd.rd(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T) &
-        ~isd.wr(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T)
-        
-        # This property says that a completion in cfabric eventually
-        # reaches arm.
-        # TODO: cfabric is currently assumed to deliver completions
-        # in ltime order, which seems unrealistic. It should probably
-        # deliver them in arbitrary order. 
+            definition work_created[7](T) = pending(T)
+            definition work_needed[7](T) = T <= _T & pending(T) & ~is_io(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_invar[7] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[7](P,M,A,T) = memc.cpl_fair(P,M,A,T)
+            definition work_helpful[7](P,M,A,T) = T <= _T & memc_cpl(T) & ~is_io(T) & P=ref.evs(T).p & M=ref.evs(T).m & A=ref.evs(T).a
 
-        explicit temporal property [cf2arm_live]        
-        (globally eventually cfabric.cpl_fair)
-        -> 
-        forall T. (globally cf_cpl(T) -> eventually arm_cpl(T))
-        proof {
-            tactic skolemizenp;
-            tactic l2s_auto2 with {
-                definition work_created(T) = T <= ref.lt
-                definition work_needed(T) = T <= _T
-                definition work_done(T) = T <= ref.lt & T <= _T & (arm_cpl(T) | ~isd.rd(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T) &
-                ~isd.wr(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T))
-                definition work_end(T) = (T = _T) & cf_cpl(T)
-                definition work_start = ~(cf_cpl(_T) -> eventually arm_cpl(_T))
-                definition work_progress = cfabric.cpl_fair
-                invariant ~cfabric.cpl_fair
-            }
-        }
+            definition work_created[8](T) = pending(T)
+            definition work_needed[8](T) = T <= _T & pending(T) & ~completed(T)
+            definition work_invar[8] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[8] = cfabric.cpl_fair
+            definition work_helpful[8] = exists T. T <= _T & cf_cpl(T)
 
-    } with this, lclock, tar_clock, tar_cf_clock
+            definition work_created[9](T) = pending(T)
+            definition work_needed[9](T) = T <= _T & pending(T) & ref.evs(T).p=_P
+            definition work_invar[9] = pending(_T) & ref.evs(_T).p=_P
+            definition work_progress[9] = arm.cpl_fair(_P)
+            definition work_helpful[9] =
+              forall T. ~( T <= _T
+                         & ref.evs(T).p=_P
+                         & pending(T)
+                         & ~completed(T))
 
-    isolate cf_pio_live = {
-        
-        # Now that we handle liveness for the pio path. This is pretty
-        # straightforward since there is no blocking. We prove a
-        # sequence of properties stating that each stage moves pio
-        # operations forward.  Then we put these together to prover
-        # that completitons of pio operations that are issued always
-        # reach cfabric.
-
-        # This predicate says that a pio request has reached cfabric.
-
-        function issued_pio(T) =
-        (ref.evs(T).req=read | ref.evs(T).req=write) & ref.evs(T).l_req=cf_pio_l &
-        ref.evs(T).mem_loc=pio_memc
-
-        # From here on, we use temporal axioms to represent the fairness constraints.
-        # This is because collecting all of the fairness constraints in the premise
-        # of every property is getting cumbersome. Here, we assume that cfabric.step
-        # is called fairly for pio reads and writes.
-
-        explicit temporal axiom [cfabric_pio_fair_ax]
-        (globally eventually cfabric.rd_pio_fair) &
-        (globally eventually cfabric.wr_pio_fair)
-
-
-        # We prove using l2s_auto2 that a pio request in cf at ltime T is eventually
-        # transfered to a memc, assuming cfabric handles pio reads and writes infinitely
-        # often. This proof is very similar to the proof above from mem operations.
-
-        explicit temporal property [cf_liveness]
-        forall T.
-        (globally ~(issued_pio(T) & globally ~(ref.evs(T).l_req=if_l)))
-
-        proof {
-            # tactic sorry;
-            tactic skolemize;
-            instantiate cfabric_pio_fair_ax;
-            tactic l2s_auto2 with
-            definition work_start      = issued_pio(_T) & globally ~(ref.evs(_T).l_req=if_l)
-
-            definition work_created(T) = T <= ref.lt
-            definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
-            definition work_done(T)    = ~issued_pio(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=read
-            definition work_end(T) = T=_T & issued_pio(_T) & ref.evs(_T).req=read
-            definition work_progress   = cfabric.rd_pio_fair
-
-            definition work_created[2](T) = T <= ref.lt
-            definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
-            definition work_done[2](T)    = ~issued_pio(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=write
-            definition work_end[2](T) = T=_T & issued_pio(_T) & ref.evs(_T).req=write
-            definition work_progress[2]   = cfabric.wr_pio_fair
-
-            invariant ~cfabric.rd_pio_fair
-            invariant ~cfabric.wr_pio_fair
+            invariant ~arm.cpl_fair(P)
+            invariant ~cfabric.cpl_fair
+            invariant ~memc.cpl_fair(P,M,A,T)
+            invariant ~dramc(M).rd_fair
+            invariant ~dramc(M).wr_fair
 
         }
-
-        # This predicate says that a pio request at ltime T is in ifabric.
-
-        function issued_pio_if(T) =
-        (ref.evs(T).req=read | ref.evs(T).req=write) & ref.evs(T).l_req = if_l &
-        ref.evs(T).mem_loc=pio_memc
-
-        # We assume that ifabric.step is called fairly for pio reads and writes
-        # for each processor.
-
-        explicit temporal axiom [ifabric_rw_fair_ax]
-        forall P.
-        (globally eventually ifabric.rd_fair(P)) &
-        (globally eventually ifabric.wr_fair(P))
-
-        # We prove using l2s_auto2 that a pio request in ifabric at ltime T is eventually
-        # transfered to memc. This is very similar to the proof for cfabric. 
-
-        explicit temporal property [if_liveness]
-        forall T.
-        (globally ~(issued_pio_if(T) & globally ~(ref.evs(T).l_req=memc_l)))
-
-        proof {
-            # tactic sorry
-            tactic tempcase with P=ref.evs(T).p
-            tactic skolemizenp
-            instantiate ifabric_rw_fair_ax with P=_P
-            tactic l2s_auto2 with
-            definition work_start      = ~(_P=ref.evs(_T).p->~(issued_pio_if(_T) & globally ~(ref.evs(_T).l_req=memc_l)))
-
-            definition work_created(T) = T <= ref.lt
-            definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
-            definition work_done(T)    = ~issued_pio_if(T) & T <= _T & T <= ref.lt & _P=ref.evs(T).p & ref.evs(_T).req=read & ref.evs(T).l_req ~= cf_pio_l
-            definition work_end(T) = T=_T & _P=ref.evs(_T).p & issued_pio_if(_T) & ref.evs(_T).req=read
-            definition work_progress   = ifabric.rd_fair(_P)
-
-            definition work_created[2](T) = T <= ref.lt
-            definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
-            definition work_done[2](T)    = ~issued_pio_if(T) & T <= _T & T <= ref.lt & _P=ref.evs(T).p & ref.evs(_T).req=write  & ref.evs(T).l_req ~= cf_pio_l
-            definition work_end[2](T) = T=_T & _P=ref.evs(_T).p & issued_pio_if(_T) & ref.evs(_T).req=write
-            definition work_progress[2]   = ifabric.wr_fair(_P)
-
-            invariant ~ifabric.rd_fair(P)
-            invariant ~ifabric.wr_fair(P)
-        }
-
-        # This predicate says that a pio request at ltime T is in memc.
-
-        function issued_pio_memc(T) =
-        (ref.evs(T).req=read | ref.evs(T).req=write) & ref.evs(T).l_req = memc_l &
-        ref.evs(T).mem_loc=pio_memc
-
-        # We assume that memc.step is called fairly for reads and writes
-        # for every M/A pair.
-
-        explicit temporal axiom [memc_rw_fair_ax]
-        forall M,A.
-        (globally eventually memc.rd_fair(M,A)) &
-        (globally eventually memc.wr_fair(M,A))
-
-        # We prove using l2s_auto2 that a pio request in memc at ltime T is eventually
-        # completed in memc. We split cases on reads and writes as above. Notice that the
-        # work_done condition has gotten a little complicates, since we need to except
-        # requests that are still on the way in cfabric and ifabric. If we didn't do this
-        # the it would be possible work to be undone by cfabric.step and ifabric.step.
-        # TODO: this proof might be simplified using tactic l2s_auto4.
-
-        explicit temporal property [memc_liveness]
-        forall T.
-        (globally ~(issued_pio_memc(T) & globally ~(ref.evs(T).l_cmp=memc_l)))
-
-        proof {
-            # tactic sorry
-            tactic tempcase with M=ref.evs(T).m, A=ref.evs(T).a
-            tactic skolemizenp
-            instantiate memc_rw_fair_ax with M=_M, A=_A
-            tactic l2s_auto2 with
-            definition work_start      = ~((_M=ref.evs(_T).m & _A=ref.evs(_T).a)->~(issued_pio_memc(_T) & globally ~(ref.evs(_T).l_cmp=memc_l)))
-
-            definition work_created(T) = T <= ref.lt
-            definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
-            definition work_done(T)    = ~issued_pio_memc(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=read & ref.evs(T).l_req ~= cf_pio_l & ref.evs(T).l_req ~= if_l
-            definition work_end(T) = T=_T & (_M=ref.evs(_T).m & _A=ref.evs(_T).a) & issued_pio_memc(_T) & ref.evs(_T).req=read
-            definition work_progress   = memc.rd_fair(_M,_A)
-
-            definition work_created[2](T) = T <= ref.lt
-            definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
-            definition work_done[2](T)    = ~issued_pio_memc(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=write  & ref.evs(T).l_req ~= cf_pio_l & ref.evs(T).l_req ~= if_l
-            definition work_end[2](T) = T=_T & (_M=ref.evs(_T).m & _A=ref.evs(_T).a) & issued_pio_memc(_T) & ref.evs(_T).req=write
-            definition work_progress[2]   = memc.wr_fair(_M,_A)
-
-            invariant ~memc.rd_fair(M,A)
-            invariant ~memc.wr_fair(M,A)
-        }
-
-        # This predicate says that a pio completion at ltime T is in memc.
-
-        function issued_pio_cpl_memc(T) =
-        ref.evs(T).l_cmp = memc_l &
-        ref.evs(T).mem_loc=pio_memc
-
-        # We assume that memc.step is called fairly for all P/M/A/T combinations.
-        # As noted above, this means we are assuming that every op is eventually
-        # delivered, but in no particular order.
-
-        explicit temporal axiom [memc_cpl_fair_ax]
-        forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)
-
-        # We prove the every pio completion in memc is eventually delivered
-        # to ifabric. This is very similar to the proof for mem operations
-        # above, except that the destination is ifabric rather than cfabric.
-
-        explicit temporal property [memc_cpl_liveness]
-        forall T.
-        (globally issued_pio_cpl_memc(T) -> eventually ref.evs(T).l_cmp=if_l)
-        proof {
-            # tactic sorry;
-            tactic tempcase with P=ref.evs(T).p, M=ref.evs(T).m, A=ref.evs(T).a;
-            tactic skolemizenp;
-            instantiate memc_cpl_fair_ax with P=_P, M=_M, A=_A, T=_T
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
-                ->(issued_pio_cpl_memc(_T) -> eventually ref.evs(_T).l_cmp=if_l))
-                definition work_end = ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
-                ->(issued_pio_cpl_memc(_T) -> eventually ref.evs(_T).l_cmp=if_l))
-                definition work_progress = memc.cpl_fair(_P,_M,_A,_T)
-                invariant ~memc.cpl_fair(_P,_M,_A,_T)
-            }
-        }
-
-        # This predicate says that a pio completion at ltime T is in ifabric.
-
-        function issued_pio_cpl_if(T) =
-        ref.evs(T).l_cmp = if_l &
-        ref.evs(T).mem_loc=pio_memc
-
-        # We assume that ifabric.step is called fairly for every
-        # pending completion.
-
-        explicit temporal axiom [ifabric_cpl_fair_ax]
-        (forall T. globally eventually ref.evs(T).l_cmp = if_l -> ifabric.cpl_fair(T))
-        
-        # We prove that pio completions eventually move from ifabric to cfabric. This
-        # is trivial given the above assumption.
-
-        explicit temporal property [if_cpl_liveness]        
-        forall T. (globally issued_pio_cpl_if(T) -> eventually ref.evs(T).l_cmp=cf_cmp_l)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate ifabric_cpl_fair_ax with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false 
-                definition work_end = issued_pio_cpl_if(_T)
-                definition work_start = ~(issued_pio_cpl_if(_T) -> eventually ref.evs(_T).l_cmp=cf_cmp_l)
-                definition work_progress = ref.evs(_T).l_cmp = if_l -> ifabric.cpl_fair(_T)
-                invariant ~ifabric.cpl_fair(T)
-            }
-        }
-
-        # Now we prove a sequence of lemmas showing that a pio operation issued by arm
-        # eventually reach each stage in the pio path. Each lemma usings one of the liveness
-        # properties above. The proofs are all similar.
-
-        explicit temporal property [lemma1] 
-        forall T.
-        globally issued_pio(T) -> eventually ref.evs(T).l_req=memc_l
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate cf_liveness with T=_T;
-            instantiate if_liveness with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued_pio(_T) -> eventually ref.evs(_T).l_req=memc_l)
-                definition work_end = issued_pio(_T) & eventually ref.evs(_T).l_req=if_l
-                definition work_progress = ref.evs(_T).l_req=if_l
-            }
-        }
-
-        explicit temporal property [lemma2] 
-        forall T.
-        globally issued_pio(T) -> eventually ref.evs(T).l_cmp=memc_l
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate lemma1 with T=_T;
-            instantiate memc_liveness with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued_pio(_T) -> eventually ref.evs(_T).l_cmp=memc_l)
-                definition work_end = ref.evs(_T).mem_loc=pio_memc & eventually ref.evs(_T).l_req=memc_l
-                definition work_progress = ref.evs(_T).l_req=memc_l
-            }
-        }
-
-        explicit temporal property [lemma3] 
-        forall T.
-        globally issued_pio(T) -> eventually ref.evs(T).l_cmp=if_l
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate lemma2 with T=_T;
-            instantiate memc_cpl_liveness with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued_pio(_T) -> eventually ref.evs(_T).l_cmp=if_l)
-                definition work_end = ref.evs(_T).mem_loc=pio_memc & ~(eventually ref.evs(_T).l_cmp=if_l) & eventually ref.evs(_T).l_cmp=memc_l
-                definition work_progress = ref.evs(_T).l_cmp=memc_l
-            }
-        }
-
-        explicit temporal property [lemma4] 
-        forall T.
-        globally issued_pio(T) -> eventually ref.evs(T).l_cmp=cf_cmp_l
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate lemma3 with T=_T;
-            instantiate if_cpl_liveness with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued_pio(_T) -> eventually ref.evs(_T).l_cmp=cf_cmp_l)
-                definition work_end = ref.evs(_T).mem_loc=pio_memc & ~(eventually ref.evs(_T).l_cmp=cf_cmp_l) & eventually ref.evs(_T).l_cmp=if_l
-                definition work_progress = ref.evs(_T).l_cmp=if_l
-            }
-        }
-
-    } with this, lclock, tar_clock, tar_cf_clock
-
-    isolate e2e = {
-
-        # Now we show that all operations eventually get their completions back to arm.
-
-        # This predicate sas that a mem operation with given M/A values has reached cfabric.
-        
-        function issued(T,M,A) = cf_live.issued_memc(T) & ref.evs(T).m = M & ref.evs(T).a = A
-
-        # Use liveness of cfabric for mem requests and liveness of memc for mem requests to
-        # show that mem requests get to dramc.
-
-        explicit temporal property [lemma1] 
-        forall M,T,A.
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.rd_fair(M,A)) &
-        (globally eventually memc.wr_fair(M,A))
-        ->
-        globally issued(T,M,A) -> eventually rfn.evqual(M,T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate dramc_nb2.live with M=_M, T=_T, A=_A;
-            instantiate cf_live.cf_liveness with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued(_T,_M,_A) -> eventually rfn.evqual(_M,_T))
-                definition work_end = ref.evs(_T).mem_loc=mem_memc & dramc_nb2.evma(_T,_M,_A) & eventually ref.evs(_T).l_req=memc_l
-                definition work_progress = ref.evs(_T).l_req=memc_l
-            }
-        }
-
-        # Use liveness of dramc to show that mem completions get back to memc.
-
-        explicit temporal property [lemma2] 
-        forall M,T,A.
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.rd_fair(M,A)) &
-        (globally eventually memc.wr_fair(M,A))
-        ->
-        globally issued(T,M,A) -> eventually rfn.evcomplete(T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate lemma1 with M=_M, T=_T, A=_A;
-            instantiate tprops.lemma1 with M=_M, T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued(_T,_M,_A) -> eventually rfn.evcomplete(_T))
-                definition work_end = eventually rfn.evqual(_M,_T)
-                definition work_progress = rfn.evqual(_M,_T)
-            }
-        }
-
-        # Use liveness of memc for mem completions to show that mem completions get
-        # back to cfabric.
-
-        explicit temporal property [lemma3] 
-        forall M,T,A.
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.rd_fair(M,A)) &
-        (globally eventually memc.wr_fair(M,A)) &
-        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T))
-        ->
-        globally issued(T,M,A) -> eventually cmpl_live.cf_cpl(T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate lemma2 with M=_M, T=_T, A=_A;
-            instantiate cmpl_live.memc2cf_live with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued(_T,_M,_A) -> eventually cmpl_live.cf_cpl(_T))
-                definition work_end = eventually rfn.evcomplete(_T)
-                definition work_progress = rfn.evcomplete(_T)
-            }
-        }
-
-        # This predicate says that some request (either mem or pio) has reached cfabric
-        # for a gibe processor.
-
-        function issued_to_cf(P,T) = (ref.evs(T).l_req=cf_mem_l | ref.evs(T).l_req=cf_pio_l) & ref.evs(T).p = P
-
-        # Now we combine the lemmas stating the mem and pio completions reach cfabric
-        # to prove that completions of *all* operations reach cfabric. This is done
-        # with the typical case splitting strategy.
-
-        explicit temporal property [lemma3a] 
-        forall P,T.
-        (forall M,A.
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (globally eventually dramc(M).rd_fair) &
-        (globally eventually dramc(M).wr_fair) &
-        (globally eventually memc.rd_fair(M,A)) &
-        (globally eventually memc.wr_fair(M,A))) &
-        (forall P,M1,A1,T. globally eventually memc.cpl_fair(P,M1,A1,T))
-        ->
-        globally issued_to_cf(P,T) -> eventually cmpl_live.cf_cpl(T)
-        proof {
-            # tactic sorry;
-            tactic tempcase with M=ref.evs(T).m, A=ref.evs(T).a;
-            tactic skolemizenp;
-            instantiate lemma3 with M=_M, T=_T, A=_A;
-            instantiate cf_pio_live.lemma4 with T=_T;
-            instantiate with M=_M,A=_A;
-            tactic l2s_auto2 with {
-                definition work_start = ~(_M=ref.evs(_T).m & _A=ref.evs(_T).a->(issued_to_cf(_P,_T) -> eventually cmpl_live.cf_cpl(_T)))
-                definition work_created = true
-                definition work_needed = ref.evs(_T).mem_loc=mem_memc
-                definition work_done = false
-                definition work_end = eventually cmpl_live.cf_cpl(_T)
-                definition work_progress = cmpl_live.cf_cpl(_T)
-                definition work_created[2] = true
-                definition work_needed[2] = ref.evs(_T).mem_loc=pio_memc
-                definition work_done[2] = false
-                definition work_end[2] = eventually ref.evs(_T).l_cmp=cf_cmp_l
-                definition work_progress[2] = ref.evs(_T).l_cmp=cf_cmp_l
-            }
-        }
-
-        # From here, in pio and mem completions follow the same path, so we handle
-        # them together. Here, we show that completions reach arm, using liveness
-        # of cfabric for completions.
-
-        explicit temporal property [lemma4] 
-        forall P,T.
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (forall M. globally eventually dramc(M).rd_fair) &
-        (forall M. globally eventually dramc(M).wr_fair) &
-        (forall M,A. globally eventually memc.rd_fair(M,A)) &
-        (forall M,A. globally eventually memc.wr_fair(M,A)) &
-        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
-        (globally eventually cfabric.cpl_fair)
-        ->
-        globally issued_to_cf(P,T) -> eventually cmpl_live.arm_cpl(T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate lemma3a with P=_P, T=_T;
-            instantiate cmpl_live.cf2arm_live with T=_T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(issued_to_cf(_P,_T) -> eventually cmpl_live.arm_cpl(_T))
-                definition work_end = eventually cmpl_live.cf_cpl(_T)
-                definition work_progress = cmpl_live.cf_cpl(_T)
-            }
-        }
-
-    } with this, lclock, tar_clock, tar_cf_clock, cf_live, dramc_nb2.live, dramc_nb2.evqual_rd, dramc_nb2.evqual_wr, dramc_nb2.evma, cmpl_live.cf_cpl, cmpl_live.memc2cf_live, cmpl_live.arm_cpl, cmpl_live.cf2arm_live, rfn.evcomplete, tprops, cf_pio_live
-
-    # Now we prepare to show that every operation whose completion reaches arm
-    # is eventually retired. We use an abstract model of in-order retirement for this.
-    #
-    # Here, we model a system that completes work out-of-order and retires it
-    # in-order. We assume that every work item that is created is
-    # eventually completed. We then show that every work item that is
-    # begun is eventually retired.
-    #
-
-    module isolate in_order_retire(nat) with nat = {
-
-        instantiate equality_schemata
-        instantiate unbounded_sequence_schemata(nat)
-
-        # create a work element with a givem logical time (must be ordered)
-        action send(lt:nat)
-
-        # complete a work element (may be out of order)
-        action complete(lt:nat)
-
-        # retire a completed work item (in order of creation)
-        action recv
-
-        specification {
-            # work that has been created
-            var begun(X:nat) : bool
-            # work that has been completed
-            var completed(X:nat) : bool
-            # work that has been retired
-            var done(X:nat) : bool
-
-            after init {
-                begun(X) := false;
-                completed(X) := false;
-                done(X) := false;
-            }
-
-            # signal indicates trying to retire a work item
-            instance trying : signal0
-
-            # Work items must be created in order
-            before send {
-                require begun(X) -> X < lt;
-            }
-
-            # TRICKY: proof requires that we set 'begun' after predq. That
-            # means we need to do this in an "after" monitor.
-
-            after send {
-                begun(lt) := true;
-            }
-
-            # We can complete a created work item without regard to order
-            before complete {
-                require begun(lt) & ~completed(lt);
-                completed(lt) := true;
-            }
-
-            # When retireing, we find the first work element
-            # that is begun but not done and, if completed, we mark it done, else
-            # we do nothing.
-            before recv {
-                trying.raise;
-                if some x:nat. ~done(x) & begun(x) minimizing x {
-                    if completed(x) {
-                        done(x) := true;
-                    }
-                }
-            }
-
-        }
-        implementation {
-            # Two axuliaries to help in the proof
-            # lastq indicates the cell of the last quanified work element
-            var lastq : nat
-            # predq(X) gives the cell of the latest qualified element before
-            # cell X, if any (else it is zero)
-            var predq(X:nat) : nat
-
-            after init {
-                lastq := 0;
-            }
-            # When we send, we append an element to the queue and update
-            # the auxiliaries lastq and predq.
-            implement send {
-                predq(lt) := lastq;
-                lastq := lt;
-            }
-
-            # We hide these invariants to avoid function cycles. They
-            # are very similar to invariants of the abstract model in
-            # module split_queue2 above. In particular, we have that
-            # there are no qualified elements between predq(X) and X.
-            
-            invariant begun(X) & predq(X) < Y & Y < X -> ~begun(Y)
-            invariant lastq < X & begun(X) -> false
-            invariant begun(X) -> begun(lastq)
-        }
-
-        # Here are some more useful invariants.  We state the obvious
-        # (that there are no nats less than 0) to help the model
-        # checker, without adding 0 to the list of skolems.
-
-        invariant begun(X) & done(X) & Y < X & begun(Y) -> done(Y)
-        invariant completed(X) -> begun(X)
-        invariant done(X) -> begun(X) & completed(X)
-        invariant ~(X:nat < 0)
-        
-        # Now we can prove liveness with the model checker. We concretize the
-        # following individuals:
-        #
-        # - X is the cell of the element to be retired
-        # - Y is the predecessor of this cell
-        #
-        # The idea of the proof is this: we know by induction on time that
-        # cell Y is eventually done. Since there are no qualified cells
-        # between Y and X (an invariant stated above) we know the next
-        # cell to be processed is X. 
-
-        explicit temporal property [lemma1]
-        (globally eventually trying.now) &
-        (forall X. globally begun(X) -> eventually completed(X))
-        ->
-        forall X. (globally begun(X) -> eventually done(X))
-        proof {
-            tactic mc with Y = predq(X)
-        }
-
-        # Sadly, we have a function cycle in proving the above invariants
-        # with Z3, so we turn off the fragment checker in this isolate.
-        # TODO: avoid this
-        
-        attribute complete = fo
     }
-
-    isolate rfn2 =
-    {
-
-        # Now that we have proved liveness of the abstract model, we will create an
-        # instance of it and use it to prove liveness of our system. Notice we
-        # have one instance for each process. 
-
-        instance abs(P:proc) : in_order_retire(lclock)
-
-
-        # Here we put hooks into arm to tell us when work is
-        # being 'sent' (created) and 'received' (completed). This is part
-        # of the refinement prof -- it tells us when abstract operations are
-        # occurring in the concrete model. When we process a read in dramc, we
-        # call recv1 in the abstract mopdel, and when we process a write, we call
-        # recv2.
-
-        before arm.retire_hook(p:proc,lt:lclock) {
-            abs(p).recv
-        }
-        
-        # When memc sends an operations to dramc, we call send of the
-        # abstract model
-        
-        before arm.issue_hook(p:proc,lt:lclock) {
-            abs(p).send(lt)
-        }
-
-        before cfabric.complete_hook(lt:lclock) {
-            abs(ref.evs(lt).p).complete(lt)
-        }
-        
-        # Here are some invariants relating the abstract abstract and
-        # concrete state, as always in a refinement proof.
-
-        # Every existing operation has begun and is not done. Moreover,
-        # if it is completed, its completion has reached arm.
-        
-        invariant
-        (isd.rd(P,M,A,T) | isd.wr(P,M,A,T))
-        ->
-        abs(P).begun(T) & ~abs(P).done(T) &
-        (abs(P).completed(T) -> ref.evs(T).l_cmp=arm_l)
-        
-        # Make sure we use logical times in ascending order, otherwise we
-        # will violate the require clause in abs.send.
-        invariant X > ref.lt -> ~abs(P).begun(X)
-        
-        # These invariants should probably be somewhere else!
-        invariant ~arm.cpl_fair(P)
-
-
-    } with this, lclock, tar_clock, tar_cf_clock
-
-    isolate sys_live = {
-
-        # Now here's the fun part. First we show that if the system
-        # receives infinitely often, then so does the abstract model. 
-        #
-
-        explicit temporal property [gf]
-        forall P.
-        (globally eventually arm.cpl_fair(P)) ->
-        (globally eventually rfn2.abs(P).trying.now)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_end = ~eventually rfn2.abs(_P).trying.now
-                definition work_start = ~eventually rfn2.abs(_P).trying.now
-                definition work_progress = arm.cpl_fair(_P)
-            }
-        }
-
-        # We also need to show that in the abstract model, all of the
-        # created operations are eventually completed. We prove this
-        # using e2e.lemma4, which states that completions of all
-        # operations reach arm. We take in two steps. Property evc
-        # says that if the abstract model has begun, then it eventually
-        # completes.
-
-        explicit temporal property [evc]
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (forall M. globally eventually dramc(M).rd_fair) &
-        (forall M. globally eventually dramc(M).wr_fair) &
-        (forall M,A. globally eventually memc.rd_fair(M,A)) &
-        (forall M,A. globally eventually memc.wr_fair(M,A)) &
-        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
-        (globally eventually cfabric.cpl_fair)
-        ->
-        (forall P,X. globally rfn2.abs.begun(P,X) -> eventually rfn2.abs.completed(P,X))
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate e2e.lemma4 with P = _P, T = _X;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = ~(rfn2.abs.begun(_P,_X) -> eventually rfn2.abs.completed(_P,_X))
-                definition work_end = ~(rfn2.abs.begun(_P,_X) -> eventually rfn2.abs.completed(_P,_X)) & ~cmpl_live.arm_cpl(_X) & ref.evs(_X).p = _P & eventually cmpl_live.arm_cpl(_X)
-                definition work_progress = cmpl_live.arm_cpl(_X)
-            }
-            
-        }
-        
-        # Now using the liveness of the abstract model, we show that if the
-        # operation has begun in the abstract model it is eventually done.
-        # This just removes the assumption from the abstract liveness property.
-        
-        explicit temporal property [evc2]
-        forall P,T.
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (forall M. globally eventually dramc(M).rd_fair) &
-        (forall M. globally eventually dramc(M).wr_fair) &
-        (forall M,A. globally eventually memc.rd_fair(M,A)) &
-        (forall M,A. globally eventually memc.wr_fair(M,A)) &
-        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
-        (globally eventually cfabric.cpl_fair) &
-        (globally eventually arm.cpl_fair(P))
-        ->
-        globally rfn2.abs.begun(P,T) -> eventually rfn2.abs.done(P,T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate gf with P = _P;
-            instantiate evc with P = _P;
-            instantiate rfn2.abs.lemma1 with P = _P, X = _T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_start = false
-                definition work_progress = false
-                invariant false
-            }
-        }
-
-        # We can now state and prove the system-level liveness property.
-        # That is, if any operation is issued by arm, it is eventually
-        # retired by arm.
-
-        # With the above lemmas, we can use liveness of the abstract
-        # model to prove liveness of the concrete. Notice that the progress
-        # condition is that the abstract model is done. This immediately ensures
-        # that the concrete model is done, because of our invariants relating
-        # abstract and concrete state.
-
-        explicit temporal property [live]
-        forall P,T. 
-        (globally eventually cfabric.rd_fair) &
-        (globally eventually cfabric.wr_fair) &
-        (forall M. globally eventually dramc(M).rd_fair) &
-        (forall M. globally eventually dramc(M).wr_fair) &
-        (forall M,A. globally eventually memc.rd_fair(M,A)) &
-        (forall M,A. globally eventually memc.wr_fair(M,A)) &
-        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
-        (globally eventually cfabric.cpl_fair) &
-        (globally eventually arm.cpl_fair(P))
-        ->
-        globally e2e.issued_to_cf(P,T) -> eventually cmpl_live.retired(T)
-        proof {
-            # tactic sorry;
-            tactic skolemizenp;
-            instantiate gf with P = _P;
-            instantiate evc2 with P = _P, T = _T;
-            #            instantiate evc with P = _P;
-            #            instantiate rfn2.abs.lemma1 with P = _P, X = _T;
-            tactic l2s_auto2 with {
-                definition work_created = true
-                definition work_needed = true
-                definition work_done = false
-                definition work_end = (isd.rd(_P,ref.evs(_T).m,ref.evs(_T).a,_T) | isd.wr(_P,ref.evs(_T).m,ref.evs(_T).a,_T))
-                #definition work_end = ~(e2e.issued_to_cf(_P,_T) -> eventually cmpl_live.retired(_T))
-                definition work_start = ~(e2e.issued_to_cf(_P,_T) -> eventually cmpl_live.retired(_T))
-                definition work_progress = rfn2.abs.done(_P,_T)
-            }
-        }
-
-
-    } with this, lclock, tar_clock, tar_cf_clock, rfn2, e2e.issued_to_cf, cmpl_live.retired, e2e.lemma4, cmpl_live.arm_cpl
+    
+} with this, lclock, tar_clock, tar_cf_clock 
 
 
 
-}
+
 
 
 
