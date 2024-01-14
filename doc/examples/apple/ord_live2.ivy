@@ -1759,6 +1759,10 @@ isolate sys_live = {
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
     & ref.evs(T).l_cmp = cf_cmp_l
 
+    function if_cpl(T) =
+    (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
+    & ref.evs(T).l_cmp = if_l    
+
     function memc_cpl(T) =
 #    ref.evs(T).mem_loc=mem_memc &
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp) &
@@ -1784,6 +1788,9 @@ isolate sys_live = {
     explicit temporal axiom [lemma3b]
     globally pending(T) & is_io(T) -> eventually cf_cpl(T)
 
+    explicit temporal axiom [lemma2b]
+    globally pending(T) & is_io(T) -> eventually if_cpl(T)
+
     explicit temporal axiom [lemma2a]
     globally pending(T) & ~is_io(T) -> eventually dramc_req(T)
 
@@ -1792,6 +1799,12 @@ isolate sys_live = {
 
     # TODO: this fairness constraint is bogus. Replace with something
     # reasonable. 
+
+    explicit temporal axiom [cf_rd_fair] 
+        globally eventually cfabric.rd_fair
+
+    explicit temporal axiom [cf_wr_fair] 
+        globally eventually cfabric.wr_fair
 
     explicit temporal axiom [memc_rd_fair] 
         globally eventually memc.rd_fair(M,A)
@@ -1808,6 +1821,9 @@ isolate sys_live = {
     explicit temporal axiom [memc_cpl_fair] 
        forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)
 
+    explicit temporal axiom [if_cpl_fair]
+       forall T. globally eventually ifabric.cpl_fair(T)
+
     explicit temporal axiom [cf_cpl_fair]
     globally eventually cfabric.cpl_fair
     
@@ -1821,27 +1837,41 @@ isolate sys_live = {
         # tactic sorry;
         tactic skolemizenp
         instantiate cpl_fair with P=_P
-        instantiate lemma1a
-        instantiate lemma3b
+        instantiate lemma2b
         instantiate cf_cpl_fair
+        instantiate if_cpl_fair
         instantiate memc_cpl_fair
         instantiate dramc_rd_fair
         instantiate dramc_wr_fair
         instantiate memc_rd_fair
         instantiate memc_wr_fair
+        instantiate cf_rd_fair
+        instantiate cf_wr_fair
         tactic ranking with {
             
-            definition work_created[0](T) = T <= ref.lt
-            definition work_needed[0](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_req(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
-            definition work_invar[0] = pending(_T) & ref.evs(_T).p=_P 
-            definition work_progress[0](T) = memc_req(T)
-            definition work_helpful[0](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_req(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_created[0a](T) = T <= ref.lt
+            definition work_needed[0a](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_req(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_invar[0a] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[0a] = cfabric.rd_fair
+            definition work_helpful[0a] = exists T. work_needed[0a](T) & ref.evs(T).req = read
+
+            definition work_created[0b](T) = T <= ref.lt
+            definition work_needed[0b](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_req(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_invar[0b] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[0b] = cfabric.wr_fair
+            definition work_helpful[0b] = exists T. work_needed[0b](T) & ref.evs(T).req = write
 
             definition work_created[1](T) = pending(T)
-            definition work_needed[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_needed[1](T) = T <= _T & pending(T) & is_io(T) & ~if_cpl(T) & ~cf_cpl(T) & ~completed(T)
             definition work_invar[1] = pending(_T) & ref.evs(_T).p=_P 
-            definition work_progress[1](T) = cf_cpl(T)
-            definition work_helpful[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_progress[1](T) = if_cpl(T)
+            definition work_helpful[1](T) = T <= _T & pending(T) & is_io(T) & ~if_cpl(T) & ~cf_cpl(T) & ~completed(T)
+
+            definition work_created[4](T) = pending(T)
+            definition work_needed[4](T) = T <= _T & pending(T) & is_io(T) & if_cpl(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_invar[4] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[4](T) = ifabric.cpl_fair(T)
+            definition work_helpful[4](T) = T <= _T & pending(T) & is_io(T) & if_cpl(T) & ~cf_cpl(T) & ~completed(T)
 
             definition work_created[5a](T) = pending(T)
             definition work_needed[5a](T) = T <= _T & pending(T) & ~is_io(T) & memc_req(T)
@@ -1906,11 +1936,15 @@ isolate sys_live = {
 
             invariant ~arm.cpl_fair(P)
             invariant ~cfabric.cpl_fair
+            invariant ~ifabric.cpl_fair(T)
             invariant ~memc.cpl_fair(P,M,A,T)
             invariant ~dramc(M).rd_fair
             invariant ~dramc(M).wr_fair
             invariant ~memc.rd_fair(M,A)
             invariant ~memc.wr_fair(M,A)
+            invariant ~cfabric.rd_fair
+            invariant ~cfabric.wr_fair
+            invariant ref.evs.l_cmp(X) ~= dramc_l
 
         }
     }
