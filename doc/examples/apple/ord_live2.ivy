@@ -910,10 +910,30 @@ object ifabric = {
 	}
 	
   	if some t3:lclock,pp:proc,aa:addr_type. (isd.wr(pp,m,aa,t3) & ref.evs(t3).req=write | isd.rd(pp,m,aa,t3) & ref.evs(t3).req=read) & ref.evs(t3).l_req=dramc_l minimizing ref.evs(t3).lt_arr {
-	       dramc(m).t_min :=  ref.evs(t3).lt_arr;
+	    dramc_next := t3;
+	    dramc(m).t_min := ref.evs(t3).lt_arr;
 	}			
-	
+        update_witnesses;
     }
+}
+
+var dramc_next : lclock
+var dramc_lt_min : lclock
+
+action update_witnesses = {
+    if some t4:lclock,pp:proc,mm:mem_type,aa:addr_type.
+    (isd.wr(pp,mm,aa,t4) & ref.evs(t4).req=write | isd.rd(pp,mm,aa,t4)
+    & ref.evs(t4).req=read) & ref.evs(t4).l_req=dramc_l
+    minimizing t4 {
+	dramc_lt_min := t4;
+    }			
+    var mm := ref.evs(dramc_lt_min).m;
+    if some t4:lclock,pp:proc,aa:addr_type.
+    (isd.wr(pp,mm,aa,t4) & ref.evs(t4).req=write | isd.rd(pp,mm,aa,t4)
+    & ref.evs(t4).req=read) & ref.evs(t4).l_req=dramc_l
+    minimizing ref.evs(t4).lt_arr {
+	dramc_next := t4;
+    }			
 }
 
 ################################################################################
@@ -955,8 +975,10 @@ module dramc_mod(m) = {
 	};
 	
   	if some tt:lclock,pp:proc,aa:addr_type. (isd.wr(pp,m,aa,tt) & ref.evs(tt).req=write | isd.rd(pp,m,aa,tt) & ref.evs(tt).req=read) & ref.evs(tt).l_req=dramc_l minimizing ref.evs(tt).lt_arr {
+	    dramc_next := tt;
 	    t_min := ref.evs(tt).lt_arr;
 	}
+        update_witnesses;
     }
     
     action step_wr = { # a:addr_type
@@ -981,8 +1003,10 @@ module dramc_mod(m) = {
 	};
 	
   	if some tt:lclock,pp:proc,aa:addr_type. (isd.wr(pp,m,aa,tt) & ref.evs(tt).req=write | isd.rd(pp,m,aa,tt) & ref.evs(tt).req=read) & ref.evs(tt).l_req=dramc_l minimizing ref.evs(tt).lt_arr {
+	    dramc_next := tt;
 	    t_min := ref.evs(tt).lt_arr;
 	}		    
+        update_witnesses;
     }
 }
 
@@ -1088,18 +1112,43 @@ invariant (ref.evs(T).req=write | ref.evs(T).req=read) & ref.evs(T).m=M & ref.ev
            ->
            ref.evs(T).lt_arr=0
 
-invariant (ref.evs(T).req=write | ref.evs(T).req=read) & ref.evs(T).m=M & ref.evs(T).l_req=dramc_l
-           ->
-           ~(dramc.t_min(M)=0)
+# invariant (ref.evs(T).req=write | ref.evs(T).req=read) & ref.evs(T).m=M & ref.evs(T).l_req=dramc_l
+#            ->
+#            ~(dramc.t_min(M)=0)
 
-invariant  (
-            (ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l &
-            (ref.evs(T1).req=write | ref.evs(T1).req=read) & ref.evs(T1).l_req=dramc_l &
-            ref.evs(T0).m=ref.evs(T1).m &
-	    ref.evs(T0).a=ref.evs(T1).a
-           )
-           ->
-           ~(ref.evs(T0).lt_arr<dramc.t_min(ref.evs(T0).m) | ref.evs(T1).lt_arr<dramc.t_min(ref.evs(T0).m))
+# invariant  (
+#             (ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l &
+#             (ref.evs(T1).req=write | ref.evs(T1).req=read) & ref.evs(T1).l_req=dramc_l &
+#             ref.evs(T0).m=ref.evs(T1).m &
+# 	    ref.evs(T0).a=ref.evs(T1).a
+#            )
+#            ->
+#            ~(ref.evs(T0).lt_arr<dramc.t_min(ref.evs(T0).m) | ref.evs(T1).lt_arr<dramc.t_min(ref.evs(T0).m))
+
+# If there is any request in dramc(M), then dramc(M).t_min is the minimum arrival time in dramc(M)
+
+invariant  
+    ((ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l) & ref.evs(T0).m = M
+    ->
+    ref.evs(T0).lt_arr >= dramc(M).t_min
+
+# If there is any request in dramc(M), the dramc_next has the minimum arrival
+# time in dramc for its memory. This means dramc_next is ready to read or write.
+
+invariant  
+    ((ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l)
+    ->
+        (ref.evs(dramc_next).req=write | ref.evs(dramc_next).req=read)
+        & ref.evs(dramc_next).l_req=dramc_l
+        & ref.evs(dramc_next).lt_arr = dramc(ref.evs(dramc_next).m).t_min
+
+invariant 
+(ref.evs(T0).req=write | ref.evs(T0).req=read) & ref.evs(T0).l_req=dramc_l
+-> dramc_lt_min <= T0
+  & (ref.evs(dramc_lt_min).req=write | ref.evs(dramc_lt_min).req=read) & ref.evs(dramc_lt_min).l_req=dramc_l
+  & (ref.evs(dramc_next).req=write | ref.evs(dramc_next).req=read) & ref.evs(dramc_next).l_req=dramc_l
+  & dramc(ref.evs(dramc_lt_min).m).t_min = ref.evs(dramc_next).lt_arr
+  & ref.evs(dramc_lt_min).m = ref.evs(dramc_next).m
 
 invariant ref.evs(T).req=read  -> ref.evs(T).l_cmp=init_l
 invariant ref.evs(T).req=write -> ref.evs(T).l_cmp=init_l
@@ -1669,6 +1718,10 @@ isolate sys_live = {
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp) &
     ref.evs(T).l_cmp = memc_l
 
+    function dramc_req(T) =
+    (ref.evs(T).req=read | ref.evs(T).req=write)  &
+    ref.evs(T).l_req=dramc_l
+
     function is_io(T) = ref.evs(T).mem_loc=pio_memc
 
     explicit temporal axiom [lemma4] 
@@ -1681,6 +1734,18 @@ isolate sys_live = {
     explicit temporal axiom [lemma3b]
     globally pending(T) & is_io(T) -> eventually cf_cpl(T)
 
+    explicit temporal axiom [lemma2a]
+    globally pending(T) & ~is_io(T) -> eventually dramc_req(T)
+
+    # TODO: this fairness constraint is bogus. Replace with something
+    # reasonable. 
+
+    explicit temporal axiom [dramc_rd_fair] 
+        globally eventually dramc(M).rd_fair
+
+    explicit temporal axiom [dramc_wr_fair] 
+        globally eventually dramc(M).wr_fair
+
     explicit temporal axiom [memc_cpl_fair] 
        forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)
 
@@ -1690,15 +1755,6 @@ isolate sys_live = {
     explicit temporal axiom [cpl_fair] 
       forall P. globally eventually arm.cpl_fair(P)
     
-    # var p : proc
-    # axiom P:proc = p 
-
-    # var m : mem_type
-    # axiom M:mem_type = m
-    
-    # var a : addr_type
-    # axiom A:addr_type = a
-
     explicit temporal property [live]
     forall P,T. 
         globally ref.evs(T).p=P & pending(T) -> eventually ~pending(T)
@@ -1706,23 +1762,39 @@ isolate sys_live = {
         # tactic sorry;
         tactic skolemizenp
         instantiate cpl_fair with P=_P
-        instantiate lemma3a
+        instantiate lemma2a
         instantiate lemma3b
         instantiate cf_cpl_fair
         instantiate memc_cpl_fair
-        tactic l2s_auto5 with {
+        instantiate dramc_rd_fair
+        instantiate dramc_wr_fair
+        tactic ranking with {
             
             definition work_created[0](T) = T <= ref.lt
-            definition work_needed[0](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_needed[0](T) = T <= _T & pending(T) & ~is_io(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
             definition work_invar[0] = pending(_T) & ref.evs(_T).p=_P 
-            definition work_progress[0](T) = memc_cpl(T)
-            definition work_helpful[0](T) = T <= _T & pending(T) & ~is_io(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
+            definition work_progress[0](T) = dramc_req(T)
+            definition work_helpful[0](T) = T <= _T & pending(T) & ~is_io(T) & ~dramc_req(T) & ~memc_cpl(T) & ~cf_cpl(T) & ~completed(T)
 
             definition work_created[1](T) = pending(T)
             definition work_needed[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
             definition work_invar[1] = pending(_T) & ref.evs(_T).p=_P 
             definition work_progress[1](T) = cf_cpl(T)
             definition work_helpful[1](T) = T <= _T & pending(T) & is_io(T) & ~cf_cpl(T) & ~completed(T)
+
+            definition work_created[5](T,U) = T <= ref.lt & U <= ref.lt
+            definition work_needed[5](T,U) = U <= _T & dramc_req(T) & pending(U) & dramc_req(U) & ref.evs(T).lt_arr <= ref.evs(U).lt_arr & ref.evs(T).m = ref.evs(U).m
+            definition work_invar[5] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[5](M) = dramc(M).rd_fair
+            definition work_helpful[5](M,T,U) = work_needed[5](T,U) & ref.evs(T).m = M & ref.evs(T).lt_arr = dramc(M).t_min & ref.evs(T).req=read
+            # definition work_witness[5](M:mem_type) = dramc_t_min
+
+            definition work_created[6](T,U) = T <= ref.lt & U <= ref.lt
+            definition work_needed[6](T,U) = U <= _T & dramc_req(T) & pending(U) & dramc_req(U) & ref.evs(T).lt_arr <= ref.evs(U).lt_arr & ref.evs(T).m = ref.evs(U).m
+            definition work_invar[6] = pending(_T) & ref.evs(_T).p=_P 
+            definition work_progress[6](M) = dramc(M).wr_fair
+            definition work_helpful[6](M,T,U) = work_needed[6](T,U) & ref.evs(T).m = M & ref.evs(T).lt_arr = dramc(M).t_min & ref.evs(T).req=write
+            # definition work_witness[6](M:mem_type) = dramc_t_min
 
             definition work_created[7](T) = pending(T)
             definition work_needed[7](T) = T <= _T & pending(T) & ~is_io(T) & ~cf_cpl(T) & ~completed(T)
@@ -1749,10 +1821,9 @@ isolate sys_live = {
             invariant ~arm.cpl_fair(P)
             invariant ~cfabric.cpl_fair
             invariant ~memc.cpl_fair(P,M,A,T)
+            invariant ~dramc(M).rd_fair
+            invariant ~dramc(M).wr_fair
 
-            invariant ~l2s_waiting -> pending(_T) & ref.evs(_T).p=_P
-            invariant ~l2s_waiting & T <= _T -> l2s_a(T)
-            invariant l2s_saved -> _T <= ref.lt
         }
     }
     
