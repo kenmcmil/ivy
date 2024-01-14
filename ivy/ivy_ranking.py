@@ -375,6 +375,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                          lg.Implies(
                              lg.And(
                                  old_of(work_invar),
+                                 no_help,
                                  old_of(work_helpful.args[E]),
                                  waiting_for_progress),
                              work_helpful.args[E]))
