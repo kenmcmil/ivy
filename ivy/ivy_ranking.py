@@ -194,6 +194,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         # work_invar.
 
         D = 0
+        E = 1
 
         def trig_glob(prop,res,pos):
             if pos and isinstance(prop,lg.Globally):
@@ -324,7 +325,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             tmp = lg.Implies(no_help,tmp)
             postconds.append(mklfs("l2s_needed_preserved",tmp))
 
-            helps.append(lg.And(work_invar,exists(helpful_args,work_helpful.args[D])))
+            helps.append(lg.And(work_invar,exists(helpful_args,work_helpful.args[E])))
 
             # invariant l2s_progress_made
 
@@ -345,7 +346,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             # tmp = lg.Implies(tmp,decreased)
             tmp = lg.And(
                     old_of(work_invar),
-                    old_of(work_helpful.args[D]),
+                    old_of(work_helpful.args[E]),
                     lg.Not(waiting_for_progress))
             tmp = lg.Implies(tmp,decreased)
             postconds.append(mklfs("l2s_progress",tmp))
@@ -360,7 +361,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
             tmp = lg.And(
                 old_of(work_invar),
-                old_of(work_helpful.args[D]))
+                old_of(work_helpful.args[E]))
             tmp = lg.Implies(tmp, lg.Eventually(proof_label,work_progress.args[1]))
             postconds.append(mklfs("l2s_progress_eventually",tmp))
 
@@ -374,9 +375,9 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                          lg.Implies(
                              lg.And(
                                  old_of(work_invar),
-                                 old_of(work_helpful.args[D]),
+                                 old_of(work_helpful.args[E]),
                                  waiting_for_progress),
-                             work_helpful.args[D]))
+                             work_helpful.args[E]))
             postconds.append(mklfs("l2s_sched_stable",tmp))
                 
         # l2s_sched_exists
@@ -386,7 +387,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             work_invar = tasks[sfx]['work_invar'].args[D]
             work_start = triggers[sfx]['work_start']
             tmp = old_of(lg.Implies(work_invar,lg.Or(*helps)))
-            # postconds.append(mklf("l2s_sched_exists",tmp))
+            postconds.append(mklf("l2s_sched_exists",tmp))
 #            invars.append(mklf("l2s_eventually_start",l2s_init([],lg.Eventually(proof_label,work_start.args[1]))()))
             invars.append(mklf("l2s_eventually_start2",lg.Implies(lg.Not(work_invar),lg.Eventually(proof_label,work_start.args[1]))))
 
