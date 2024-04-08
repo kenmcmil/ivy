@@ -1,0 +1,267 @@
+#lang ivy1.8
+
+# This is the example from section 3.4 of the paper, with
+# cascaded queues and reordering. Note, this version has
+# two queues feeding an arrival-time-ordered queue, rather
+# than a single queue with to message kinds.
+
+include order
+
+instance time : unbounded_sequence
+
+# A signal with zero parameters
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# A signal with one parameter
+
+module signal1(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# An unbounded queue module, with liveness property. Notice this module is an isolate and
+# depends on the theory of the index type 'nat'.
+
+module isolate unbounded_queue with time = {
+
+    # This action sends a message. Since the queue is unbounded, this
+    # action always succeeds.
+
+    action send(x:time)
+
+    # This action receives a message. It returns a success code 'ok'
+    # and a value 'x' if 'ok' is true. If the queue is empty, 'ok is
+    # false.
+
+    action recv returns (x:time, ok:bool)
+
+    specification {
+        var latest : time
+        var pending(X:time) : bool
+        
+        after init {
+            latest := 0;
+            pending(X) := false;
+        }
+
+        instance sending : signal1(time)
+        instance trying : signal
+        instance receiving : signal1(time)
+
+        before send {
+            require x > latest;
+            pending(x) := true;
+            latest := x;
+            sending.raise(x);   # ghost action to signal a send
+        }
+
+        before recv {
+            trying.raise;      # ghost action signalling polling of queue
+            ok := false;
+            if some (y:time) pending(y) minimizing y {
+                ok := true;
+                x := y;
+                pending(x) := false;
+                receiving.raise(x);
+            }
+        }
+
+        invariant pending(X) -> X <= latest
+
+        # This is the liveness property of the queue. It says that if messages X is eventually sent
+        # and if the queue is polled infinitely often, then message X is eventually received.
+
+        temporal property [lpq]
+        (globally eventually trying.now)
+        ->
+        forall X. globally (sending.now & sending.value = X) ->
+                           (eventually receiving.now & receiving.value = X)
+        proof {
+            tactic skolemize;
+            tactic l2s_auto4 with {
+                definition work_created(X) = pending(X)
+                definition work_needed(X) = pending(X) & X <= _X
+                definition work_done(X:time) = false
+                definition work_end(X:time) = pending(_X)
+                definition work_start = ~((sending.now & sending.value = _X) ->
+                           (eventually receiving.now & receiving.value = _X))
+                definition work_progress = trying.now
+            }
+            showgoals
+        }
+    }
+}
+
+# An unbounded queue module, that orders outputs by arrival time, not
+# time stamp, with liveness property. Notice this module is an isolate
+# and depends on the theory of the index type 'nat'
+
+instance arr_time : unbounded_sequence
+
+module isolate arr_queue with time, arr_time = {
+
+    # This action sends a message. Since the queue is unbounded, this
+    # action always succeeds.
+
+    action send(x:time)
+
+    # This action receives a message. It returns a success code 'ok'
+    # and a value 'x' if 'ok' is true. If the queue is empty, 'ok is
+    # false.
+
+    action recv returns (x:time, ok:bool)
+
+    specification {
+        var pending(X:time) : bool
+        var clock : arr_time
+        var done : arr_time
+        var arr(X:time) : arr_time
+        
+        after init {
+            pending(X) := false;
+            clock := 0;
+            done := 0;
+        }
+
+        instance sending : signal1(time)
+        instance trying : signal
+        instance receiving : signal1(time)
+
+        before send {
+            require ~pending(x);
+            arr(x) := clock;
+            pending(x) := true;
+            sending.raise(x);   # ghost action to signal a send
+            clock := clock.next;
+        }
+
+        before recv {
+            trying.raise;      # ghost action signalling polling of queue
+            ok := false;
+            if some (y:time) pending(y) minimizing arr(y) {
+                ok := true;
+                x := y;
+                pending(x) := false;
+                done := arr(y).next;
+                receiving.raise(x);
+            }
+        }
+
+        invariant pending(X) -> arr(X) < clock
+        invariant pending(X) -> arr(X) >= done
+        invariant pending(X) & pending(Y) & X~=Y -> arr(X) ~= arr(Y)
+        invariant clock >= done
+    }
+}
+
+# This isolate represents a cascade of two queues. We want to prove that every
+# message sent on the first queue is eventually received from the second queue.
+
+isolate m = {
+    instance q1 : unbounded_queue
+    instance q2 : unbounded_queue
+    instance q3 : arr_queue
+
+    var clock : time
+
+    after init {
+        clock := 0;
+    }
+
+    # This action polls q1, and if a message is available, it sends
+    # it on q2.
+
+    action poll1 = {
+        var x : time;
+        var ok : bool;
+        (x,ok) := q1.recv;
+        if ok {
+            q3.send(x);
+        }
+    }
+
+    action poll2 = {
+        var x : time;
+        var ok : bool;
+        (x,ok) := q1.recv;
+        if ok {
+            q3.send(x);
+        }
+    }
+
+    before q1.send {
+        require x > clock;
+        clock := x;
+    }
+
+    before q2.send {
+        require x > clock;
+        clock := x;
+    }
+    
+    invariant q1.pending(X) -> clock >= X
+    invariant q2.pending(X) -> clock >= X
+    invariant q3.pending(X) -> clock >= X
+    invariant ~(q1.pending(X) & q2.pending(X))
+    invariant ~(q1.pending(X) & q3.pending(X))
+    invariant ~(q2.pending(X) & q3.pending(X))
+
+    # This is a system property we want to prove. That is, if we infinitely often poll
+    # both q1 and q2, then every message X sent on q1 should eventually be received on q2.
+    #
+    
+    temporal property
+    forall X. ((globally eventually q1.trying.now)
+               & (globally eventually q3.trying.now)
+               -> (globally q1.sending.now & q1.sending.value = X ->
+                     (eventually q3.receiving.now & q3.receiving.value = X)))
+    proof {
+        tactic skolemize;
+        showgoals;
+        tactic ranking with {
+            definition work_created[1](X) = q1.pending(X)
+            definition work_needed[1](X) = q1.pending(X) & X <= _X
+            definition work_invar[1] = (q1.pending(_X) | q3.pending(_X))
+            definition work_helpful[1] = q1.pending(_X)
+            definition work_progress[1] = q1.trying.now
+
+            definition work_created[2](X) = q3.pending(X)
+            definition work_needed[2](X) = q3.pending(X) & q3.arr(X) <= q3.arr(_X)
+            definition work_invar[2] = (q1.pending(_X) | q3.pending(_X))
+            definition work_helpful[2] = q3.pending(_X)
+            definition work_progress[2] = q3.trying.now
+        }
+        showgoals
+    }
+} with time, arr_time
+
+export m.q1.send
+export m.q1.send
+export m.poll1
+export m.poll2
+export m.q3.recv
+

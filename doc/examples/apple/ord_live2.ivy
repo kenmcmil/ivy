@@ -1747,55 +1747,80 @@ module signal1(data) = {
     }
 }
 
+################################################################################
+# 
+#
+#
+# Liveness proof startes here.
+#
+# We show that every issued memory operation is eventually retired, using
+# a single instance of the 'ranking' tactic. This tactic implelents the rule
+# lexicographic relational rankings with stable schedulers.
+#
+###############################################################################
 
 isolate sys_live = {
 
+    # Definitions of useful predicates. These tells us what requests or completions
+    # are present where in the system.
+
+    # An request T is pending somewhere in the system
     function pending(T) =
     (isd.rd(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T) |
     isd.wr(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T))
     
+    # A request T is completed, meaning its response has reached the
+    # reorder buffer in a core, but it has not been retired
     function completed(T) =
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
     & ref.evs(T).l_cmp = arm_l
 
+    # A completion of request T is queued in cfabric
     function cf_cpl(T) =
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
     & ref.evs(T).l_cmp = cf_cmp_l
 
+    # A completion of request T is queued in ifabric
     function if_cpl(T) =
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
     & ref.evs(T).l_cmp = if_l    
 
+    # Request T is queued in ifabric
     function if_req(T) =
     (ref.evs(T).req = read | ref.evs(T).req = write)
     & ref.evs(T).l_req = if_l    
 
+    # A completion of request T is queued in memc 
     function memc_cpl(T) =
-#    ref.evs(T).mem_loc=mem_memc &
     (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp) &
     ref.evs(T).l_cmp = memc_l
 
+    # Request T is queued in dramc
     function dramc_req(T) =
     (ref.evs(T).req=read | ref.evs(T).req=write)  &
     ref.evs(T).l_req=dramc_l
 
+    # Request T is queued in memc
     function memc_req(T) =
     (ref.evs(T).req=read | ref.evs(T).req=write)  &
     ref.evs(T).l_req=memc_l
 
+    # Request T is queued in cfabric and is a dram request
     function cf_mem_req(T) =
     (ref.evs(T).req = read | ref.evs(T).req = write)
     & ref.evs(T).l_req = cf_mem_l    
 
+    # Request T is queued in cfabric and is a pio request
     function cf_pio_req(T) =
     (ref.evs(T).req = read | ref.evs(T).req = write)
     & ref.evs(T).l_req = cf_pio_l    
 
+    # Request T is a pio request
     function is_io(T) = ref.evs(T).mem_loc=pio_memc
 
-    # TODO: this fairness constraint is bogus. Replace with something
-    # reasonable. 
-
+    # The following axioms are fairness constraints. They say 
+    # that each queue is served infinitely often.
+    
     explicit temporal axiom [cf_rd_fair] 
         globally eventually cfabric.rd_fair
 
@@ -1838,12 +1863,26 @@ isolate sys_live = {
     explicit temporal axiom [cpl_fair] 
       forall P. globally eventually arm.cpl_fair(P)
     
+    #################################################################
+    #
+    # Liveness property. Every request issued by every core is
+    # eventually retired.
+    #
+    #################################################################
+
     explicit temporal property [live]
     forall P,T. 
         globally ref.evs(T).p=P & pending(T) -> eventually ~pending(T)
     proof {
-        # tactic sorry;
+
+        # The skolemizenp tactic replaces universal quantifiers in the
+        # goal by Herbrand symbols (without converting to premex
+        # normal form).
+        
         tactic skolemizenp
+
+        # We instantiate all of the fairness axioms
+
         instantiate cpl_fair with P=_P
         instantiate cf_cpl_fair
         instantiate if_cpl_fair
@@ -1858,6 +1897,27 @@ isolate sys_live = {
         instantiate cf_wr_pio_fair
         instantiate if_rd_fair
         instantiate if_wr_fair
+
+        #################################################################################
+        #
+        # Now we apply the 'ranking' tactic, which uses a lexicographic relational
+        # ranking with stable scheduler. Each component of the ranking has the following
+        # user-defined predicates:
+        #
+        # - work_created: this is 'R' in the paper and puts a finite upper bounded
+        #   on the ranking.
+        # - work_needed: this is 'delta' in the paper, i.e., the relational ranking
+        # - work_invar: this is 'phi' in the paper, the invariant
+        # - work_progress: this is the justice condition 'r'
+        # - work_helpful: this is the helpful condition 'psi'
+        #
+        # The work_created and work_invar condtions are somewhat redundant in that they
+        # are generally the same for all ranking components (as in the rule given in the
+        # paper). The exception is the work_created condition in component rankings
+        # 6a and 6b, which is a binary relation (see comments below).
+        #
+        #################################################################################
+
         tactic ranking with {
             
             definition work_created[0a](T) = T <= ref.lt
@@ -1911,6 +1971,24 @@ isolate sys_live = {
             definition work_helpful[5b](M,A,T) = work_needed[5b](T) & T = memc_lt_min & ref.evs(T).m = M & ref.evs(T).a = A & ref.evs(T).req=write
             & (~is_io(T) -> ~exists U. dramc_req(U) & ref.evs(U).m = M & ref.evs(U).a = A & ref.evs(U).req = write)
 
+
+            # This compoment ranking measures the requests in the dramc that must be handled in order to
+            # retire request _T. This includes all request with logical times earlier than T, and also all
+            # requests the can block any of these requests. The ranking is expressed as a set of dependency
+            # arcs (T,U) such that completion of U depends on completion of T. Request U depends on T if either
+            # T and U are in the same dramc queue and T arrived before U, or there is some U' with the same address as
+            # U, such that U is in memc and U' is in dramc and T is in dramc and arrived before U'. The existential
+            # quantifier over U' is witnessed by a ghost variable memc_blocking. To achieve this with only a single
+            # witness, we restrict the ranking to consider only the *least* operation U in memc to be blocked (witnessed
+            # by the auxiliary variable 'memc_lt_min'). This works because removal of 'memc_lt_min' from memc causes
+            # a higher-order ranking to be reduced, allowing this ranking to be increased to account for the next
+            # 'memc_lt_min'. That is, to account for blocking of a set of queues, we need only consider the head of
+            # the one of the queues being blocked.
+            #
+            # Notice also that the 'work_helpful' condition is parametereized by both the justice condition, M, and
+            # the ranking element (T,U) to be removed. By specifying (T,U) in the helpful condition, we void the existential
+            # quantifier in the 'reduces' predicate of premise L2, which would introduce a function cycle.
+            
             definition work_created[6a](T,U) = T <= ref.lt & U <= ref.lt
             definition work_needed[6a](T,U) = U <= _T & (U <= memc_lt_min | ~memc_req(memc_lt_min)) & dramc_req(T) & pending(U)
             & (dramc_req(U) & ref.evs(T).lt_arr <= ref.evs(U).lt_arr
@@ -1965,6 +2043,11 @@ isolate sys_live = {
                          & pending(T)
                          & ~completed(T))
 
+            # The justice conditions are Booleans that are raised and
+            # lowered whenever a given queue is served. Thus, that are
+            # invariantly false between actions. These invariants really belong
+            # with the justice condition definitions, not here.
+
             invariant ~arm.cpl_fair(P)
             invariant ~cfabric.cpl_fair
             invariant ~ifabric.cpl_fair(T)
@@ -1979,6 +2062,13 @@ isolate sys_live = {
             invariant ~cfabric.wr_pio_fair
             invariant ~ifabric.rd_fair(P)
             invariant ~ifabric.wr_fair(P)
+
+            # This invariant says that a completion cannot be in
+            # dramc. It isn't clear why this invariant is not needed
+            # for the safety proof. Note that the ranking tactics uses
+            # all of the safety proof invariants , in addition to
+            # the invariants specified here.
+            
             invariant ref.evs.l_cmp(X) ~= dramc_l
         }
     }
