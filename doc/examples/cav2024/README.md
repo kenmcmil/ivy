@@ -7,3 +7,9 @@ This directory contains the illustrative examples from the paper, in Ivy
 - examp3.ivy: Section 3.3, cascaded queues
 - examp4.ivy: Section 3.3, cascaded queues with blocking
 - examp5.ivy: Section 3.4, cascaded queues with bypassing
+
+Run the examples with this command:
+
+```
+$ ivy_check <file>.ivy
+```
