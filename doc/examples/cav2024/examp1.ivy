@@ -1,0 +1,110 @@
+#lang ivy1.8
+
+# This is the example Fig. 1 in the paper using relational ranking
+
+include order
+
+instance time : unbounded_sequence
+
+# A signal with zero parameters
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# A signal with one parameter
+
+module signal1(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# An unbounded queue module, with liveness property. Notice this module is an isolate and
+# depends on the theory of the index type 'nat'.
+
+module isolate unbounded_queue with time = {
+
+    # This action sends a message. Since the queue is unbounded, this
+    # action always succeeds.
+
+    action send(x:time)
+
+    # This action attempts to receive a message, emitting signal
+    # `receiving` if successful.
+
+    action recv
+
+    specification {
+        var pending(X:time) : bool
+        
+        after init {
+            pending(X) := false;
+        }
+
+        instance sending : signal1(time)
+        instance trying : signal
+        instance receiving : signal1(time)
+
+        before send {
+            require pending(T) -> T < x;
+            pending(x) := true;
+            sending.raise(x);   # ghost action to signal a send
+        }
+
+        before recv {
+            trying.raise;
+            if some (y:time) pending(y) minimizing y {
+                pending(y) := false;
+                receiving.raise(y);
+            }
+        }
+
+        # This is the liveness property of the queue. It says that if messages X is eventually sent
+        # and if the queue is polled infinitely often, then message X is eventually received.
+
+        temporal property [lpq]
+        (globally eventually trying.now)
+        ->
+        forall X. globally (sending.now & sending.value = X) ->
+                           (eventually receiving.now & receiving.value = X)
+        proof {
+            tactic skolemize;
+            tactic ranking with {
+                definition work_created(X) = pending(X)
+                definition work_needed(X) = pending(X) & X <= _X
+                definition work_invar = pending(_X)
+                definition work_progress = trying.now
+                definition work_helpful = true
+            }
+            showgoals
+        }
+    }
+}
+
+
+instance q1 : unbounded_queue
+
+export q1.send
+export q1.recv
+
