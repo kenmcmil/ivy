@@ -1187,10 +1187,6 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     all_syms = set(map(ivy_logic.normalize_symbol,lu.used_symbols_asts(asts)))
     for action in list(new_actions.values()):
         action.get_references(all_syms)
-    follow_definitions(mod.definitions,all_syms)
-    if opt_keep_destructors.get():
-        for sym in list(all_syms):
-            collect_relevant_destructors(sym,all_syms,set())
 
     # Tricky: some symbols in proofs are not compiled. Keep
     # the symbols whose names are referred to.
@@ -1198,6 +1194,17 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     all_names = set()
     for x in mod.proofs:
         x[1].vocab(all_names)
+
+    for x in mod.definitions:
+        if x.formula.defines().name in all_names:
+#            if x.formula.defines() not in all_syms:
+#                print ('adding: {}'.format(x.formula.defines()))
+            all_syms.add(x.formula.defines())
+
+    follow_definitions(mod.definitions,all_syms)
+    if opt_keep_destructors.get():
+        for sym in list(all_syms):
+            collect_relevant_destructors(sym,all_syms,set())
 
     # erase assignments to unreferenced variables
 

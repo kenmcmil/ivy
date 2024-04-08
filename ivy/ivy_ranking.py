@@ -912,6 +912,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             )).set_lineno(lineno)
             b.action.stmt.copy_formals(stmt) # HACK: This shouldn't be needed
             b.action = b.action.clone([stmt])
+            # model.postconds[b.name]=[x for x in postconds if x.name != 'l2s_sched_exists']
             model.postconds[b.name]=postconds
 
     # The idle action handles automaton state update and cycle checking
@@ -924,9 +925,9 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
     )).set_lineno(lineno)
     idle_action.formal_params = []
     idle_action.formal_returns = []
-    model.bindings.append(itm.ActionTermBinding('idle',itm.ActionTerm([],[],[],idle_action)))
-    model.calls.append('idle')
-    model.postconds['idle']=postconds
+    model.bindings.append(itm.ActionTermBinding('_idle',itm.ActionTerm([],[],[],idle_action)))
+    model.calls.append('_idle')
+    model.postconds['_idle']=postconds
     
     l2s_init = []
     l2s_init += add_consts_to_d
