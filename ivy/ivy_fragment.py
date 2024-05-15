@@ -383,6 +383,8 @@ def show_strat_graph(m,a):
     print('nodes = {')
     for x,y in m.items():
         z = find(y)
+        z2 = find2(y)
+        assert z == z2 
         if isinstance(x,tuple):
             print('({},{}) : {} -> {}'.format(x[0],x[1],y,z))
         else:

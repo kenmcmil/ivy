@@ -4,13 +4,14 @@ class UFNode(object):
     """
     A sort variable, to be replaced by an arbitrary sort.
 
-    The instance property is used to implement union find, and it can
-    either be None, another UFNode object, or a sort object.
+    This is a re-implementation of the original UF data structure in Ivy,
+    with non-recursive path compression and union-by-rank.
 
     """
     def __init__(self):
         global ufidctr
-        self.instance = None
+        self.parent = None
+        self.rank = 0
         self.id = ufidctr
         ufidctr += 1
     def __str__(self):
@@ -29,12 +30,19 @@ def find(x):
     """
     Find the representative of a node
     """
-    if x.instance is None:
-        return x
-    else:
-        # collapse the path and return the root
-        x.instance = find(x.instance)
-        return x.instance
+    # if x is singleton, return x
+    if x.parent is None:
+        return x 
+    root = x
+    # upwards traversal to find root
+    while root.parent != root:
+        root = x.parent 
+    # pass to flatten path to root
+    while x.parent != root:
+        parent = x.parent 
+        x.parent = root 
+        x = parent 
+    return root 
 
 
 def unify(s1, s2):
@@ -47,5 +55,10 @@ def unify(s1, s2):
     s1 = find(s1)
     s2 = find(s2)
 
-    if s1 != s2:
-        s1.instance = s2
+    if x.rank < y.rank:
+        x, y = y, x
+
+    y.parent = x
+    if x.rank == y.rank:
+        x.rank = x.rank + 1
+    
