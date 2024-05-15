@@ -10,7 +10,7 @@ class UFNode(object):
     """
     def __init__(self):
         global ufidctr
-        self.parent = None
+        self.parent = self
         self.rank = 0
         self.id = ufidctr
         ufidctr += 1
@@ -31,12 +31,12 @@ def find(x):
     Find the representative of a node
     """
     # if x is singleton, return x
-    if x.parent is None:
+    if x.parent == x:
         return x 
     root = x
     # upwards traversal to find root
     while root.parent != root:
-        root = x.parent 
+        root = root.parent 
     # pass to flatten path to root
     while x.parent != root:
         parent = x.parent 
@@ -45,15 +45,15 @@ def find(x):
     return root 
 
 
-def unify(s1, s2):
+def unify(x, y):
     """
     Unify nodes s1 and s2.
     """
-    if s1 is None or s2 is None:
+    if x is None or y is None:
         return
 
-    s1 = find(s1)
-    s2 = find(s2)
+    x = find(x)
+    y = find(y)
 
     if x.rank < y.rank:
         x, y = y, x
