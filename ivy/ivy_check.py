@@ -449,8 +449,11 @@ def check_isolate(trace_hook = None):
         subgoals = pc.admit_proposition(prop,mod.isolate_proof,subgoals)
         check_subgoals(subgoals)
         return
- 
+    import time
+    fc_start = time.time()
     ifc.check_fragment()
+    fc_end = time.time()
+    print("\n\t IVY_STATS fragment checker elapsed time (s): ", fc_end - fc_start)
     with im.module.theory_context():
         global check_lineno
         check_lineno = act.checked_assert.get()
@@ -842,6 +845,7 @@ def check_module():
         raise iu.IvyError(None,"Some assertions are not checked")
 
     for isolate in isolates:
+        print('\n\tIVY_STATS checking isolate', str(isolate))
         if isolate is not None and isolate in im.module.isolates:
             idef = im.module.isolates[isolate]
             if len(idef.verified()) == 0 or isinstance(idef,ivy_ast.TrustedIsolateDef):
