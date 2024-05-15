@@ -36,6 +36,25 @@ def find(x):
         x.instance = find(x.instance)
         return x.instance
 
+
+def find2(x):
+    """
+        UF with non-recursive path compression
+    """
+    if x.instance is None:
+        return x
+    root = x
+    # find root
+    while find(root.instance) != root.instance:
+        root.instance = find(root.instance)
+    # collapse path from x to root
+    while find(x.instance) != x.instance:
+        y = find(x.instance)
+        x.instance = root.instance 
+        x = y
+    return root.instance
+
+
 def unify(s1, s2):
     """
     Unify nodes s1 and s2.
@@ -48,5 +67,3 @@ def unify(s1, s2):
 
     if s1 != s2:
         s1.instance = s2
-
-
