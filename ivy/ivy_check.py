@@ -29,9 +29,12 @@ from . import ivy_mc
 from . import ivy_vmt
 from . import ivy_bmc
 from . import ivy_tactics
+from . import ivy_acl
 
 import sys
 from collections import defaultdict
+
+import pdb, traceback, sys, code
 
 diagnose = iu.BooleanParameter("diagnose",False)
 coverage = iu.BooleanParameter("coverage",True)
@@ -379,7 +382,7 @@ def check_fcs_in_state(mod,ag,post,fcs):
             act.match_annotation(action,annot,handler)
             handler.end()
             if hasattr(mod,"trace_hook"):
-                handler = mod.trace_hook(handler)
+                handler = mod.trace_hook(handler,ffcs)
             ff = failed[0]
             handler.is_cti = (lut.formula_to_clauses(ff.lf.formula) if isinstance(ff,ConjChecker)
                               else None)
@@ -438,6 +441,23 @@ def apply_conj_proofs(mod):
 
 def check_isolate(trace_hook = None):
     mod = im.module
+    print('\n    The following properties are ignored: ')
+    for lf in mod.labeled_axioms+mod.labeled_props+mod.labeled_conjs:
+        if ivy_acl.is_ignored(lf.label):
+            print(pretty_lf(lf))
+    mod.labeled_axioms = [lf for lf in mod.labeled_axioms if not(ivy_acl.is_ignored(lf.label))]
+    mod.labeled_axioms.extend(lf for lf in im.module.labeled_props if (lf.assumed or ivy_acl.is_assumed(lf.label)) and not(ivy_acl.is_ignored(lf.label)))
+    mod.labeled_props = [lf for lf in im.module.labeled_props+im.module.labeled_conjs if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
+    mod.labeled_conjs = [lf for lf in im.module.labeled_conjs if not(ivy_acl.is_ignored(lf.label) and ivy_acl.is_assumed(lf.label))]
+    print('\n    The following properties are treated as axioms: ')
+    for lf in mod.labeled_axioms:
+        print(pretty_lf(lf))
+    print('\n    The following properties are treated as properties:')
+    for lf in mod.labeled_props:
+        print(pretty_lf(lf))
+    print('\n    The following properties are treated as conjectures: ')
+    for lf in mod.labeled_conjs:
+        print(pretty_lf(lf))
     if mod.isolate_proof is not None:
         pc = ivy_proof.ProofChecker(mod.labeled_axioms+mod.assumed_invariants,mod.definitions,mod.schemata)
         model = itmp.normal_program_from_module(im.module)
@@ -449,8 +469,13 @@ def check_isolate(trace_hook = None):
         subgoals = pc.admit_proposition(prop,mod.isolate_proof,subgoals)
         check_subgoals(subgoals)
         return
- 
+    
+    import time
+    print('calling fragment checker...')
+    fc_start = time.time()
     ifc.check_fragment()
+    fc_end = time.time()
+    print("\n\t IVY_STATS fragment checker elapsed time (s): ", fc_end - fc_start)
     with im.module.theory_context():
         global check_lineno
         check_lineno = act.checked_assert.get()
@@ -792,8 +817,8 @@ def check_separately(isolate):
     return get_isolate_attr(isolate,'separate','false') == 'true'
 
 def mc_isolate(isolate,meth=ivy_mc.check_isolate):
-    im.module.labeled_axioms.extend(lf for lf in im.module.labeled_props if lf.assumed)
-    im.module.labeled_props = [lf for lf in im.module.labeled_props if not lf.assumed]
+    im.module.labeled_axioms.extend(lf for lf in im.module.labeled_props if (lf.assumed or ivy_acl.is_assumed(lf.label)))
+    im.module.labeled_props = [lf for lf in im.module.labeled_props if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
     if any(not x.temporal for x in im.module.labeled_props):
         raise iu.IvyError(im.module.labeled_props[0],'model checking not supported for property yet')
     if not check_separately(isolate):
@@ -841,7 +866,10 @@ def check_module():
     if missing:
         raise iu.IvyError(None,"Some assertions are not checked")
 
+    print(" +++ IVY_STATS starting checking module. Num isolates = ", len(isolates))
+
     for isolate in isolates:
+        print('\n\tIVY_STATS checking isolate', str(isolate))
         if isolate is not None and isolate in im.module.isolates:
             idef = im.module.isolates[isolate]
             if len(idef.verified()) == 0 or isinstance(idef,ivy_ast.TrustedIsolateDef):
@@ -888,19 +916,27 @@ def check_module():
 
 
 def main():
+    import time
     import signal
     signal.signal(signal.SIGINT,signal.SIG_DFL)
     from . import ivy_alpha
     ivy_alpha.test_bottom = False # this prevents a useless SAT check
     ivy_init.read_params()
-    if len(sys.argv) != 2 or not sys.argv[1].endswith('ivy'):
+    if len(sys.argv) > 2 and sys.argv[2] == '--unchecked-properties':
+        print(' +++ IVY_ACL: --unchecked-properties flag enabled, loading YAML file from ', sys.argv[3])
+        ivy_acl.register_from_file(sys.argv[3])
+    elif len(sys.argv) != 2 or not sys.argv[1].endswith('ivy'):
         usage()
     global some_bounded
     some_bounded = False
 
+    print(" +++ IVY_STATS starting checking file ", sys.argv[1])
     with im.Module():
         with utl.ErrorPrinter():
+            print(" +++ IVY_STATS reading in source file", sys.argv[1], " ...")
+            src_file_read_start_time = time.time() 
             ivy_init.source_file(sys.argv[1],ivy_init.open_read(sys.argv[1]),create_isolate=False)
+            print(" +++ IVY_STATS finished reading in source file", sys.argv[1], ". time elapsed: ", time.time() - src_file_read_start_time, " (s)")
             if isinstance(act.checked_assert.get(),iu.LocationTuple) and act.checked_assert.get().filename == 'none.ivy' and act.checked_assert.get().line == 0:
                 print('NOT CHECKED')
                 exit(0);
@@ -913,6 +949,23 @@ def main():
         print("OK")
 
 
+def info(type, value, tb):
+    if hasattr(sys, 'ps1') or not sys.stderr.isatty():
+    # we are in interactive mode or we don't have a tty-like
+    # device, so we call the default hook
+        sys.__excepthook__(type, value, tb)
+    else:
+        import traceback, pdb
+        # we are NOT in interactive mode, print the exception...
+        traceback.print_exception(type, value, tb)
+        print
+        # ...then start the debugger in post-mortem mode.
+        # pdb.pm() # deprecated
+        pdb.post_mortem(tb) # more "modern"
+
+sys.excepthook = info
+
+
 if __name__ == "__main__":
     main()
-
+        
