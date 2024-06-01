@@ -43,6 +43,8 @@ opt_trusted = iu.BooleanParameter("trusted",False)
 opt_mc = iu.BooleanParameter("mc",False)
 opt_trace = iu.BooleanParameter("trace",False)
 opt_separate = iu.BooleanParameter("separate",None)
+opt_unchecked_properties = iu.Parameter("unchecked_properties", None)
+opt_ivy_stats = iu.BooleanParameter("ivy_stats", False)
 
 def display_cex(msg,ag):
     if diagnose.get():
@@ -437,18 +439,34 @@ def apply_conj_proofs(mod):
     mod.conj_subgoals = conjs
 
 
+### preprocess axioms, properties, conjectures if user supplies an "access control list," 
+###  specifying what properties to ignore and what to assume.
+def preprocess_assumed_ignored_properties():
+    mod = im.module
+    axioms = list(map(lambda x: (x, '[axiom]'), mod.labeled_axioms))
+    conjs = list(map(lambda x: (x, '[conjecture]'), mod.labeled_conjs))
+    props = list(map(lambda x: (x, '[property]'), mod.labeled_props))
+    print('\n  Preprocessing list of axioms, properties, conjectures via user-supplied list of unchecked properties.')
+    print("\n     The following properties are newly ignored: ")
+    for lft in axioms + conjs + props:
+        if ivy_acl.is_ignored(lft[0].label):
+            print(lft[1] + " " + pretty_lf(lft[0]))
+    print('\n     The following properties are newly assumed: ')
+    for lft in axioms + conjs + props:
+        if ivy_acl.is_assumed(lft[0].label):
+            print(lft[1] + " " + pretty_lf(lft[0]))
+    mod.labeled_conjs = list(filter(lambda lf: not ivy_acl.is_ignored(lf.label), mod.labeled_conjs))
+    # a property is either (1) a user-defined, non-ignored property, or (2) a user-defined, non-ignored conjecture that is assumed.
+    mod.labeled_props = [lf for lf in im.module.labeled_props+im.module.labeled_conjs if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
+    # an axiom is a user-defined, non-ignored axiom.
+    mod.labeled_axioms = [lf for lf in im.module.labeled_axioms if not(ivy_acl.is_ignored(lf.label))]
+    # a conjecture is a user-defined, non-ignored, non-assumed conjecture.
+    mod.labeled_conjs = [lf for lf in im.module.labeled_conjs if not(ivy_acl.is_ignored(lf.label)) and not(ivy_acl.is_assumed(lf.label))]
+
 
 
 def check_isolate(trace_hook = None):
     mod = im.module
-    print('\n    The following properties are ignored: ')
-    for lf in mod.labeled_axioms+mod.labeled_props+mod.labeled_conjs:
-        if ivy_acl.is_ignored(lf.label):
-            print(pretty_lf(lf))
-    mod.labeled_axioms = [lf for lf in mod.labeled_axioms if not(ivy_acl.is_ignored(lf.label))]
-    mod.labeled_axioms.extend(lf for lf in im.module.labeled_props if (lf.assumed or ivy_acl.is_assumed(lf.label)) and not(ivy_acl.is_ignored(lf.label)))
-    mod.labeled_props = [lf for lf in im.module.labeled_props+im.module.labeled_conjs if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
-    mod.labeled_conjs = [lf for lf in im.module.labeled_conjs if not(ivy_acl.is_ignored(lf.label) and ivy_acl.is_assumed(lf.label))]
     print('\n    The following properties are treated as axioms: ')
     for lf in mod.labeled_axioms:
         print(pretty_lf(lf))
@@ -470,10 +488,13 @@ def check_isolate(trace_hook = None):
         check_subgoals(subgoals)
         return
     import time
+    if opt_ivy_stats.get():
+        print('calling fragment checker...')
     fc_start = time.time()
     ifc.check_fragment()
     fc_end = time.time()
-    print('fragment checker elapsed time: ', fc_end - fc_start)
+    if opt_ivy_stats.get():
+        print("\n\t IVY_STATS fragment checker elapsed time (s): ", fc_end - fc_start)
     with im.module.theory_context():
         global check_lineno
         check_lineno = act.checked_assert.get()
@@ -815,8 +836,6 @@ def check_separately(isolate):
     return get_isolate_attr(isolate,'separate','false') == 'true'
 
 def mc_isolate(isolate,meth=ivy_mc.check_isolate):
-    im.module.labeled_axioms.extend(lf for lf in im.module.labeled_props if (lf.assumed or ivy_acl.is_assumed(lf.label)))
-    im.module.labeled_props = [lf for lf in im.module.labeled_props if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
     if any(not x.temporal for x in im.module.labeled_props):
         raise iu.IvyError(im.module.labeled_props[0],'model checking not supported for property yet')
     if not check_separately(isolate):
@@ -864,10 +883,16 @@ def check_module():
     if missing:
         raise iu.IvyError(None,"Some assertions are not checked")
 
-    print(" +++ IVY_STATS starting checking module. Num isolates = ", len(isolates))
+    if opt_ivy_stats:
+        print(" +++ IVY_STATS starting checking module. Num isolates = ", len(isolates))
+
+    if opt_unchecked_properties.get() != None:
+        print(' +++ IVY_ACL: user supplied a list of properties to assume / ignore. The file is ', opt_unchecked_properties.get())
+        ivy_acl.register_from_file(opt_unchecked_properties.get())
 
     for isolate in isolates:
-        print('\n\tIVY_STATS checking isolate', str(isolate))
+        if opt_ivy_stats: 
+            print('\n\tIVY_STATS checking isolate', str(isolate))
         if isolate is not None and isolate in im.module.isolates:
             idef = im.module.isolates[isolate]
             if len(idef.verified()) == 0 or isinstance(idef,ivy_ast.TrustedIsolateDef):
@@ -884,6 +909,8 @@ def check_module():
             if opt_trusted.get():
                 continue
             method_name = get_isolate_method(isolate)
+            if opt_unchecked_properties != None:
+                preprocess_assumed_ignored_properties()
             if method_name == 'mc':
                 mc_isolate(isolate)
             elif method_name == 'vmt':
@@ -893,7 +920,7 @@ def check_module():
                 some_bounded = True
                 _,prms = iu.parse_int_subscripts(method_name)
                 if len(prms) < 1 or len(prms) > 2:
-                    raise IvyError(None,'BMC method specifier should be bmc[<steps>] or bmc[<steps>][<unroll>]. Got "{}".'.format(method_name))
+                    raise iu.IvyError(None,'BMC method specifier should be bmc[<steps>] or bmc[<steps>][<unroll>]. Got "{}".'.format(method_name))
                 mc_isolate(isolate,lambda : ivy_bmc.check_isolate(prms[0],n_unroll = prms[1] if len(prms) >= 2 else None))
             else:
                 logic = get_isolate_attr(isolate,'complete',None)
@@ -920,21 +947,22 @@ def main():
     from . import ivy_alpha
     ivy_alpha.test_bottom = False # this prevents a useless SAT check
     ivy_init.read_params()
-    if len(sys.argv) > 2 and sys.argv[2] == '--unchecked-properties':
-        print(' +++ IVY_ACL: --unchecked-properties flag enabled, loading YAML file from ', sys.argv[3])
-        ivy_acl.register_from_file(sys.argv[3])
-    elif len(sys.argv) != 2 or not sys.argv[1].endswith('ivy'):
+    if len(sys.argv) != 2 or not sys.argv[1].endswith('ivy'):
         usage()
     global some_bounded
     some_bounded = False
 
-    print(" +++ IVY_STATS starting checking file ", sys.argv[1])
+    if opt_ivy_stats.get():
+        print(" +++ IVY_STATS starting checking file ", sys.argv[1])
+
     with im.Module():
         with utl.ErrorPrinter():
-            print(" +++ IVY_STATS reading in source file", sys.argv[1], " ...")
+            if opt_ivy_stats.get():
+                print(" +++ IVY_STATS reading in source file", sys.argv[1], " ...")
             src_file_read_start_time = time.time() 
             ivy_init.source_file(sys.argv[1],ivy_init.open_read(sys.argv[1]),create_isolate=False)
-            print(" +++ IVY_STATS finished reading in source file", sys.argv[1], ". time elapsed: ", time.time() - src_file_read_start_time, " (s)")
+            if opt_ivy_stats.get():
+                print(" +++ IVY_STATS finished reading in source file", sys.argv[1], ". time elapsed: ", time.time() - src_file_read_start_time, " (s)")
             if isinstance(act.checked_assert.get(),iu.LocationTuple) and act.checked_assert.get().filename == 'none.ivy' and act.checked_assert.get().line == 0:
                 print('NOT CHECKED')
                 exit(0);
