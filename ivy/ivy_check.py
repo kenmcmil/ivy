@@ -909,7 +909,7 @@ def check_module():
             if opt_trusted.get():
                 continue
             method_name = get_isolate_method(isolate)
-            if opt_unchecked_properties != None:
+            if opt_unchecked_properties.get() != None:
                 preprocess_assumed_ignored_properties()
             if method_name == 'mc':
                 mc_isolate(isolate)
