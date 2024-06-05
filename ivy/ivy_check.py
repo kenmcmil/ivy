@@ -455,11 +455,11 @@ def preprocess_assumed_ignored_properties():
     for lft in axioms + conjs + props:
         if ivy_acl.is_assumed(lft[0].label):
             print(lft[1] + " " + pretty_lf(lft[0]))
-    mod.labeled_conjs = list(filter(lambda lf: not ivy_acl.is_ignored(lf.label), mod.labeled_conjs))
-    # a property is either (1) a user-defined, non-ignored property, or (2) a user-defined, non-ignored conjecture that is assumed.
-    mod.labeled_props = [lf for lf in im.module.labeled_props+im.module.labeled_conjs if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
-    # an axiom is a user-defined, non-ignored axiom.
-    mod.labeled_axioms = [lf for lf in im.module.labeled_axioms if not(ivy_acl.is_ignored(lf.label))]
+    # a property is either a user-defined, non-ignored/assumed property
+    mod.labeled_props = [lf for lf in mod.labeled_props if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
+    # an axiom is a user-defined, non-ignored axiom or an assumed property.
+    mod.labeled_axioms = [lf for lf in mod.labeled_axioms if not(ivy_acl.is_ignored(lf.label))]
+    mod.labeled_axioms.extend([lf for lf in mod.labeled_props+mod.labeled_conjs if ivy_acl.is_assumed(lf.label)])
     # a conjecture is a user-defined, non-ignored, non-assumed conjecture.
     mod.labeled_conjs = [lf for lf in im.module.labeled_conjs if not(ivy_acl.is_ignored(lf.label)) and not(ivy_acl.is_assumed(lf.label))]
 
