@@ -8,7 +8,7 @@ from . import ivy_theory as thy
 from collections import defaultdict
 from tarjan import tarjan
 from itertools import chain
-from .ivy_union_find import *
+from .ivy_union_find2 import *
 
 # Here we have rules for checking that VC's are in
 # a decidable fragment
@@ -383,6 +383,8 @@ def show_strat_graph(m,a):
     print('nodes = {')
     for x,y in m.items():
         z = find(y)
+        z2 = find2(y)
+        assert z == z2 
         if isinstance(x,tuple):
             print('({},{}) : {} -> {}'.format(x[0],x[1],y,z))
         else:

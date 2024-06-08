@@ -36,6 +36,7 @@ def find(x):
         x.instance = find(x.instance)
         return x.instance
 
+
 def unify(s1, s2):
     """
     Unify nodes s1 and s2.
@@ -48,5 +49,3 @@ def unify(s1, s2):
 
     if s1 != s2:
         s1.instance = s2
-
-
