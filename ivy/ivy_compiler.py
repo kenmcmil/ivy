@@ -1687,7 +1687,7 @@ def attach_proofs(mod):
             used.add(lab)
             if lab in m:
                 mod.proofs.append((m[lab],pf[1]))
-            elif lab in mod.isolates:
+            elif lab in mod.isolates or lab == 'this':
                 mod.isolate_proofs[lab] = pf[1]
             else:
                 raise IvyError

@@ -24,6 +24,10 @@ def p_LABEL_LB_SYMBOL_RB(p):
     'LABEL : LB SYMBOL RB'
     p[0] = p[1] + p[2] + p[3]
 
+def p_LABEL_LB_THIS_RB(p):
+    'LABEL : LB THIS RB'
+    p[0] = p[1] + 'this' + p[3]
+
 def p_SYMsubscr_SYMBOL(p):
     'SYMsubscr : SYMBOL'
     p[0] = p[1]

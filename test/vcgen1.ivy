@@ -15,7 +15,7 @@ export action a(q:bool) = {
 invariant p
 
 proof [this] {
-    tactic vcgen
+    tactic vcgen;
     proof [initiation] {
         apply introNot
         apply elimNot with p = p
@@ -27,6 +27,7 @@ proof [this] {
     proof [consecution] {
         apply introNot
         apply elimNot with p = p
+        showgoals
         # let Z3 finish...
     }
 }
