@@ -1353,6 +1353,8 @@ def goal_free_vars(goal):
 
 def var_subst_goal(goal,subst):
     """ Apply a variable substitution to a goal. """
+    if isinstance(goal, ia.ConstantDecl):
+        return goal
     prems = [var_subst_goal(prem,subst) for prem in goal_prems(goal)]
     conc = goal_conc(goal)
     if not isinstance(conc,ia.SchemaBody):
