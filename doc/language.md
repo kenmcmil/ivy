@@ -885,7 +885,7 @@ This declares a type `num` and also a function `num.next` from type
 and returns a `num`. The function `num.next` can be applied using
 a special syntax. That is, if `x` is of type `num`, then the expression
 `x.next` is a shorthand for `num.next(x)`. Similarly, `x.plus(y)` is a shorthand
-for `num.next(x,y)`. Actions can similary be traits of types. For example:
+for `num.plus(x,y)`. Actions can similary be traits of types. For example:
 
     object num = {
         type this
