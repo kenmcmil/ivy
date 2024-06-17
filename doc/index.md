@@ -6,7 +6,7 @@ tags: "top-nav"
 
 
 IVy is a tool for specifying, modeling, implementing and verifying
-protcols. IVy is intended to allow interactive development of
+protocols. IVy is intended to allow interactive development of
 protocols and their proofs of correctness and to provide a platform
 for developing and experimenting with automated proof techniques. In
 particular, IVy provides interactive visualization of automated
