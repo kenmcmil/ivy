@@ -45,6 +45,7 @@ opt_trace = iu.BooleanParameter("trace",False)
 opt_separate = iu.BooleanParameter("separate",None)
 opt_unchecked_properties = iu.Parameter("unchecked_properties", None)
 opt_ivy_stats = iu.BooleanParameter("ivy_stats", False)
+priority_actions = iu.Parameter("prioritize", None)
 
 def display_cex(msg,ag):
     if diagnose.get():
@@ -179,6 +180,14 @@ def get_checked_actions():
         checked_action_found = True
         return [cact] if cact else sorted(im.module.public_actions)
     return []
+
+def get_prioritized_actions():
+    pas = priority_actions.get()
+    if pas == None:
+        return []
+    else:
+        pas = list(map(lambda x: 'ext:'+x, pas.split(',')))
+        return pas
 
 failures = 0
 
@@ -593,11 +602,16 @@ def check_isolate(trace_hook = None):
                     check_safety_in_state(mod,ag,fail)
 
 
-        checked_actions = get_checked_actions()
+        checked_actions = set(get_checked_actions())
+        prioritized = set(get_prioritized_actions())
+        prioritized = prioritized.intersection(checked_actions)
+        actions = list(prioritized) + sorted(list(checked_actions.difference(prioritized)))
 
         if checked_actions and checked_invariants:
             print("\n    The following set of external actions must preserve the invariant:")
-            for actname in sorted(checked_actions):
+            if priority_actions.get()!=None:
+                print("\n         (prioritized checking order: ", str(list(prioritized)), ')')
+            for actname in actions:
                 action = act.env_action(actname)
                 print("        {}{}".format(pretty_lineno(action),actname))
                 if check:
@@ -700,7 +714,7 @@ def check_subgoals(goals,method=None):
             model = conc.model
             fmla = conc.fmla
             if not lg.is_true(fmla):
-                raise IvyError(goal,
+                raise iu.IvyError(goal,
                   """The temporal subgoal {} has not been reduced to an invariance property. 
                      Try using a tactic such as l2s.""")
             mod = im.module.copy()
@@ -943,6 +957,7 @@ def check_module():
 def main():
     import time
     import signal
+    import sys
     signal.signal(signal.SIGINT,signal.SIG_DFL)
     from . import ivy_alpha
     ivy_alpha.test_bottom = False # this prevents a useless SAT check
@@ -951,6 +966,9 @@ def main():
         usage()
     global some_bounded
     some_bounded = False
+
+    sys.setrecursionlimit(15000)
+    print('recursion limit: ', sys.getrecursionlimit())
 
     if opt_ivy_stats.get():
         print(" +++ IVY_STATS starting checking file ", sys.argv[1])
@@ -993,5 +1011,8 @@ sys.excepthook = info
 
 
 if __name__ == "__main__":
+    import sys
+    sys.setrecursionlimit(15000)
+    print('recursion limit: ', sys.getrecursionlimit())
     main()
         

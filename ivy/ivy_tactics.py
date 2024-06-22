@@ -99,7 +99,7 @@ def tempcase_fmla(fmla,cond,vs,proof):
     if lg.is_forall(fmla):
         for v in fmla.variables:
             if v in vs:
-                raise IvyError(proof,'variable ' + v + ' would be captured by quantifier')
+                raise iu.IvyError(proof,'variable ' + v + ' would be captured by quantifier')
         return fmla.clone([tempcase_fmla(fmla.body,cond,vs,proof)])
     if isinstance(fmla,lg.Implies):
         return fmla.clone([fmla.args[0],tempcase_fmla(fmla.args[1],cond,vs,proof)])
