@@ -465,7 +465,7 @@ def preprocess_assumed_ignored_properties():
         if ivy_acl.is_assumed(lft[0].label):
             print(lft[1] + " " + pretty_lf(lft[0]))
     # a property is either a user-defined, non-ignored/assumed property
-    mod.labeled_props = [lf for lf in mod.labeled_props if not (lf.assumed or ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
+    mod.labeled_props = [lf for lf in mod.labeled_props if not (ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
     # an axiom is a user-defined, non-ignored axiom or an assumed property.
     mod.labeled_axioms = [lf for lf in mod.labeled_axioms if not(ivy_acl.is_ignored(lf.label))]
     mod.labeled_axioms.extend([lf for lf in mod.labeled_props+mod.labeled_conjs if ivy_acl.is_assumed(lf.label)])
