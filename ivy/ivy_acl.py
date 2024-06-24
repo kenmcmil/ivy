@@ -61,14 +61,14 @@ def register_from_file(filename):
         lines = fd.readlines()
     f = "".join(lines)
     y = yaml.load(f, Loader=yaml.CLoader)
+    if y == None:
+        return # XXX: pyyaml returns a 'None' object on empty YAML files
     if 'ignores' in y:
         ign_list = list(y['ignores'])
         register_ignores(ign_list)
     if 'assumes' in y:
         ass_list = list(y['assumes'])
         register_assumes(ass_list)
-    print(' +++ IVY_ACL: ignoring property names: ', list(_ignores) + list([str(_ignores_regex) if not(_ignores_regex==None) else '']))
-    print(' +++ IVY_ACL: assuming property names: ', list(_assumes) + list([str(_assumes_regex) if not(_assumes_regex==None) else '']))
 
 def register(ignores, assumes):
     global _ignores
@@ -77,8 +77,6 @@ def register(ignores, assumes):
     global _assumes_regex
     register_ignores(ignores)
     register_assumes(assumes)
-    print(' +++ IVY_ACL: ignoring property names: ', list(_ignores) + list([str(_ignores_regex) if not(_ignores_regex==None) else '']))
-    print(' +++ IVY_ACL: assuming property names: ', list(_assumes) + list([str(_assumes_regex) if not(_assumes_regex==None) else '']))
 
 def get_ignores_list():
     return _ignores

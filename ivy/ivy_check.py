@@ -901,7 +901,6 @@ def check_module():
         print(" +++ IVY_STATS starting checking module. Num isolates = ", len(isolates))
 
     if opt_unchecked_properties.get() != None:
-        print(' +++ IVY_ACL: user supplied a list of properties to assume / ignore. The file is ', opt_unchecked_properties.get())
         ivy_acl.register_from_file(opt_unchecked_properties.get())
 
     for isolate in isolates:
