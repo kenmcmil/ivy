@@ -47,6 +47,8 @@ opt_separate = iu.BooleanParameter("separate",None)
 opt_unchecked_properties = iu.Parameter("unchecked_properties", None)
 opt_ivy_stats = iu.BooleanParameter("ivy_stats", False)
 priority_actions = iu.Parameter("prioritize", None)
+no_check_guarantees = iu.BooleanParameter("no_check_guarantees", False)
+profiling= iu.BooleanParameter("profile", False)
 
 def display_cex(msg,ag):
     if diagnose.get():
@@ -188,6 +190,7 @@ def get_prioritized_actions():
         return []
     else:
         pas = list(map(lambda x: 'ext:'+x, pas.split(',')))
+        pas = sorted(pas)
         return pas
 
 failures = 0
@@ -617,12 +620,12 @@ def check_isolate(trace_hook = None):
         checked_actions = set(get_checked_actions())
         prioritized = set(get_prioritized_actions())
         prioritized = prioritized.intersection(checked_actions)
-        actions = list(prioritized) + sorted(list(checked_actions.difference(prioritized)))
+        actions = sorted(list(prioritized)) + sorted(list(checked_actions.difference(prioritized)))
 
         if checked_actions and checked_invariants:
             print("\n    The following set of external actions must preserve the invariant:")
             if priority_actions.get()!=None:
-                print("\n         (prioritized checking order: ", str(list(prioritized)), ')')
+                print("\n         (prioritized checking order: ", str(sorted(list(prioritized))), ')')
             for actname in actions:
                 action = act.env_action(actname)
                 print("        {}{}".format(pretty_lineno(action),actname))
@@ -670,7 +673,7 @@ def check_isolate(trace_hook = None):
             if check_lineno is not None:
                 guarantees = [sub for sub in guarantees if sub.lineno == check_lineno]
             guarantees = [x for x in guarantees if is_guarantee_mod_unprovable(x)]
-            if guarantees:
+            if guarantees and not(no_check_guarantees.get()):
                 if not some_guarants:
                     print("\n    The following program assertions are treated as guarantees:")
                     some_guarants = True
@@ -966,21 +969,15 @@ def check_module():
     cact = checked_action.get()
 
 
-def main():
+def start():
     import time
     import signal
     import sys
-    signal.signal(signal.SIGINT,signal.SIG_DFL)
     from . import ivy_alpha
-    ivy_alpha.test_bottom = False # this prevents a useless SAT check
-    ivy_init.read_params()
     if len(sys.argv) != 2 or not sys.argv[1].endswith('ivy'):
         usage()
     global some_bounded
     some_bounded = False
-
-    sys.setrecursionlimit(15000)
-    print('recursion limit: ', sys.getrecursionlimit())
 
     if opt_ivy_stats.get():
         print(" +++ IVY_STATS starting checking file ", sys.argv[1])
@@ -1022,9 +1019,20 @@ def info(type, value, tb):
 sys.excepthook = info
 
 
-if __name__ == "__main__":
-    import sys
+def main():
+    import sys, cProfile 
+    from . import ivy_check
     sys.setrecursionlimit(15000)
-    print('recursion limit: ', sys.getrecursionlimit())
-    main()
-        
+    import signal
+    import sys
+    signal.signal(signal.SIGINT,signal.SIG_DFL)
+    from . import ivy_alpha
+    ivy_alpha.test_bottom = False # this prevents a useless SAT check
+    ivy_init.read_params()
+
+    if profiling.get():
+        print('\n ivy_check: profiling option set to true. Running with cProfile...')
+        cProfile.runctx('ivy_check.start()', globals(), locals())
+    else:
+        print('\n ivy_check: profiling option set to false. ')
+        start()
