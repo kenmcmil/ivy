@@ -1087,50 +1087,50 @@ def auto_hook(tasks,triggers,subs,tr,fcs):
         sfx = name[len('l2s_progress'):]
 
         print ('\n\nFailed to prove that work_needed{} decreases when a helpful transition occurs\n'.format(sfx,sfx))
-        lhs = invar.args[0]
-        all_helpful_happened = lhs.args[4]
-        if (ilg.is_forall(all_helpful_happened)):
-            was_helpful_pred_nonce = all_helpful_happened.body.args[0].rep
-        else:
-            was_helpful_pred_nonce = all_helpful_happened.args[0].rep
-        work_helpful = tasks[sfx]['work_helpful']
-        helpful_map = dict()
-        for eqn in tr.states[0].clauses.fmlas:
-            if eqn.args[0].rep == was_helpful_pred_nonce:
-                helpful_map[tuple(eqn.args[0].args)] = eqn.args[1]
-                print ('{} = {}'.format(work_helpful.args[0].rep(*eqn.args[0].args),eqn.args[1]))
-        if (ilg.is_forall(all_helpful_happened)):
-            trigger_happened_pred_nonce = all_helpful_happened.body.args[1].args[0].rep
-        else:
-            trigger_happened_pred_nonce = all_helpful_happened.args[1].args[0].rep
-        work_progress = tasks[sfx]['work_progress']
-        happened_maps = [dict(),dict()]
-        for idx in range(2):
-            print ('')
-            for eqn in tr.states[idx].clauses.fmlas:
-                if eqn.args[0].rep == trigger_happened_pred_nonce:
-                    happened_maps[idx][tuple(eqn.args[0].args)] = eqn.args[1]
-                    print ('~happened {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
-        justice_map = dict()
-        if sfx in justice_pred_map:
-            print ('')
-            justice_pred = justice_pred_map[sfx]
-            for eqn in tr.states[0].clauses.fmlas:
-                if eqn.args[0].rep == justice_pred:
-                    justice_map[tuple(eqn.args[0].args)] = eqn.args[1]
-                    print ('~eventually {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
-        for args in helpful_map:
-            if ilg.is_true(helpful_map[args]):
-                if all(args in happened_maps[idx] for idx in range(2)):
-                    if ilg.is_true(happened_maps[0][args]) and ilg.is_false(happened_maps[1][args]):
-                        print ('\nNote: {} is true and {} occurs during the action, but work_needed is not reduced.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
-                        break
-        for args in helpful_map:
-            if ilg.is_true(helpful_map[args]):
-                if args in justice_map:
-                    if ilg.is_true(happened_maps[0][args]) and ilg.is_true(justice_map[args]):
-                        print ('\nNote: {} is true and eventually {} is false.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
-                        break
+        #lhs = invar.args[0]
+        #all_helpful_happened = lhs.args[4]
+        #if (ilg.is_forall(all_helpful_happened)):
+        #    was_helpful_pred_nonce = all_helpful_happened.body.args[0].rep
+        #else:
+        #    was_helpful_pred_nonce = all_helpful_happened.args[0].rep
+        #work_helpful = tasks[sfx]['work_helpful']
+        #helpful_map = dict()
+        #for eqn in tr.states[0].clauses.fmlas:
+        #    if eqn.args[0].rep == was_helpful_pred_nonce:
+        #        helpful_map[tuple(eqn.args[0].args)] = eqn.args[1]
+        #        print ('{} = {}'.format(work_helpful.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+        #if (ilg.is_forall(all_helpful_happened)):
+        #    trigger_happened_pred_nonce = all_helpful_happened.body.args[1].args[0].rep
+        #else:
+        #    trigger_happened_pred_nonce = all_helpful_happened.args[1].args[0].rep
+        #work_progress = tasks[sfx]['work_progress']
+        #happened_maps = [dict(),dict()]
+        #for idx in range(2):
+        #    print ('')
+        #    for eqn in tr.states[idx].clauses.fmlas:
+        #        if eqn.args[0].rep == trigger_happened_pred_nonce:
+        #            happened_maps[idx][tuple(eqn.args[0].args)] = eqn.args[1]
+        #            print ('~happened {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+        #justice_map = dict()
+        #if sfx in justice_pred_map:
+        #    print ('')
+        #    justice_pred = justice_pred_map[sfx]
+        #    for eqn in tr.states[0].clauses.fmlas:
+        #        if eqn.args[0].rep == justice_pred:
+        #            justice_map[tuple(eqn.args[0].args)] = eqn.args[1]
+        #            print ('~eventually {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+        #for args in helpful_map:
+        #    if ilg.is_true(helpful_map[args]):
+        #        if all(args in happened_maps[idx] for idx in range(2)):
+        #            if ilg.is_true(happened_maps[0][args]) and ilg.is_false(happened_maps[1][args]):
+        #                print ('\nNote: {} is true and {} occurs during the action, but work_needed is not reduced.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
+        #                break
+        #for args in helpful_map:
+        #    if ilg.is_true(helpful_map[args]):
+        #        if args in justice_map:
+        #            if ilg.is_true(happened_maps[0][args]) and ilg.is_true(justice_map[args]):
+        #                print ('\nNote: {} is true and eventually {} is false.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
+        #                break
         work_needed = tasks[sfx]['work_needed']
         vs = work_needed.args[0].args
         sks = [ilg.Symbol('@'+v.name,v.sort) for v in vs]
