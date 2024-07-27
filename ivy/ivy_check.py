@@ -131,7 +131,10 @@ def check_temporals():
     pc = ivy_proof.ProofChecker(mod.labeled_axioms+mod.assumed_invariants,mod.definitions,mod.schemata)
     for prop in props:
         if prop.temporal:
-            if prop.assumed:
+            if prop.assumed or opt_unchecked_properties.get() and ivy_acl.is_assumed(prop.label):
+                print('  ivy_check temporal: admitting axiom...', pretty_lf(prop))
+                if opt_unchecked_properties.get() and ivy_acl.is_assumed(prop.label):
+                    print('     ... admitting ', prop.label, ' as axiom because it is an externally assumed property and unchecked property file is supplied.')
                 pc.admit_axiom(prop)
             else:
                 print('\n    The following temporal property is being proved:\n')
@@ -480,12 +483,12 @@ def preprocess_assumed_ignored_properties():
         if ivy_acl.is_assumed(lft[0].label):
             print(lft[1] + " " + pretty_lf(lft[0]))
     # a property is either a user-defined, non-ignored/assumed property
-    mod.labeled_props = [lf for lf in mod.labeled_props if not (ivy_acl.is_assumed(lf.label) or ivy_acl.is_ignored(lf.label))]
+    mod.labeled_props = [lf for lf in mod.labeled_props if not ((ivy_acl.is_assumed(lf.label) and not(lf.temporal)) or ivy_acl.is_ignored(lf.label))]
     # an axiom is a user-defined, non-ignored axiom or an assumed property.
     mod.labeled_axioms = [lf for lf in mod.labeled_axioms if not(ivy_acl.is_ignored(lf.label))]
-    mod.labeled_axioms.extend([lf for lf in mod.labeled_props+mod.labeled_conjs if ivy_acl.is_assumed(lf.label)])
+    mod.assumed_invariants.extend([lf for lf in mod.labeled_props+mod.labeled_conjs if ivy_acl.is_assumed(lf.label) and not(lf.temporal)])
     # a conjecture is a user-defined, non-ignored, non-assumed conjecture.
-    mod.labeled_conjs = [lf for lf in im.module.labeled_conjs if not(ivy_acl.is_ignored(lf.label)) and not(ivy_acl.is_assumed(lf.label))]
+    mod.labeled_conjs = [lf for lf in im.module.labeled_conjs if not(ivy_acl.is_ignored(lf.label)) and not(ivy_acl.is_assumed(lf.label) and not(lf.temporal))]
 
 
 

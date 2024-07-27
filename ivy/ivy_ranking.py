@@ -72,11 +72,23 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
     assumed_gprops = [x for x in prover.axioms if not x.explicit and x.temporal and isinstance(x.formula,lg.Globally)]
     model.asms.extend([p.clone([p.label,p.formula.args[0]]) for p in assumed_gprops])
 
+    if debug.get():
+        print('ivy_ranking : the following are assumed global properties ........................')
+        for gprop in assumed_gprops:
+            print('     ASSUMED GPROP : ', str(gprop))
+            print(' ------------------------------------------------------------------- ')
+
     temporal_prems = [x for x in ipr.goal_prems(goal) if hasattr(x,'temporal') and x.temporal] + [
         x for x in prover.axioms if not x.explicit and x.temporal]
     if temporal_prems:
         fmla = ilg.Implies(ilg.And(*[x.formula for x in temporal_prems]),fmla)
 
+
+    if debug.get():
+        print('ivy_ranking : the following are temporal premises ........................')
+        for temporal_prem in temporal_prems:
+            print('     TEMPORAL PREMISE : ', str(temporal_prem))
+            print(' ------------------------------------------------------------------- ')
     # Split the tactic parameters into invariants and definitions
 
     tactic_invars = [inv for inv in proof.tactic_decls if not isinstance(inv,ivy_ast.DerivedDecl)]
