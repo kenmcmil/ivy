@@ -404,7 +404,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             tmp = old_of(lg.Implies(work_invar,lg.Or(*helps)))
             postconds.append(mklf("l2s_sched_exists",tmp))
 #            invars.append(mklf("l2s_eventually_start",l2s_init([],lg.Eventually(proof_label,work_start.args[1]))()))
-            invars.append(mklf("l2s_eventually_start2",lg.Implies(lg.Not(work_invar),lg.Eventually(proof_label,work_start.args[1]))))
+            # when liveness invariant fails to hold, eventuality is reached
+            invars.append(mklf("l2s_eventually_start",lg.Implies(lg.Not(work_invar),lg.Eventually(proof_label,work_start.args[1]))))
 
                 
 
@@ -1081,7 +1082,15 @@ def auto_hook(tasks,triggers,subs,tr,fcs):
             pred = (work_created.args[0].rep)(*vals)
             print ('Note: {} is true in the post-state of the action, but not in the pre-state,'.format(pred))
             print ('and its argument(s) are not visited during the action execution.\n')
-            
+    elif name.startswith('l2s_eventually_start'):
+        #lg.Implies(lg.Not(work_invar),lg.Eventually(proof_label,work_start.args[1]))))
+        print('The eventually property fails to hold when liveness invariant is false. ')
+        print('i.e. The following invariant does not hold:')
+        print('|/= ~work_invar -> \u25C7 (work_start)')
+        print('work_invar: ', tasks[sfx]['work_invar'])
+        print('work_start: ', tasks[sfx]['work_start'])
+        #work_start = ilg.Definition(ilg.Symbol('work_start'+sfx,lg.Boolean),lg.Not(gfmla.body))
+        print('Reminder: auto-generated work_start is the negation of the globally condition.')
     elif name.startswith('l2s_needed_preserved'):
         sfx = name[len('l2s_needed_preserved'):]
 
