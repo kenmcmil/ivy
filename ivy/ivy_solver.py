@@ -263,6 +263,10 @@ def enumeratedsort(es):
 def symbol_to_z3(s):
     return z3.Const(s.name, s.sort.to_z3()) if s.sort.dom == [] else z3.Function(s.name,s.sort.to_z3())    
 
+def symbol_to_z3_full(s):
+    name = solver_name(s)
+    return z3.Const(name, s.sort.to_z3()) if s.sort.dom == [] else z3.Function(name,s.sort.to_z3())    
+
 ivy_logic.UninterpretedSort.to_z3 = uninterpretedsort
 ivy_logic.FunctionSort.to_z3 = functionsort
 ivy_logic.EnumeratedSort.to_z3 = enumeratedsort

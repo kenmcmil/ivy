@@ -16,7 +16,7 @@ from . import ivy_proof
 from . import ivy_trace
 from . import ivy_solver as slvr
 
-from ivy.z3 import simplify
+from ivy.z3 import simplify, is_func_decl
 import tempfile
 import subprocess
 from collections import defaultdict
@@ -30,8 +30,7 @@ verbose = False
 def checked(thing):
     return ia.checked_assert.value in ["",thing.lineno]
 
-def action_to_tr(mod,action,method):
-    bgt = mod.background_theory()
+def action_to_tr(mod,action,method,bgt):
     if method=="fsmc":  # if finite-state, unroll the loops
         with ia.UnrollContext(im.module.sort_card):
             upd = action.update(im.module,None)
@@ -99,8 +98,14 @@ def create_array_sort(sort):
 
 # Should I convert this symbol to an array?
 
+mod_set = set()
+
+def add_to_mod_set(action):
+    for act in action.iter_subactions():
+        mod_set.update(act.modifies())
+
 def encode_as_array(sym):
-    return not il.is_interpreted_symbol(sym) and sym.name not in im.module.destructor_sorts
+    return not il.is_interpreted_symbol(sym) and sym.name not in im.module.destructor_sorts and sym in mod_set
 
 # Convert all uninterpreted functions in a formula to
 # arrays.
@@ -109,6 +114,8 @@ def uf_to_arr_ast(ast):
     args = [uf_to_arr_ast(arg) for arg in ast.args]
     if il.is_app(ast) and not il.is_named_binder(ast) and ast.args:
         sym = ast.rep
+        if sym.name == 'sent':
+            print ('ast: {}, encode = {}'.format(ast,encode_as_array(sym)))
         if encode_as_array(sym):
             sname,ssorts = create_array_sort(sym.sort)
             asym = il.Symbol(sym.name,ssorts[0])
@@ -207,6 +214,10 @@ def get_dom_and_rng(sort_name):
         rng = "Bool"
     return dom, rng
 
+def frame_clauses(all_vars, mod_vars, clauses):
+    mod_set = set(mod_vars)
+    return ilu.and_clauses(ilu.Clauses([il.Equals(x,tr.new(x)) for x in all_vars if x not in mod_set]), clauses)
+
 def check_isolate(method="mc"):
     mod = im.module
 
@@ -256,25 +267,39 @@ def check_isolate(method="mc"):
         else:
             conjs.append(lf)
 
+    bgt = mod.background_theory()
+
     # Convert uf's to arrays, if possible
 
+    # Only encode the modified symbols as arrays
+
+    mod_set.clear()
+    add_to_mod_set(init_action)
+    for x,action in actions:
+        add_to_mod_set(action)
+    print ('mod_set: {}'.format(mod_set))
+
     actions = [(x,uf_to_array_action(action)) for x,action in actions]
-    # for x,a in actions:
-    #     print (a)
 
     init_action = uf_to_array_action(init_action)
     # print (init_action)
     conjs = [conj.clone([conj.label,uf_to_arr_ast(conj.formula)]) for conj in conjs]
 
+    # Seperate out the axioms that do not have modified symbols
+
+    have_mod = [any(y in mod_set for y in ilu.used_symbols_ast(x)) for x in bgt.fmlas]
+    axioms = [x for x,hm in zip(bgt.fmlas,have_mod) if not hm]
+    bgt = ilu.Clauses([x for x,hm in zip(bgt.fmlas,have_mod) if hm])
+    
     # Convert the global action and initializer to logic. Notice we
     # use 'action_to_state' to turn the initializer TR into a state
     # predicate (i.e., it's strongest post).
 
-    actupds = [action_to_tr(mod,action,method) for x,action in actions]
-    transs = [ilu.clauses_to_formula(a[1]) for a in actupds]
-    trans = il.Or(*[fmla for fmla in transs]) if len(actupds) != 1 else transs[0]
+    actupds = [action_to_tr(mod,action,method,bgt) for x,action in actions]
     stvars = list(iu.unique(sym for a in actupds for sym in a[0]))
-    istvars,init,ierror = tr.action_to_state(action_to_tr(mod,init_action,method))
+    transs = [ilu.clauses_to_formula(frame_clauses(stvars,a[0],a[1])) for a in actupds]
+    trans = il.Or(*[fmla for fmla in transs]) if len(actupds) != 1 else transs[0]
+    istvars,init,ierror = tr.action_to_state(action_to_tr(mod,init_action,method,bgt))
     stvars = list(iu.unique(stvars+istvars))
 
     for action, tran_fm in zip(actions, transs):
@@ -285,26 +310,43 @@ def check_isolate(method="mc"):
     # trans = ilu.clauses_to_formula(trans)
     init = ilu.clauses_to_formula(init)
 
-    print ('init: {}'.format(init))
-    print ('trans: {}'.format(trans))
-    for conj in conjs:
-        print ('conj: {}'.format(conj))
+    # print ('init: {}'.format(init))
+    # print ('trans: {}'.format(trans))
+    # for conj in conjs:
+    #     print ('conj: {}'.format(conj))
 
 
     sorts = []
 
     vmt_var_defs = []
 
+    def add_sort(sort):
+        if sort not in sorts:
+            sorts.append(sort)
+
+    declared_symbols = set()
     for sym in ilu.used_symbols_asts([init,trans]+[lf.formula for lf in conjs]):
-        if slvr.solver_name(sym) is not None:
-            decl = slvr.symbol_to_z3(sym)
+        sym = il.normalize_symbol(sym)
+        if sym not in declared_symbols and slvr.solver_name(sym) is not None:
+            declared_symbols.add(sym)
+            decl = slvr.symbol_to_z3_full(sym)
             if il.is_constant(sym):
-                if decl.sort() not in sorts:
-                    sorts.append(decl.sort())
-                if not il.is_interpreted_symbol(sym):
-                    decl_sexpr = decl.sexpr()
-                    decl_sort = decl.sort().sexpr()
-                    vmt_var_defs.append(f'(declare-fun {decl_sexpr} () {decl_sort})')
+                if is_func_decl(decl):
+                    for i in range(decl.arity()):
+                        add_sort(decl.domain(i))
+                    add_sort(decl.range())
+                    if not il.is_interpreted_symbol(sym):
+                        decl_sexpr = decl.sexpr()
+                        vmt_var_defs.append(decl_sexpr)
+                        # decl_sort = decl.range().sexpr()
+                        # decl_dom = ' '.join(decl.domain(i).sexpr() for i in range(decl.arity()))
+                        # vmt_var_defs.append(f"(declare-fun {decl_sexpr} ({decl_dom}) {decl_sort})")
+                else:
+                    add_sort(decl.sort())
+                    if not il.is_interpreted_symbol(sym):
+                        decl_sexpr = decl.sexpr()
+                        decl_sort = decl.sort().sexpr()
+                        vmt_var_defs.append(f'(declare-fun {decl_sexpr} () {decl_sort})')
             else:
                 vmt_var_defs(decl.sexpr())
 
@@ -328,6 +370,13 @@ def check_isolate(method="mc"):
         sort_str = f"(declare-sort {sort_name} 0)"
         vmt_sort_defs.append(sort_str)
 
+    all_used = ilu.used_symbols_asts([init,trans])
+    immutable = [sym for sym in all_used if not il.is_function_sort(sym.sort)
+                 and not sym.is_skolem() and not tr.is_new(sym)
+                 and "fml:" not in sym.name and tr.new(sym) not in all_used
+                 and all(sym not in upd[0] for upd in actupds)]
+    # print ('immutable: {}'.format(immutable))
+
     for sym in ilu.used_symbols_asts([init,trans]):
         if tr.is_new(sym):
             next_sym = slvr.symbol_to_z3(sym)
@@ -337,7 +386,7 @@ def check_isolate(method="mc"):
             sort = cur_sym.sort().sexpr()
             full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
-        elif "fml:" in sym.name:
+        elif "fml:" in sym.name or sym.is_skolem() or sym in immutable:
             next_sym_str = f"new_{sym.name.replace(':', '')}"
             cur_sym_str = f"|{sym.name}|"
             sort = slvr.symbol_to_z3(sym).sort().sexpr()
@@ -347,13 +396,17 @@ def check_isolate(method="mc"):
             full_str = f"(define-fun .{define_fun_str} () {sort} (! {cur_sym_str} :next {next_sym_str}))"
             vmt_var_defs.append(full_str)
 
+    frame = [il.Equals(x,tr.new(x)) for x in immutable]
+    # print ('frame: {}'.format(frame))
+
     props = []
-    herbrand_trans = [] # List[str]
+    herbrand_trans = [simplify(slvr.formula_to_z3(x)).sexpr() for x in frame] # List[str]
     for i, lf in enumerate(conjs):
-        var_defs, herb_trans = herbrandize_property_vars(slvr.formula_to_z3(lf.formula))
-        herbrand_trans.extend(herb_trans)
-        vmt_var_defs.extend(var_defs)
-        prop_formula = normalize_prop(slvr.formula_to_z3(lf.formula))
+        # var_defs, herb_trans = herbrandize_property_vars(slvr.formula_to_z3(lf.formula))
+        # herbrand_trans.extend(herb_trans)
+        # vmt_var_defs.extend(var_defs)
+        # prop_formula = normalize_prop(slvr.formula_to_z3(lf.formula))
+        prop_formula = slvr.formula_to_z3(lf.formula).sexpr()
         props.append(f'(define-fun property () Bool (! {prop_formula} :invar-property {i}))')
 
     init_formula_str = simplify(slvr.formula_to_z3(init)).sexpr()
@@ -364,12 +417,18 @@ def check_isolate(method="mc"):
 
     vmt_var_defs.extend(get_action_defs(actions))
 
+    # print ('foo : {}'.format(transs[-1]))
+
     trans_vmt = get_trans_str(transs, actions, herbrand_trans) # transs not a typo
     vmt_formula_defs.append(trans_vmt)
     vmt_formula_defs.extend(props)
 
+    vmt_axiom_defs = []
+    for axiom in axioms:
+        vmt_axiom_defs.append('(assert {})'.format(simplify(slvr.formula_to_z3(axiom)).sexpr()))
+
     with open("ivy.vmt", "w") as f:
-        vmt_str = vmt_sort_defs + vmt_func_defs + vmt_var_defs + vmt_formula_defs
+        vmt_str = vmt_sort_defs + vmt_func_defs + vmt_var_defs + vmt_formula_defs + vmt_axiom_defs
         f.write("\n".join(vmt_str))
 
     print('output written to ivy.vmt')
@@ -386,6 +445,9 @@ def get_trans_str(trans_fm_list, actions, herbrand_trans):
         full_str = f"(=> {action_name} {trans_str})"
         vmt_list.append(full_str)
     vmt_list.append(f"(or {' '.join(action_names)})")
+    for i,x in enumerate(action_names):
+        for j,y in enumerate(action_names[i+1:]):
+            vmt_list.append(f"(or (not {x}) (not {y}))")
     for ht in herbrand_trans:
         vmt_list.append(ht)
     vmt_str = '\n'.join(vmt_list)
