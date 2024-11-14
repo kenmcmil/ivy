@@ -396,6 +396,8 @@ def check_fcs_in_state(mod,ag,post,fcs):
     return not any(fc.failed for fc in fcs)
 
 def convert_postconds(state,postconds):
+    if state.update is None:
+        return postconds
     updated,postcond,pre = state.update
     renaming = dict((s,itr.old_of(s))
                     for s in lut.used_symbols_asts(x.formula for x in postconds)
@@ -405,10 +407,12 @@ def convert_postconds(state,postconds):
     return [x.clone([x.args[0],lut.rename_ast(x.formula,renaming)])
             for x in postconds]
 
-def check_conjs_in_state(mod,ag,post,indent=8,pcs=[]):
+def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],is_init=False):
     conjs = mod.conj_subgoals if mod.conj_subgoals is not None else mod.labeled_conjs
     conjs = [x for x in conjs if is_check_mod_unprovable(x)]
     conjs += convert_postconds(post,pcs)
+    if is_init:
+        conjs = rewrite_conjs_with_flows(conjs)
     check_lineno = act.checked_assert.get()
     if check_lineno == "":
         check_lineno = None
@@ -429,6 +433,10 @@ def get_conjs(mod):
     fmlas = [lf.formula for lf in mod.labeled_conjs + mod.assumed_invariants if not lf.explicit and not lf.unprovable]
     return lut.Clauses(fmlas,annot=act.EmptyAnnotation())
 
+def get_assumed_invariants(mod):
+    fmlas = [lf.formula for lf in mod.assumed_invariants if not lf.explicit and not lf.unprovable]
+    return lut.Clauses(fmlas,annot=act.EmptyAnnotation())
+
 def apply_conj_proofs(mod):
     # Apply any proof tactics to the conjs to get the conj_subgoals.
 
@@ -445,8 +453,69 @@ def apply_conj_proofs(mod):
             conjs.append(lf)
     mod.conj_subgoals = conjs
 
+class FlowFunctions(object):
+    pass
 
+def get_flow_functions():
+    ff = FlowFunctions()
+    ff.flow = lg.UninterpretedSort('flow')
+    ff.index = lg.UninterpretedSort('index')
+    ff.index_lt = lg.Symbol('<',lg.FunctionSort(ff.index,ff.index,lg.BooleanSort()))
+    ff.index_eq = lg.Symbol('<=',lg.FunctionSort(ff.index,ff.index,lg.BooleanSort()))
+    ff.time = lg.UninterpretedSort('time')
+    ff.time_lt = lg.Symbol('<',lg.FunctionSort(ff.time,ff.time,lg.BooleanSort()))
+    ff.time_leq = lg.Symbol('<=',lg.FunctionSort(ff.time,ff.time,lg.BooleanSort()))
+    ff.value = lg.Symbol('flow.value',lg.FunctionSort(ff.flow,ff.index,ff.time))
+    ftsort = lg.FunctionSort(ff.flow,ff.time,ff.index)
+    ff.ceil = lg.Symbol('ceil',ftsort)
+    ff.floor = lg.Symbol('floor',ftsort)
+    ff.now = lg.Symbol('now',ff.time)
+    ff.tau = lg.Symbol('tau',ff.flow)
+    ff.event = lg.Symbol('event',ff.index)
+    return ff
+    
+# In the initial state, the "now" instant is zero.
 
+def flow_initial_state(state):
+    ff = get_flow_functions()
+    state.clauses = lut.and_clauses(state.clauses,lut.Clauses([lg.Equals(ff.now,lg.Symbol('0',ff.time))]))
+
+def rewrite_conjs_with_flows(conjs):
+    ff = get_flow_functions()
+    nowf = lg.Equals(ff.now,lg.Symbol('0',ff.time))
+    subst = {ff.ceil:ff.floor}
+    def fix(conj):
+        fmla = lg.Implies(nowf,lut.rename_ast(conj.formula,subst))
+        return conj.clone([conj.label,fmla])
+    if ff.ceil in lut.symbols_asts(conjs):
+        conjs = [fix(conj) for conj in conjs]
+    return conjs
+        
+# In the precondition of an invariant check, for each flow f, we change ceil(f) to floor(f). Thus,
+# the precondition refers to the cumulative value of f just before the event time.
+
+def rewrite_precond_with_flows(clauses,flow=None):
+    ff = get_flow_functions()
+    if ff.ceil in lut.symbols_clauses(clauses):
+        subst = {ff.ceil:ff.floor}
+        clauses = lut.rename_clauses(clauses,subst)
+        assumps = []
+        F = lg.Variable('F',ff.flow)
+        I = lg.Variable('I',ff.index)
+        # ax1 = lg.ForAll([F,I],lg.Implies(ff.time_lt(ff.value(F,I),ff.now),ff.index_leq(I,ff.floor(F))))
+        # ax2 = lg.Forall([F,I],lg.Not(lg.And(ff.index_lt(ff.floor(F),I),ff.time_lt(ff.value(F,I),ff.now))))
+        # ax3 = lg.ForAll([F,I],lg.Implies(ff.time_leq(ff.value(F,I),ff.now),ff.index_leq(I,ff.floor(F))))
+        # ax4 = lg.Forall([F,I],lg.Not(lg.And(ff.index_lt(ff.floor(F),I),ff.time_leq(ff.value(F,I),ff.now))))
+        # ax5 = ff.time_lt(ff.now,lg.Symbol('infty',ff.time))
+        # assumps.extend([ax1,ax2,ax3,ax4])
+        if flow is None:
+            flow = ff.tau
+        # ax5 = lg.Exists([I],lg.Equals(ff.value(flow,I),ff.now)) 
+        lg.add_symbol(ff.event.name,ff.event.sort)
+        ax5 = lg.Equals(ff.value(flow,ff.event),ff.now)
+        assumps.append(ax5)
+        clauses = lut.and_clauses(clauses,lut.Clauses(assumps))
+    return clauses
 
 def check_isolate(trace_hook = None):
     mod = im.module
@@ -542,7 +611,8 @@ def check_isolate(trace_hook = None):
             if check:
                 with itp.EvalContext(check=False):
                     ag = ivy_art.AnalysisGraph(initializer=lambda x:None)
-                    check_conjs_in_state(mod,ag,ag.states[0])
+                    # flow_initial_state(ag.states[0])
+                    check_conjs_in_state(mod,ag,ag.states[0],is_init=True)
             else:
                 print('')
 
@@ -572,6 +642,7 @@ def check_isolate(trace_hook = None):
                     ag = ivy_art.AnalysisGraph()
                     pre = itp.State()
                     pre.clauses = get_conjs(mod)
+                    pre.clauses = rewrite_precond_with_flows(pre.clauses,flow=None)
                     with itp.EvalContext(check=False): # don't check safety
     #                    post = ag.execute(action, pre, None, actname)
                         post = ag.execute(action, pre)
@@ -579,8 +650,25 @@ def check_isolate(trace_hook = None):
                 else:
                     print('')
 
-
-
+        
+        postconds = [lf for lf in mod.labeled_conjs if not lf.explicit and not lf.unprovable]
+        fmlas = lut.Clauses([x.formula for x in postconds])
+        ff = get_flow_functions()
+        flows = set(sym for sym in lut.symbols_clauses(fmlas) if sym.sort == ff.flow)
+        if flows:
+            print("\n    The following set of flows must preserve the invariant:")
+            for flow in sorted(flows):
+                print("        flow {}".format(flow))
+                if check:
+                    ag = ivy_art.AnalysisGraph()
+                    pre = itp.State()
+                    pre.clauses = get_conjs(mod)
+                    pre.clauses = rewrite_precond_with_flows(pre.clauses,flow=flow)
+                    pre.clauses = lut.and_clauses(pre.clauses,get_assumed_invariants(mod))
+                    check_conjs_in_state(mod,ag,pre,indent=12,pcs=postconds)
+                else:
+                    print('')
+            
         callgraph = defaultdict(list)
         for actname,action in mod.actions.items():
             for called_name in action.iter_calls():

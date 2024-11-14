@@ -121,7 +121,7 @@ class alpha_sort_as_default(sort_as_default):
         self.sort = lg.TopSort('alpha')
 
 def is_numeral_name(s):
-    return s[0].isdigit() or s[0] == '"'  or (s[0] == '-' and len(s) > 1 and s[1].isdigit)
+    return s[0].isdigit() or s[0] == '"'  or (s[0] == '-' and len(s) > 1 and s[1].isdigit) or s == 'infty'
 
 Symbol = lg.Const
 
@@ -1062,6 +1062,7 @@ polymorphic_symbols_list = [
     ('arrsel',[alpha,beta,gamma]),
     ('arrupd',[alpha,beta,gamma,alpha]),
     ('arrcst',[alpha]),
+    ('infty',[alpha]),
 ]
 
 uninterpreted_polymorphic_symbols = set([

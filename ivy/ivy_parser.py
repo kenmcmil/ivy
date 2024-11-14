@@ -510,23 +510,32 @@ def p_optexplicit_explicit(p):
     'optexplicit : EXPLICIT'
     p[0] = True
 
+def p_optaxiom(p):
+    'optaxiom : '
+    p[0] = False
+
+def p_optaxiom_axiom(p):
+    'optaxiom : AXIOM'
+    p[0] = True
+
 # from version 1.7, "invariant" replaces "conjecture"
 if not iu.get_numeric_version() <= [1,6]:
 
 
     def p_top_invariant_labeledfmla(p):
-        'top : top optexplicit INVARIANT labeledfmla optproof'
+        'top : top optexplicit INVARIANT optaxiom labeledfmla optproof'
         p[0] = p[1]
-        lf = addlabel(p[4],'invar')
+        lf = addlabel(p[5],'invar')
         lf.unprovable = False
+        lf.assumed = p[4]
         if p[2]:
             lf.explicit = True
         d = ConjectureDecl(lf)
         d.lineno = get_lineno(p,3)
         if not lf.unprovable or check_unprovable.get():
             p[0].declare(d)
-            if p[5] is not None:
-                p[0].declare(ProofDecl(p[5]))
+            if p[6] is not None:
+                p[0].declare(ProofDecl(p[6]))
 
     def p_top_unprovable_invariant_labeledfmla(p):
         'top : top UNPROVABLE INVARIANT labeledfmla optproof'

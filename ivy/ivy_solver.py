@@ -16,7 +16,7 @@ from . import ivy_logic
 from .ivy_logic_utils import used_variables_clause, used_variables_ast, variables_ast,\
    to_clauses, constants_clauses, used_relations_clauses, rel_inst, fun_eq_inst, \
    is_ground_lit, used_constants_clauses, substitute_constants_clauses, eq_atom, \
-   functions_clauses, fun_inst, substitute_lit, used_constants_clause, used_symbols_clause,Clauses, used_symbols_clause, and_clauses, true_clauses, used_symbols_ast, sym_placeholders, used_symbols_clauses, ground_apps_clauses, dual_clauses
+   functions_clauses, fun_inst, substitute_lit, used_constants_clause, used_symbols_clause,Clauses, used_symbols_clause, and_clauses, true_clauses, used_symbols_ast, sym_placeholders, used_symbols_clauses, ground_apps_clauses, dual_clauses, to_formula
 from .ivy_core import minimize_core, biased_core
 from . import ivy_utils as iu
 from . import ivy_unitres as ur
@@ -49,6 +49,8 @@ opt_show_vcs = iu.BooleanParameter("show_vcs",False)
 opt_macro_finder = iu.BooleanParameter("macro_finder",True)
 set_macro_finder(True)
 opt_macro_finder.set_callback(set_macro_finder)
+
+opt_eval_file = iu.Parameter("eval_file")
 
 def set_use_native_enums(t):
     global use_z3_enums
@@ -108,6 +110,8 @@ def sort_name_to_z3(name):
     sort = ivy_logic.find_sort(name)
     return sort.to_z3()
 
+realx_sort = None
+
 def sorts(name):
     if name.startswith('bv[') and name.endswith(']'):
         width = int(name[3:-1])
@@ -132,6 +136,14 @@ def sorts(name):
         return z3.IntSort()
     if name == 'strlit':
         return z3.StringSort()
+    if name == 'realx':
+        global realx_sort
+        if realx_sort is None:
+            realx_sort = z3.Datatype('realx')
+            realx_sort.declare('just', ('realof', z3.RealSort()))
+            realx_sort.declare('infty')
+            realx_sort = realx_sort.create()
+        return realx_sort
     return None
         
 #sorts = {}
@@ -147,19 +159,29 @@ def parse_int_params(name):
     
 
 def is_solver_sort(name):
-    return name.startswith('bv[') and name.endswith(']') or name == 'int' or name == 'nat' or name == 'real' or name == 'strlit' or name.startswith('strbv[') or name.startswith('intbv[') or name.startswith('arr[')
+    return name.startswith('bv[') and name.endswith(']') or name == 'int' or name == 'nat' or name == 'real' or name == 'realx' or name == 'strlit' or name.startswith('strbv[') or name.startswith('intbv[') or name.startswith('arr[')
 
-relations_dict = {'<':(lambda x,y: z3.ULT(x, y) if z3.is_bv(x) else x < y),
-             '<=':(lambda x,y: z3.ULE(x, y) if z3.is_bv(x) else x <= y),
-             '>':(lambda x,y: z3.UGT(x, y) if z3.is_bv(x) else x > y),
-             '>=':(lambda x,y: z3.UGE(x, y) if z3.is_bv(x) else x >= y),
+def realx_lt(x,y):
+    return z3.If(x == realx_sort.infty,z3.BoolVal(False),z3.If(y == realx_sort.infty,z3.BoolVal(True),realx_sort.realof(x) < realx_sort.realof(y)))
+
+def realx_leq(x,y):
+    return z3.If(y == realx_sort.infty,z3.BoolVal(True),z3.If(x == realx_sort.infty,z3.BoolVal(False),realx_sort.realof(x) <= realx_sort.realof(y)))
+
+def realx_plus(x,y):
+    return z3.If(x == realx_sort.infty,realx_sort.infty,z3.If(y == realx_sort.infty,realx_sort.infty,realx_sort.just(realx_sort.realof(x) + realx_sort.realof(y))))
+    
+
+relations_dict = {'<':(lambda x,y: z3.ULT(x, y) if z3.is_bv(x) else realx_lt(x,y) if x.sort() == realx_sort else x < y),
+             '<=':(lambda x,y: z3.ULE(x, y) if z3.is_bv(x) else realx_leq(x,y) if x.sort() == realx_sort else x <= y),
+             '>':(lambda x,y: z3.UGT(x, y) if z3.is_bv(x) else realx_lt(y,x) if x.sort() == realx_sort else x > y),
+             '>=':(lambda x,y: z3.UGE(x, y) if z3.is_bv(x) else realx_leq(y,x) if x.sort() == realx_sort else x >= y),
              "arrsel":(lambda x,y: z3.Select(x,y)),
              }
 
 def relations(name):
     return relations_dict.get(name)
 
-functions_dict = {"+":(lambda x,y: x + y),
+functions_dict = {"+":(lambda x,y: realx_plus(x,y) if x.sort() == realx_sort else x + y),
              "-":my_minus,
              "*":(lambda x,y: x * y),
              "/":(lambda x,y: x / y),
@@ -321,6 +343,7 @@ def lookup_native(thing,table,kind):
         return z3name.to_z3()
     z3val = table(z3name)
     if z3val == None:
+        print (table)
         raise iu.IvyError(None,'{} is not a supported Z3 {}'.format(z3name,kind))
     return z3val
 
@@ -395,6 +418,11 @@ def numeral_to_z3(num):
     name = num.name[1:-1] if num.name.startswith('"') else num.name
     if isinstance(z3sort,z3.SeqSortRef) and z3sort.is_string():
         return z3.StringVal(name)
+    if z3sort == realx_sort:
+        if name == 'infty':
+            return realx_sort.infty
+        val = z3.RealSort().cast(str(int(name,0)))
+        return realx_sort.just(val)
     val = z3sort.cast(str(int(name,0))) # allow 0x,0b, etc
     sort = num.sort.name
     if handle_range_sorts and sort in ivy_logic.sig.interp:
@@ -797,6 +825,10 @@ def collect_numerals(z3term):
 
 def from_z3_numeral(z3term,sort):
     name = str(z3term)
+    if z3term.sort() == realx_sort:
+        if name == 'infty':
+            return ivy_logic.Symbol(name,sort)
+        name = name[5:-1]  # must be of form just(NNN)
     if not(name[0].isdigit() or name[0] == '"' or name[0] == '-'):
         print("unexpected numeral from Z3 model: {}".format(name))
     return ivy_logic.Symbol(name,sort)
@@ -804,6 +836,8 @@ def from_z3_numeral(z3term,sort):
 def collect_model_values(sort,model,sym):
     term = sym(*sym_placeholders(sym))
     val = model.eval(term_to_z3(term),model_completion=True)
+    # if not ivy_logic.is_interpreted_symbol(sym):
+    #     print ('{} = {}'.format(term,model.eval(term_to_z3(term),model_completion=False)))
     nums = set(from_z3_numeral(n,sort) for n in collect_numerals(val))
     return nums
 
@@ -911,6 +945,11 @@ def constant_from_z3(sort,c):
         return ivy_logic.And()
     if z3.is_false(c):
         return ivy_logic.Or()
+    if c.sort() == realx_sort:
+        name = str(c)
+        if name.startswith('just('):
+            name = name[5:-1]  # must be of form just(NNN)
+            return ivy_logic.Constant(ivy_logic.Symbol(name,sort))
     return ivy_logic.Constant(ivy_logic.Symbol(repr(c),sort))
 
 def get_model_constant(m,t):
@@ -1282,7 +1321,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                     s.pop()
         print("done")
     m = get_model(s)
-    # print ("model = {}".format(m))
+    # print ("model = {}".format(m.sexpr()))
     # f = open("ivy.smt2","w")
     # f.write(s.to_smt2())
     # f.close()
@@ -1304,6 +1343,25 @@ def model_universe_facts(h,sort,upclose):
           for (c1,c2) in iu.distinct_unordered_pairs(elems)]
     return uc+dc
 
+def get_user_facts(h):
+    filename = opt_eval_file.get()
+    res = []
+    if filename is not None:
+        try:
+            f = open(filename,'r')
+        except:
+            raise iu.IvyError(None,"Cannot open file {} to read".format(filename))
+        for line in f.readlines():
+            fmla = to_formula(line)
+            val = h.eval_to_constant(fmla)
+            lit = ivy_logic._eq_lit(fmla,val)
+            res.append(lit)
+            val_str = str(val).split(':')[0]
+            if '/' in val_str:
+                val_str = '{} =~ {}'.format(val_str,eval(val_str))
+            print ('lit: {} = {}'.format(fmla,val_str))
+    return res
+        
 
 def model_facts(h,ignore,clauses1,upclose=False):
     # define the universe for each sort:
@@ -1329,7 +1387,9 @@ def model_facts(h,ignore,clauses1,upclose=False):
     # values of functions in formula
     fns = set(f for (f,arity) in functions_clauses(clauses1) if not ignore(f) and arity >= 1)
     vf = [[l] for f in fns for l in function_model_to_clauses(h,f)]
-    res = uc + vc + vr + vf
+    # expresssions user asked for
+    uf = get_user_facts(h)
+    res = uc + vc + vr + vf + uf
     return Clauses(res)
 
 #def numeral_assign(h):

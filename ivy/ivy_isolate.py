@@ -1095,7 +1095,12 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
         
     del mod.labeled_conjs[:]
     if not create_imports.get() or compile_with_invariants.get(): # no conjectures if compiling
-        mod.labeled_conjs.extend(new_conjs)
+        mod.labeled_conjs.extend(c for c in new_conjs if not c.assumed)
+
+    if not hasattr(mod,'assumed_invariants'):
+        mod.assumed_invariants = []
+
+    mod.assumed_invariants.extend(c for c in new_conjs if c.assumed)
 
     # filter the inits
 
