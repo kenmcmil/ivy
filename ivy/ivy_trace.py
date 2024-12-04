@@ -165,7 +165,7 @@ class TraceBase(art.AnalysisGraph):
                 foo = False
                 if hasattr(state,"loop_start") and state.loop_start:
                     lines.append('\n--- the following repeats infinitely ---\n\n')
-                for c in state.clauses.fmlas:
+                for c in sorted(state.clauses.fmlas, key=str):
                     if hidden(c.args[0].rep):
                         continue
                     if renaming is not None:
