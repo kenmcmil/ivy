@@ -123,7 +123,7 @@ of `intf.send` and it can update the monitor state.  In addition, the
 monitor inserts an assertion before every call to `intf.recv`. This
 assertion is introduced with the `require` statement. This means that
 the calling environment of `inft.recv` must guarantee that the
-condition `sent(x)` holds before the call to `intf.send`. That is, the
+condition `sent(x)` holds before the call to `intf.recv`. That is, the
 received packet `x` must previously have been sent.
 
 In effect, our service specification describes a channel that can

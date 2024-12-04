@@ -91,7 +91,7 @@ Here is an example of a simple program that tabulates the function
     instance arr : array(t,t)
 
     action tabulate(max : t) returns (res:arr.t) {
-        local i:index {
+        local i:t {
             i := 0;
             res := arr.create(max,0);
             while i < max {
