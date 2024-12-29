@@ -264,6 +264,8 @@ def symbol_to_z3(s):
     return z3.Const(s.name, s.sort.to_z3()) if s.sort.dom == [] else z3.Function(s.name,s.sort.to_z3())    
 
 def symbol_to_z3_full(s):
+    if s.is_numeral():
+        return numeral_to_z3(s)
     name = solver_name(s)
     return z3.Const(name, s.sort.to_z3()) if s.sort.dom == [] else z3.Function(name,s.sort.to_z3())    
 
@@ -533,6 +535,9 @@ def exists(vs,z3_vs,z3_body):
         z3_body = z3.And(*(cnstrs + [z3_body]))
     return z3.Exists(z3_vs, z3_body)
 
+def mylambda(vs,z3_vs,z3_body):
+    return z3.Lambda(z3_vs, z3_body)
+
 def clause_to_z3(clause):
     z3_literals = [literal_to_z3(lit) for lit in clause]
     z3_formula = z3.Or(z3_literals)
@@ -623,9 +628,9 @@ def formula_to_z3_int(fmla):
         return z3.Implies(args[0],args[1])
     if isinstance(fmla,ivy_logic.Ite):
         return z3.If(args[0],args[1],args[2])
-    if ivy_logic.is_quantifier(fmla):
+    if ivy_logic.is_quantifier(fmla) or ivy_logic.is_lambda(fmla):
         variables = ivy_logic.quantifier_vars(fmla)
-        q = forall if ivy_logic.is_forall(fmla) else exists
+        q = forall if ivy_logic.is_forall(fmla) else exists if ivy_logic.is_forall(fmla) else mylambda
         res =  q(variables, [term_to_z3(v) for v in variables], args[0])
 #        print "res = {}".format(res)
         return res

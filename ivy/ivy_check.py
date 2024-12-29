@@ -41,6 +41,7 @@ opt_trusted = iu.BooleanParameter("trusted",False)
 opt_mc = iu.BooleanParameter("mc",False)
 opt_trace = iu.BooleanParameter("trace",False)
 opt_separate = iu.BooleanParameter("separate",None)
+opt_method = iu.Parameter("method","")
 
 def display_cex(msg,ag):
     if diagnose.get():
@@ -832,6 +833,8 @@ def mc_isolate(isolate,meth=ivy_mc.check_isolate):
 def get_isolate_method(isolate):
     if opt_mc.get():
         return 'mc'
+    if opt_method.get():
+        return opt_method.get()
     return get_isolate_attr(isolate,'method','ic')
 
 

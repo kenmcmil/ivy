@@ -16,7 +16,7 @@ from . import ivy_proof
 from . import ivy_trace
 from . import ivy_solver as slvr
 
-from ivy.z3 import simplify, is_func_decl
+from ivy.z3 import simplify, is_func_decl, DatatypeSortRef
 import tempfile
 import subprocess
 from collections import defaultdict
@@ -125,6 +125,14 @@ def uf_to_arr_ast(ast):
             return asym
     return ast.clone(args)
 
+fresh_skolem_ctr = 0
+
+def fresh_skolem(sort):
+    global fresh_skolem_ctr
+    res = il.Symbol('__havoc_'+str(fresh_skolem_ctr),sort)
+    fresh_skolem_ctr += 1
+    return res
+
 def encode_assign(asgn,lhs,rhs):
     sym = lhs.rep
     if sym.name in im.module.destructor_sorts:
@@ -132,7 +140,9 @@ def encode_assign(asgn,lhs,rhs):
         return (lhs.clone([nlhs]+[lhs.args[1:]]),rhs)
     else:
         lvs = set(ilu.variables_ast(lhs));
-        rvs = set(ilu.variables_ast(rhs));
+        rvs = set(ilu.variables_ast(rhs)) if rhs is not None else set();
+        rhs_const = not any(v in rvs for v in lvs)
+        print ('rhs_const: {}'.format(rhs_const))
         if any(v in rvs for v in lvs):
             if (il.is_app(rhs) and rhs.args == lhs.args and all(il.is_variable(x) for x in lhs.args)
                 and len(set(lhs.args)) == len(lhs.args)):
@@ -142,34 +152,42 @@ def encode_assign(asgn,lhs,rhs):
                 asym = il.Symbol(sym.name,asort)
                 rsym = il.Symbol(rhs.rep.name,asort)
                 return (asym,rsym)
-            raise iu.IvyError(asgn,'cannot convert paramaterized assignment to VMT')
+            # raise iu.IvyError(asgn,'cannot convert paramaterized assignment to VMT')
         sym = lhs.rep
         sname, ssorts = create_array_sort(sym.sort)
         asort = ssorts[0]
         asym = il.Symbol(sym.name,asort)
-        arhs = uf_to_arr_ast(rhs)
+        arhs = uf_to_arr_ast(rhs) if rhs is not None else fresh_skolem(lhs.sort)
         def recur(i,val):
             if i == len(lhs.args):
                 return arhs
             idx = lhs.args[i]
-            if il.is_variable(idx):
-                sval = recur(i+1,None)
-                return il.Symbol('arrcst',il.FunctionSort(ssorts[i+1],ssorts[i]))(sval)
-            if val is None:
-                raise iu.IvyError(asgn,'cannot convert paramaterized assignment to VMT')
             aidx = uf_to_arr_ast(idx)
             sel = il.Symbol('arrsel',il.FunctionSort(ssorts[i],aidx.sort,ssorts[i+1]))
             sval = recur(i+1,sel(val,aidx))
-            upd = il.Symbol('arrupd',il.FunctionSort(ssorts[i],aidx.sort,ssorts[i+1],ssorts[i]))
-            return upd(val,aidx,sval)
-        return(asym,recur(0,asym))
-
+            if il.is_variable(idx):
+                if il.is_app(sval) and sval.rep.name == 'arrcst' or i == len(lhs.args)-1 and rhs_const:
+                    return il.Symbol('arrcst',il.FunctionSort(ssorts[i+1],ssorts[i]))(sval)
+                print ('i: {}, {}'.format(i,len(lhs.args)-1))
+                resval = il.Lambda([aidx],sval)
+                return il.Symbol('cast',il.FunctionSort(resval.sort,ssorts[i]))(resval)
+            else:
+                upd = il.Symbol('arrupd',il.FunctionSort(ssorts[i],aidx.sort,ssorts[i+1],ssorts[i]))
+                return upd(val,aidx,sval)
+        res = (asym,recur(0,asym))
+        print (res)
+        return res
+    
 def uf_to_array_action(action):
     if isinstance(action,ia.Action):
         args = [uf_to_array_action(act) for act in action.args]
         if isinstance(action,ia.AssignAction):
             if action.args[0].args and not il.is_interpreted_symbol(action.args[0].rep):
                 args = encode_assign(action,action.args[0],action.args[1])
+        elif isinstance(action,ia.HavocAction):
+            if action.args[0].args and not il.is_interpreted_symbol(action.args[0].rep):
+                args = encode_assign(action,action.args[0],None)
+                return ia.AssignAction(args[0],args[1]).set_lineno(action.lineno)
         return action.clone(args)
     else:
         return uf_to_arr_ast(action)
@@ -230,13 +248,6 @@ def check_isolate(method="mc"):
     if has_erf:
         add_err_flag_mod(mod,erf,errconds)
 
-    # Combine all actions nto a single action
-
-    actions = [(x,mod.actions[x].add_label(x)) for x in sorted(mod.public_actions)]
-#    action = ia.EnvAction(*ext_acts)
-    if has_erf:
-        actions = [(x,ia.Sequence(ia.AssignAction(erf,il.Or()).set_lineno(iu.nowhere()),act))
-                   for x,act in actions]
 
     # We can't currently handle assertions in the initializers
 
@@ -275,15 +286,28 @@ def check_isolate(method="mc"):
 
     mod_set.clear()
     add_to_mod_set(init_action)
-    for x,action in actions:
+    for x,action in mod.actions.items():
         add_to_mod_set(action)
-    print ('mod_set: {}'.format(mod_set))
+    # print ('mod_set: {}'.format([str(x) for x in mod_set]))
 
-    actions = [(x,uf_to_array_action(action)) for x,action in actions]
+    for actname in list(mod.actions):
+        action = mod.actions[actname]
+        new_action = uf_to_array_action(action)
+        new_action.formal_params = action.formal_params
+        new_action.formal_returns = action.formal_returns
+        mod.actions[actname] = new_action
 
     init_action = uf_to_array_action(init_action)
     # print (init_action)
     conjs = [conj.clone([conj.label,uf_to_arr_ast(conj.formula)]) for conj in conjs]
+
+    # Combine all actions nto a single action
+
+    actions = [(x,mod.actions[x].add_label(x)) for x in sorted(mod.public_actions)]
+#    action = ia.EnvAction(*ext_acts)
+    if has_erf:
+        actions = [(x,ia.Sequence(ia.AssignAction(erf,il.Or()).set_lineno(iu.nowhere()),act))
+                   for x,act in actions]
 
     # Seperate out the axioms that do not have modified symbols
 
@@ -296,6 +320,9 @@ def check_isolate(method="mc"):
     # predicate (i.e., it's strongest post).
 
     actupds = [action_to_tr(mod,action,method,bgt) for x,action in actions]
+    # for a in actupds:
+        # print ('a[0]: {}'.format(a[0]))
+        # print ('a[1]: {}'.format(a[1]))
     stvars = list(iu.unique(sym for a in actupds for sym in a[0]))
     transs = [ilu.clauses_to_formula(frame_clauses(stvars,a[0],a[1])) for a in actupds]
     trans = il.Or(*[fmla for fmla in transs]) if len(actupds) != 1 else transs[0]
@@ -325,8 +352,13 @@ def check_isolate(method="mc"):
             sorts.append(sort)
 
     declared_symbols = set()
-    for sym in ilu.used_symbols_asts([init,trans]+[lf.formula for lf in conjs]):
+    enum_symbols = set()
+    for sym in ilu.used_symbols_asts([init,trans]+[lf.formula for lf in conjs]+axioms):
         sym = il.normalize_symbol(sym)
+        if il.is_enumerated_sort(sym.sort):
+            if sym in sym.sort.constructors:
+                enum_symbols.add(sym)
+                continue
         if sym not in declared_symbols and slvr.solver_name(sym) is not None:
             declared_symbols.add(sym)
             decl = slvr.symbol_to_z3_full(sym)
@@ -367,7 +399,11 @@ def check_isolate(method="mc"):
             vmt_func_defs.append(read)
             vmt_func_defs.append(write)
             vmt_func_defs.append(const)
-        sort_str = f"(declare-sort {sort_name} 0)"
+        print ('sort: {} = {}'.format(sort,type(sort)))
+        if isinstance(sort,DatatypeSortRef):
+            sort_str = f"(declare-datatypes () (({sort_name} {' '.join(str(sort.constructor(i)) for i in range(sort.num_constructors()))})))"
+        else:
+            sort_str = f"(declare-sort {sort_name} 0)"
         vmt_sort_defs.append(sort_str)
 
     all_used = ilu.used_symbols_asts([init,trans])
@@ -375,20 +411,25 @@ def check_isolate(method="mc"):
                  and not sym.is_skolem() and not tr.is_new(sym)
                  and "fml:" not in sym.name and tr.new(sym) not in all_used
                  and all(sym not in upd[0] for upd in actupds)]
+    background_symbols = ilu.used_symbols_asts(axioms)
+    background_symbols.update(enum_symbols)
+    immutable = [sym for sym in immutable if not sym in background_symbols]
     # print ('immutable: {}'.format(immutable))
 
     for sym in ilu.used_symbols_asts([init,trans]):
         if tr.is_new(sym):
-            next_sym = slvr.symbol_to_z3(sym)
-            cur_sym = slvr.symbol_to_z3(tr.new_of(sym))
+            next_sym = slvr.symbol_to_z3_full(sym)
+            cur_sym = slvr.symbol_to_z3_full(tr.new_of(sym))
             next_str = next_sym.sexpr()
             cur_str = cur_sym.sexpr()
+            # print ('foo: {},{}'.format(cur_sym,sym))
             sort = cur_sym.sort().sexpr()
             full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
         elif "fml:" in sym.name or sym.is_skolem() or sym in immutable:
             next_sym_str = f"new_{sym.name.replace(':', '')}"
-            cur_sym_str = f"|{sym.name}|"
+            cur_sym_str = slvr.symbol_to_z3_full(sym).sexpr()
+            # cur_sym_str = f"|{sym.name}|"
             sort = slvr.symbol_to_z3(sym).sort().sexpr()
             next_fml_def = f"(declare-fun {next_sym_str} () {sort})"
             vmt_var_defs.append(next_fml_def)
@@ -427,11 +468,12 @@ def check_isolate(method="mc"):
     for axiom in axioms:
         vmt_axiom_defs.append('(assert {})'.format(simplify(slvr.formula_to_z3(axiom)).sexpr()))
 
-    with open("ivy.vmt", "w") as f:
+    vmt_file_name = mod.name + '.vmt'
+    with open(vmt_file_name, "w") as f:
         vmt_str = vmt_sort_defs + vmt_func_defs + vmt_var_defs + vmt_formula_defs + vmt_axiom_defs
         f.write("\n".join(vmt_str))
 
-    print('output written to ivy.vmt')
+    print('output written to '+vmt_file_name)
     exit(0)
 
 
