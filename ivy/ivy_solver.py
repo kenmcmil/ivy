@@ -22,13 +22,15 @@ from . import ivy_utils as iu
 from . import ivy_unitres as ur
 from . import logic as lg
 from . import ivy_ast
+from . import ivy_z3_utils
 
 import sys
 
 # Following accounts for Z3 API symbols that are hidden as of Z3-4.5.0
 
-z3_to_ast_array = z3._to_ast_array if '_to_ast_array' in z3.__dict__ else z3.z3._to_ast_array
-z3_to_expr_ref = z3._to_expr_ref if '_to_expr_ref' in z3.__dict__ else z3.z3._to_expr_ref
+
+z3_to_ast_array = z3._to_ast_array if '_to_ast_array' in z3.__dict__ else z3.z3._to_ast_array if '_to_ast_array' in z3.__dict__ else ivy_z3_utils._to_ast_array
+z3_to_expr_ref = z3._to_expr_ref if '_to_expr_ref' in z3.__dict__ else z3.z3._to_expr_ref if '_to_expr_ref' in z3.__dict__ else ivy_z3_utils._to_expr_ref
 
 use_z3_enums = True
 
@@ -456,6 +458,11 @@ def term_to_z3(term):
         if not hasattr(term,'rep'):
             print(term)
             print(term.lineno)
+        if term.rep.name == 'cast':
+            assert len(term.rep.sort.dom) == 1
+            res = term_to_z3(term.args[0])
+            assert term.rep.sort.rng.to_z3() == res.sort()
+            return res
         fun = z3_functions.get(term.rep)
         if fun is None:
             fun = lookup_native(term.rep,functions,"function")
@@ -630,7 +637,7 @@ def formula_to_z3_int(fmla):
         return z3.If(args[0],args[1],args[2])
     if ivy_logic.is_quantifier(fmla) or ivy_logic.is_lambda(fmla):
         variables = ivy_logic.quantifier_vars(fmla)
-        q = forall if ivy_logic.is_forall(fmla) else exists if ivy_logic.is_forall(fmla) else mylambda
+        q = forall if ivy_logic.is_forall(fmla) else exists if ivy_logic.is_exists(fmla) else mylambda
         res =  q(variables, [term_to_z3(v) for v in variables], args[0])
 #        print "res = {}".format(res)
         return res
@@ -1287,10 +1294,10 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                     s.pop()
         print("done")
     m = get_model(s)
-    # print ("model = {}".format(m))
-    # f = open("ivy.smt2","w")
-    # f.write(s.to_smt2())
-    # f.close()
+    print ("model = {}".format(m.sexpr()))
+    f = open("ivy.smt2","w")
+    f.write(s.to_smt2())
+    f.close()
     h = HerbrandModel(s,m,used_symbols_clauses(clauses))
     return h
 

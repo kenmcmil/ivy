@@ -103,6 +103,8 @@ mod_set = set()
 def add_to_mod_set(action):
     for act in action.iter_subactions():
         mod_set.update(act.modifies())
+        if isinstance(act,ia.LocalAction):
+            mod_set.update(act.args[:-1])
 
 def encode_as_array(sym):
     return not il.is_interpreted_symbol(sym) and sym.name not in im.module.destructor_sorts and sym in mod_set
@@ -142,7 +144,6 @@ def encode_assign(asgn,lhs,rhs):
         lvs = set(ilu.variables_ast(lhs));
         rvs = set(ilu.variables_ast(rhs)) if rhs is not None else set();
         rhs_const = not any(v in rvs for v in lvs)
-        print ('rhs_const: {}'.format(rhs_const))
         if any(v in rvs for v in lvs):
             if (il.is_app(rhs) and rhs.args == lhs.args and all(il.is_variable(x) for x in lhs.args)
                 and len(set(lhs.args)) == len(lhs.args)):
@@ -166,18 +167,47 @@ def encode_assign(asgn,lhs,rhs):
             sel = il.Symbol('arrsel',il.FunctionSort(ssorts[i],aidx.sort,ssorts[i+1]))
             sval = recur(i+1,sel(val,aidx))
             if il.is_variable(idx):
-                if il.is_app(sval) and sval.rep.name == 'arrcst' or i == len(lhs.args)-1 and rhs_const:
-                    return il.Symbol('arrcst',il.FunctionSort(ssorts[i+1],ssorts[i]))(sval)
-                print ('i: {}, {}'.format(i,len(lhs.args)-1))
+                # if il.is_app(sval) and sval.rep.name == 'arrcst' or i == len(lhs.args)-1 and rhs_const:
+                #     return il.Symbol('arrcst',il.FunctionSort(ssorts[i+1],ssorts[i]))(sval)
                 resval = il.Lambda([aidx],sval)
                 return il.Symbol('cast',il.FunctionSort(resval.sort,ssorts[i]))(resval)
             else:
+                # work around z3 bug
+                if False and is_any_lambda(sval):
+                    rn = iu.UniqueRenamer('V',(v.rep for v in ilu.used_variables_ast(sval)))
+                    lvar = il.Variable(rn(),idx.sort)
+                    sval = ite_into_lambda(sval,il.Equals(lvar,idx),sel(val,lvar))
+                    resval = il.Lambda([lvar],sval)
+                    return il.Symbol('cast',il.FunctionSort(resval.sort,ssorts[i]))(resval)
                 upd = il.Symbol('arrupd',il.FunctionSort(ssorts[i],aidx.sort,ssorts[i+1],ssorts[i]))
                 return upd(val,aidx,sval)
         res = (asym,recur(0,asym))
-        print (res)
         return res
     
+def is_constant_lambda(x):
+    if il.is_app(x) and x.rep.name == 'cast' or il.is_lambda(x):
+        return is_constant_lambda(x.args[0])
+    return il.is_true(x) or il.is_false(x)
+
+def is_any_lambda(x):
+    return il.is_app(x) and x.rep.name == 'cast'
+
+def ite_into_lambda(x,cond,elseval):
+    if il.is_app(x) and x.rep.name == 'cast':
+        arrsort = x.sort
+        lx = x.args[0]
+        assert il.is_lambda(lx)
+        idx = lx.variables[0]
+        ressort = lx.args[0].sort
+        sel = il.Symbol('arrsel',il.FunctionSort(arrsort,idx.sort,ressort))
+        elseval = sel(elseval,idx)
+        return x.clone([lx.clone([ite_into_lambda(lx.args[0],cond,elseval)])])
+    return il.Ite(cond,x,elseval)
+
+
+                        
+    
+
 def uf_to_array_action(action):
     if isinstance(action,ia.Action):
         args = [uf_to_array_action(act) for act in action.args]
@@ -359,7 +389,7 @@ def check_isolate(method="mc"):
             if sym in sym.sort.constructors:
                 enum_symbols.add(sym)
                 continue
-        if sym not in declared_symbols and slvr.solver_name(sym) is not None:
+        if sym not in declared_symbols and slvr.solver_name(sym) is not None and sym.name != "cast":
             declared_symbols.add(sym)
             decl = slvr.symbol_to_z3_full(sym)
             if il.is_constant(sym):
@@ -399,7 +429,6 @@ def check_isolate(method="mc"):
             vmt_func_defs.append(read)
             vmt_func_defs.append(write)
             vmt_func_defs.append(const)
-        print ('sort: {} = {}'.format(sort,type(sort)))
         if isinstance(sort,DatatypeSortRef):
             sort_str = f"(declare-datatypes () (({sort_name} {' '.join(str(sort.constructor(i)) for i in range(sort.num_constructors()))})))"
         else:
@@ -409,7 +438,7 @@ def check_isolate(method="mc"):
     all_used = ilu.used_symbols_asts([init,trans])
     immutable = [sym for sym in all_used if not il.is_function_sort(sym.sort)
                  and not sym.is_skolem() and not tr.is_new(sym)
-                 and "fml:" not in sym.name and tr.new(sym) not in all_used
+                 and "fml:" not in sym.name and "loc:" not in sym.name and tr.new(sym) not in all_used
                  and all(sym not in upd[0] for upd in actupds)]
     background_symbols = ilu.used_symbols_asts(axioms)
     background_symbols.update(enum_symbols)
@@ -426,7 +455,7 @@ def check_isolate(method="mc"):
             sort = cur_sym.sort().sexpr()
             full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
-        elif "fml:" in sym.name or sym.is_skolem() or sym in immutable:
+        elif "fml:" in sym.name or "loc:" in sym.name or sym.is_skolem() or sym in immutable:
             next_sym_str = f"new_{sym.name.replace(':', '')}"
             cur_sym_str = slvr.symbol_to_z3_full(sym).sexpr()
             # cur_sym_str = f"|{sym.name}|"
