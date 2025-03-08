@@ -6,6 +6,8 @@ from . import ivy_ast
 def labeled_fmlas_to_str(kwd,lfmlas):
     res = ''
     for f in lfmlas:
+        if f.unprovable:
+            res += 'unprovable '
         res += kwd + ' '
         if f.label:
             res += '[{}] '.format(f.label)

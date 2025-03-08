@@ -630,7 +630,7 @@ def formula_to_z3_int(fmla):
         return z3.If(args[0],args[1],args[2])
     if ivy_logic.is_quantifier(fmla) or ivy_logic.is_lambda(fmla):
         variables = ivy_logic.quantifier_vars(fmla)
-        q = forall if ivy_logic.is_forall(fmla) else exists if ivy_logic.is_forall(fmla) else mylambda
+        q = forall if ivy_logic.is_forall(fmla) else exists if ivy_logic.is_exists(fmla) else mylambda
         res =  q(variables, [term_to_z3(v) for v in variables], args[0])
 #        print "res = {}".format(res)
         return res

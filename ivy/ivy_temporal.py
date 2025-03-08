@@ -120,6 +120,8 @@ from . import ivy_proof as ipr
 from . import ivy_utils as iu
 from . import ivy_actions as iact
 from . import ivy_logic_utils as ilu
+from . import ivy_module as im
+
 from collections import defaultdict
 
 class ActionTerm(ia.AST):
@@ -434,3 +436,36 @@ def implicit_tactic(prover,goals,proof):
     return [goal]+goals
 
     
+def to_module(goal):
+    conc = ipr.goal_conc(goal)
+    assert isinstance(conc,ia.TemporalModels)
+    model = conc.model
+    fmla = conc.fmla
+    mod = im.module.copy()
+    mod.isolate_proof = None
+    # mod.labeled_axioms.extend(proved)
+    mod.labeled_props = []
+    mod.concept_spaces = []
+    mod.labeled_conjs = model.invars
+    mod.postconds = model.postconds if hasattr(model,'postconds') else {}
+    mod.public_actions = set(model.calls)
+    mod.actions = model.binding_map
+    mod.initializers = [('init',model.init)]
+    mod.labeled_axioms = list(mod.labeled_axioms)
+    mod.assumed_invariants = model.asms
+    mod.params = list(mod.params)
+    mod.updates = list(mod.updates)
+    for prem in ipr.goal_prems(goal):
+        # if hasattr(prem,'temporal') and prem.temporal:
+        if ipr.goal_is_property(prem):
+            # print ('using premise: {}'.format(prem))
+            if prem.definition:
+                df = il.drop_universals(prem.formula)
+                mod.updates.append(iact.DerivedUpdate(df))
+            mod.labeled_axioms.append(prem)
+        elif ipr.goal_is_defn(prem):
+            dfnd = ipr.goal_defines(prem)
+            if il.is_constant(dfnd):
+                mod.params.append(dfnd)
+    # ivy_printer.print_module(mod)
+    return mod

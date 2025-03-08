@@ -236,7 +236,7 @@ def frame_clauses(all_vars, mod_vars, clauses):
     mod_set = set(mod_vars)
     return ilu.and_clauses(ilu.Clauses([il.Equals(x,tr.new(x)) for x in all_vars if x not in mod_set]), clauses)
 
-def check_isolate(method="mc"):
+def check_isolate(method="mc",tagged_dfns=[],use_array_encoding=True):
     mod = im.module
 
     # Use the error flag construction to turn assertion checks into
@@ -285,19 +285,20 @@ def check_isolate(method="mc"):
     # Only encode the modified symbols as arrays
 
     mod_set.clear()
-    add_to_mod_set(init_action)
-    for x,action in mod.actions.items():
-        add_to_mod_set(action)
+    if use_array_encoding:
+        add_to_mod_set(init_action)
+        for x,action in mod.actions.items():
+            add_to_mod_set(action)
     # print ('mod_set: {}'.format([str(x) for x in mod_set]))
 
-    for actname in list(mod.actions):
-        action = mod.actions[actname]
-        new_action = uf_to_array_action(action)
-        new_action.formal_params = action.formal_params
-        new_action.formal_returns = action.formal_returns
-        mod.actions[actname] = new_action
+        for actname in list(mod.actions):
+            action = mod.actions[actname]
+            new_action = uf_to_array_action(action)
+            new_action.formal_params = action.formal_params
+            new_action.formal_returns = action.formal_returns
+            mod.actions[actname] = new_action
 
-    init_action = uf_to_array_action(init_action)
+        init_action = uf_to_array_action(init_action)
     # print (init_action)
     conjs = [conj.clone([conj.label,uf_to_arr_ast(conj.formula)]) for conj in conjs]
 
@@ -399,7 +400,7 @@ def check_isolate(method="mc"):
             vmt_func_defs.append(read)
             vmt_func_defs.append(write)
             vmt_func_defs.append(const)
-        print ('sort: {} = {}'.format(sort,type(sort)))
+        # print ('sort: {} = {}'.format(sort,type(sort)))
         if isinstance(sort,DatatypeSortRef):
             sort_str = f"(declare-datatypes () (({sort_name} {' '.join(str(sort.constructor(i)) for i in range(sort.num_constructors()))})))"
         else:
@@ -423,8 +424,17 @@ def check_isolate(method="mc"):
             next_str = next_sym.sexpr()
             cur_str = cur_sym.sexpr()
             # print ('foo: {},{}'.format(cur_sym,sym))
-            sort = cur_sym.sort().sexpr()
-            full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
+            if is_func_decl(cur_sym):
+                decl = cur_sym
+                decl_sort = decl.range().sexpr()
+                decl_dom = ' '.join(decl.domain(i).sexpr() for i in range(decl.arity()))
+                # vmt_var_defs.append(f"(declare-fun {decl_sexpr} ({decl_dom}) {decl_sort})")
+                cur_name = cur_str.split(' ')[1]
+                next_name = next_str.split(' ')[1]
+                full_str = f"(define-fun .{cur_name} ({decl_dom}) {decl_sort} (! {cur_name} :next {next_name}))"
+            else:
+                sort = cur_sym.sort().sexpr()
+                full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
         elif "fml:" in sym.name or sym.is_skolem() or sym in immutable:
             next_sym_str = f"new_{sym.name.replace(':', '')}"
@@ -468,9 +478,19 @@ def check_isolate(method="mc"):
     for axiom in axioms:
         vmt_axiom_defs.append('(assert {})'.format(simplify(slvr.formula_to_z3(axiom)).sexpr()))
 
+    vmt_dfns = []
+    for tag,dfn in tagged_dfns:
+        #print(f'dfn: {type(dfn)}')
+        args = " ".join(f"({x}.sexpr() {x.sort().sexpr()})"
+                        for y in dfn.lhs().args for x in [slvr.term_to_z3(y)])
+        rng = slvr.term_to_z3(dfn.lhs()).sort().sexpr()
+        rhs = slvr.term_to_z3(dfn.rhs()).sexpr()
+        thing = f"(define-fun {dfn.defines()} ({args}) {rng} (! {rhs} :{tag} true))"
+        vmt_dfns.append(thing)
+
     vmt_file_name = mod.name + '.vmt'
     with open(vmt_file_name, "w") as f:
-        vmt_str = vmt_sort_defs + vmt_func_defs + vmt_var_defs + vmt_formula_defs + vmt_axiom_defs
+        vmt_str = vmt_sort_defs + vmt_func_defs + vmt_var_defs + vmt_formula_defs + vmt_axiom_defs + vmt_dfns
         f.write("\n".join(vmt_str))
 
     print('output written to '+vmt_file_name)

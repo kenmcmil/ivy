@@ -27,6 +27,7 @@ from . import ivy_module as im
 from . import ivy_compiler
 from . import ivy_theory as thy
 from . import ivy_transrel as itr
+from . import ivy_ranking_infer
 
 debug = iu.BooleanParameter("ranking_debug",False)
 
@@ -184,10 +185,16 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                     work_start = ilg.Definition(ilg.Symbol('work_start'+sfx,lg.Boolean),lg.Not(gfmla.body))
                     dict_put(triggers,sfx,'work_start',work_start)
         
+        defs_needed = ['work_created','work_progress'] if tactic_name == 'ranking_infer' else ['work_created','work_needed','work_progress','work_helpful']
         for sfx in tasks:
-            for name in ['work_created','work_needed','work_progress','work_helpful']:
+            for name in defs_needed:
                 if name not in tasks[sfx]:
                     raise iu.IvyError(proof,"tactic requires a definition of " + name + sfx)
+
+        # If tactic is 'ranking_infer', infer the ranking
+
+        if tactic_name == 'ranking_infer':
+            ivy_ranking_infer.infer(goal, sorted_tasks, triggers, tasks)
 
         # Helpful: if the trigger implies a globally, then that globally must
         # continue hold during work_invar. We establish this by strengthening
@@ -245,6 +252,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                     if sym in str_invar_map:
                         tmp = tmp.clone([tmp.args[0],str_invar_map[sym]])
                         prems[idx] = prem.clone([prem.args[0],tmp])
+
 
         # generate the l2s invariants
 
@@ -1039,3 +1047,4 @@ def auto_hook(tasks,triggers,subs,tr,fcs):
 # Register the l2s tactics
 
 ipr.register_tactic('ranking',l2s_tactic)
+ipr.register_tactic('ranking_infer',l2s_tactic)
