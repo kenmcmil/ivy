@@ -216,7 +216,7 @@ global {
 
                     implement send {
                         if ~connected_to(dst) {
-                            var dst_sock := intf.connect(dst);
+                            var dst_sock := intf.connect(id,dst);
                             dst_socket(dst) := dst_sock;
                             connected_to(dst) := true;
                         }
