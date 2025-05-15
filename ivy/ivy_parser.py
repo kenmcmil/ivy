@@ -487,6 +487,21 @@ def p_top_property_labeledfmla(p):
     lf = addlabel(p[5],'prop')
     lf = addtemporal(lf) if p[3] else check_non_temporal(lf)
     lf = addexplicit(lf) if p[2] else lf
+    lf.unprovable=False
+    d = PropertyDecl(lf)
+    d.lineno = get_lineno(p,4)
+    p[0].declare(d)
+    if p[6] is not None:
+        p[0].declare(NamedDecl(p[6]))
+    if p[7] is not None:
+        p[0].declare(ProofDecl(p[7]))
+
+def p_top_unprovable_property_labeledfmla(p):
+    'top : top UNPROVABLE opttemporal PROPERTY labeledfmla optskolem optproof'
+    p[0] = p[1]
+    lf = addlabel(p[5],'prop')
+    lf = addtemporal(lf) if p[3] else check_non_temporal(lf)
+    lf.unprovable=True
     d = PropertyDecl(lf)
     d.lineno = get_lineno(p,4)
     p[0].declare(d)

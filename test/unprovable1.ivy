@@ -44,3 +44,5 @@ export action a = {
 invariant p
 unprovable invariant [foo4] ~p
 unprovable invariant [foo5] p
+
+unprovable property false
