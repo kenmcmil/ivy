@@ -507,7 +507,12 @@ def atom_to_z3(atom):
 #        *[term_to_z3(t) for t in atom.args])
     pred = z3_predicates[atom.relname]
     tup = [term_to_z3(t) for t in atom.args]
-    return apply_z3_func(pred,tup)
+    try:
+        return apply_z3_func(pred,tup)
+    except Exception as e:
+        print ('atom: {}'.format(atom))
+        print ('atom.relname: {}'.format(atom.relname))
+        raise e
 
 def literal_to_z3(lit):
     z3_atom = formula_to_z3_int(lit.atom)

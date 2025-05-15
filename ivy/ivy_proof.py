@@ -489,6 +489,11 @@ def make_goal(lineno,label,prems,conc,annot=None):
         res.annot = annot
     return res
 
+def definition_to_goal(defn):
+    res = defn.clone([defn.label,il.close_formula(defn.formula)])
+    res.definition = True
+    return res
+
 # Replace the premises and conclusions of a goal, keeping label and lineno
 def clone_goal(goal,prems,conc):
     return goal.clone_with_fresh_id([goal.label,ia.SchemaBody(*(prems+[conc])) if prems else conc])

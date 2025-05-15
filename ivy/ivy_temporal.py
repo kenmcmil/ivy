@@ -172,15 +172,15 @@ class ActionTermBinding(ia.AST):
 
 class NormalProgram(ia.AST):
     """ a normal program. bindings should be list of bindings """
-    def __init__(self,bindings,init,invars,asms,calls):
-        self.bindings,self.init,self.invars,self.asms,self.calls = bindings,init,invars,asms,calls
+    def __init__(self,bindings,macros,init,invars,asms,calls):
+        self.bindings,self.macros,self.init,self.invars,self.asms,self.calls = bindings,macros,init,invars,asms,calls
     @property
     def args(self):
         """ There are no subterms """
         return []
     def clone(self,args):
         """ clone just copies this node """
-        res = NormalProgram(self.bindings,self.init,self.invars,self.asms,self.calls)
+        res = NormalProgram(self.bindings,self.macros,self.init,self.invars,self.asms,self.calls)
         ia.copy_attrs(self,res)
         return res
     @property
@@ -197,6 +197,8 @@ class NormalProgram(ia.AST):
         res = ['\nlet\n']
         for b in self.bindings:
             res.append('    ' + str(b) + '\n')
+        for m in self.macros:
+            res.append('    function ' + str(m.formula) + '\n')
         res.append('in\n')
         res.append('    ' + str(self.init) + '\n')
         res.append('    while *\n')
@@ -214,15 +216,19 @@ def old_action_to_new(act):
     return ActionTerm(act.formal_params,act.formal_returns,act.labels,act)
 
 def new_action_to_old(act):
-    return act.stmt
+    stmt = act.stmt.clone(act.stmt.args)
+    stmt.formal_params = act.inputs
+    stmt.formal_returns = act.outputs
+    return stmt
 
-def normal_program_from_module(mod):
+def normal_program_from_module(mod, with_definitions=False):
     bindings = [ActionTermBinding(name,old_action_to_new(act)) for name,act in mod.actions.items()]
     init = iact.Sequence(*[action for actname,action in mod.initializers])
     invars = mod.labeled_conjs
     asms = mod.assumed_invariants
     calls = sorted(mod.public_actions)
-    return NormalProgram(bindings,init,invars,asms,calls)
+    macros = list(mod.definitions) if with_definitions else []
+    return NormalProgram(bindings,macros,init,invars,asms,calls)
 
 # The creates an "environment action" from a list of action
 # bindings. This represents the environment nondeterministically

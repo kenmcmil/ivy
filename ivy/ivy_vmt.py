@@ -107,6 +107,8 @@ def add_to_mod_set(action):
             mod_set.update(act.args[:-1])
 
 def encode_as_array(sym):
+    if tr.is_old(sym):
+        sym = tr.old_of(sym)
     return not il.is_interpreted_symbol(sym) and sym.name not in im.module.destructor_sorts and sym in mod_set
 
 # Convert all uninterpreted functions in a formula to
@@ -116,8 +118,6 @@ def uf_to_arr_ast(ast):
     args = [uf_to_arr_ast(arg) for arg in ast.args]
     if il.is_app(ast) and not il.is_named_binder(ast) and ast.args:
         sym = ast.rep
-        if sym.name == 'sent':
-            print ('ast: {}, encode = {}'.format(ast,encode_as_array(sym)))
         if encode_as_array(sym):
             sname,ssorts = create_array_sort(sym.sort)
             asym = il.Symbol(sym.name,ssorts[0])
@@ -183,6 +183,14 @@ def encode_assign(asgn,lhs,rhs):
                 return upd(val,aidx,sval)
         res = (asym,recur(0,asym))
         return res
+
+ret_val_ctr = 0
+
+def make_ret_val(sort):
+    global ret_val_ctr
+    res = il.Symbol('retval$'+str(ret_val_ctr),sort)
+    ret_val_ctr += 1
+    return res
     
 def is_constant_lambda(x):
     if il.is_app(x) and x.rep.name == 'cast' or il.is_lambda(x):
@@ -218,7 +226,18 @@ def uf_to_array_action(action):
             if action.args[0].args and not il.is_interpreted_symbol(action.args[0].rep):
                 args = encode_assign(action,action.args[0],None)
                 return ia.AssignAction(args[0],args[1]).set_lineno(action.lineno)
-        return action.clone(args)
+        elif isinstance(action,ia.CallAction) and len(args) > 1:
+            rvs = [make_ret_val(x.sort) for x in args[1:]]
+            code = ia.LocalAction(*(rvs + [
+                ia.Sequence(*(
+                    [action.clone([args[0]] + rvs)] +
+                    [uf_to_array_action(ia.AssignAction(v,w).set_lineno(action.lineno))
+                     for v,w in zip(action.args[1:],rvs)])).set_lineno(action.lineno)])).set_lineno(action.lineno)
+            return code
+        res = action.clone(args)
+        if isinstance(action,ia.WhileAction):
+            print (res)
+        return res
     else:
         return uf_to_arr_ast(action)
 
@@ -380,7 +399,12 @@ def check_isolate(method="mc",tagged_dfns=[],use_array_encoding=True):
 
     def add_sort(sort):
         if sort not in sorts:
-            sorts.append(sort)
+            if "Array" in sort.name():
+                add_sort(sort.range())
+                add_sort(sort.domain())
+            else:
+                sorts.append(sort)
+                        
 
     declared_symbols = set()
     enum_symbols = set()

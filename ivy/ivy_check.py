@@ -457,15 +457,23 @@ def apply_conj_proofs(mod):
 def check_isolate(trace_hook = None):
     mod = im.module
     if mod.isolate_proof is not None:
-        pc = ivy_proof.ProofChecker(mod.labeled_axioms+mod.assumed_invariants,mod.definitions,mod.schemata)
+        axioms = mod.labeled_axioms + mod.assumed_invariants + [x for x in mod.labeled_props if x.assumed]
+        defns = [ivy_proof.definition_to_goal(x) for x in mod.definitions]
+        pc = ivy_proof.ProofChecker([],[],mod.schemata)
         model = itmp.normal_program_from_module(im.module)
-        prop = ivy_ast.LabeledFormula(ivy_ast.Atom('safety'),lg.And())
-        subgoal = ivy_ast.LabeledFormula(ivy_ast.Atom('safety'),ivy_ast.TemporalModels(model,lg.And()))
-        subgoal.lineno = mod.isolate_proof.lineno 
+        prop = ivy_proof.make_goal(mod.isolate_proof.lineno, 'safety', [], lg.And())
+        subgoal = ivy_proof.make_goal(mod.isolate_proof.lineno,'safety',
+                                      defns + axioms, ivy_ast.TemporalModels(model,lg.And()))
         #        print 'subgoal = {}'.format(subgoal)
         subgoals = [subgoal]
         subgoals = pc.admit_proposition(prop,mod.isolate_proof,subgoals)
-        check_subgoals(subgoals)
+        # TRICKY: when checking the isolate proof, we don't the axioms
+        # and definitions in the module context by default. This allows the
+        # tactics to drop axioms and definitions.  For historical
+        # reasons, when checking temporal properties we *do* use the
+        # context. This should probably be changed, but it requires some
+        # substantial chages to the liveness tactics. 
+        check_subgoals(subgoals,use_context=False)
         return
  
     ifc.check_fragment()
@@ -666,7 +674,7 @@ def check_isolate(trace_hook = None):
 # This is a little bit backward. When faced with a subgoal from the prover,
 # we check it by constructing fake isolate.
                 
-def check_subgoals(goals,method=None):
+def check_subgoals(goals,method=None,use_context=True):
     mod = im.module
     for goal in goals:
         # print 'goal: {}'.format(goal)
@@ -692,6 +700,9 @@ def check_subgoals(goals,method=None):
             mod.assumed_invariants = model.asms
             mod.params = list(mod.params)
             mod.updates = list(mod.updates)
+            if not use_context: 
+                mod.labeled_axioms = []
+                mod.definitions = []
             for prem in ivy_proof.goal_prems(goal):
                 # if hasattr(prem,'temporal') and prem.temporal:
                 if ivy_proof.goal_is_property(prem):

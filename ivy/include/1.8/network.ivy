@@ -195,7 +195,7 @@ global {
                     }
                     before recv {
                         require net.sent(src,id,msg);
-                        require net.sent(src,id,M) -> msg <= M;
+                        require net.sent(src,id,M) -> ~(M < msg)
                     }
                     after recv {
                         net.sent(src,id,msg) := false;

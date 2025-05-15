@@ -1019,7 +1019,7 @@ def resolve_alias(name):
     res = resolve_alias_int(name)
     return res
 
-defined_attributes = set(["weight","test","check","mc","bmc","method","separate","iterable","cardinality","radix","override","cppstd","libspec","macro_finder","global_parameter","complete"])
+defined_attributes = set(["weight","test","check","mc","bmc","method","separate","iterable","cardinality","radix","override","cppstd","libspec","macro_finder","global_parameter","complete","constructors"])
 
 class IvyDomainSetup(IvyDeclInterp):
     def __init__(self,domain):
@@ -1415,6 +1415,7 @@ class IvyARGSetup(IvyDeclInterp):
         global thunk_counter
         thunk_counter = 0
         name = a.args[0].relname
+        print ('action: {}'.format(a))
         self.mod.actions[name] = compile_action_def(a,self.mod.sig)
         self.mod.public_actions.add(name)
     def state(self,a):

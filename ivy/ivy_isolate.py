@@ -1113,6 +1113,8 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     exact_present = set(a.relname for a in isolate.present())
     if not isinstance(isolate,ivy_ast.ExtractDef):
         proved,not_proved = get_props_proved_in_isolate(mod,isolate)
+        # print ('proved: {}'.format(proved))
+        # print ('not_proved: {}'.format(not_proved))
         # mod.labeled_axioms.extend(not_proved)
         mod.labeled_axioms = [m for m in mod.labeled_axioms if not m.explicit or m.name in exact_present or m.temporal]
         new_props = []
