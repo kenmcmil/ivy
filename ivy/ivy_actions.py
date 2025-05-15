@@ -186,6 +186,59 @@ class NamedUpdate(object):
     def __str__(self):
         return str(self.sym)
 
+
+constructor_args_counter = 0
+
+def sort_destructors(sort):
+    return ivy_module.module.sort_destructors[sort.name]
+
+def fresh_constructor_args(sort):
+    global constructor_args_counter
+    n = constructor_args_counter
+    constructor_args_counter += 1
+    return [Symbol(sort.name + '$' + destr.name + '$' + str(n), destr.sort.rng).skolem() for destr in sort_destructors(sort)]
+    
+def is_first_order_struct(sort):
+    return all(len(destr.sort.dom) == 1 for destr in sort_destructors(sort))
+
+def sort_constructor(sort):
+#    arg_sorts = [destr.rng for destr in sort_destructors(sort.name)]
+#    return Symbol(sort.name + '.cons',ivy_logic.FunctionSort(arg_sorts + [sort]))
+    cs = ivy_module.module.sort_constructors.get(sort.name,[])
+    return cs[0] if cs else None
+        
+
+    
+def elim_destructors(cl):
+    cnstrs = []
+    memo = {}
+    def recur(fmla):
+        if is_app(fmla) and fmla.rep.name in ivy_module.module.destructor_sorts:
+            sort = ivy_module.module.destructor_sorts[fmla.rep.name]
+            sortc = sort_constructor(sort)
+            if is_first_order_struct(sort) and sortc is not None:
+                # print ('trying: {} = {}'.format(fmla,hash(fmla)))
+                # for x,y in memo.items():
+                #     print ('memo: {} = {} = {}: {}'.format(x,y,hash(x),x == fmla))
+                if fmla in memo:
+                    return memo[fmla]
+                args = [recur(arg) for arg in fmla.args]
+                cargs = fresh_constructor_args(sort)
+                term = sortc(*cargs)
+                eq = Equals(args[0],term)
+                cnstrs.append(eq)
+                thing = fmla.args[0]
+                for destr,carg in zip(sort_destructors(sort),cargs):
+                    memo[destr(thing)] = carg
+                    # print('adding: {} = {} = {}'.format(destr(thing),carg,hash(destr(thing))))
+                return memo[fmla]
+        args = [recur(arg) for arg in fmla.args]
+        return fmla.clone(args)
+    fmlas = [recur(x) for x in cl.fmlas]
+    defs = [recur(x) for x in cl.defs]
+    fmlas = fmlas + cnstrs
+    return Clauses(fmlas, defs, cl.annot)
+    
 class Action(AST):
     def __init__(self,*args):
         self.args = list(args)
@@ -216,7 +269,13 @@ class Action(AST):
         res = (updated,clauses,pre)
         return res
     def update(self,domain,in_scope):
-        return self.hide_formals(bind_olds_action(self.int_update(domain,in_scope)))
+        res = self.hide_formals(bind_olds_action(self.int_update(domain,in_scope)))
+        if use_constructors():
+            (updated,clauses,pre) = res
+            # print(res[1])
+            res = (updated,elim_destructors(clauses),elim_destructors(pre))
+            # print(res[1])
+        return res
     def hide_formals(self,update):
         to_hide = []
         if hasattr(self,'formal_params'):
@@ -444,7 +503,7 @@ def destr_asgn_val(lhs,fmlas):
     eqs = [eq_atom(v,a) for (v,a) in list(zip(vs,lhs.args))[1:] if not isinstance(a,Variable)]
     if eqs:
         fmlas.append(Or(And(*eqs),equiv_ast(dlhs,drhs)))
-    for destr in ivy_module.module.sort_destructors[mut.sort.name]:
+    for destr in sort_destructors(mut.sort):
         if destr != n:
             phs = sym_placeholders(destr)
             a1 = [lval] + phs[1:]
@@ -465,6 +524,9 @@ def assign_refs(self,refs):
             for a in n.args:
                 refs.update(symbols_ast(a))
     recur(self.args[0])
+
+def use_constructors():
+    return 'constructors' in ivy_module.module.attributes
 
 class AssignAction(Action):
     def __init__(self,*args):

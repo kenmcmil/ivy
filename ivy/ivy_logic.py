@@ -1771,3 +1771,6 @@ def is_definitional(defn):
             if iu.distinct(lhs.args):
                 return True
     return false
+
+def is_def(expr):
+    return isinstance(expr,Definition)

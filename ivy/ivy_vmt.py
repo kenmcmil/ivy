@@ -105,6 +105,8 @@ def add_to_mod_set(action):
         mod_set.update(act.modifies())
 
 def encode_as_array(sym):
+    if tr.is_old(sym):
+        sym = tr.old_of(sym)
     return not il.is_interpreted_symbol(sym) and sym.name not in im.module.destructor_sorts and sym in mod_set
 
 # Convert all uninterpreted functions in a formula to
@@ -114,8 +116,6 @@ def uf_to_arr_ast(ast):
     args = [uf_to_arr_ast(arg) for arg in ast.args]
     if il.is_app(ast) and not il.is_named_binder(ast) and ast.args:
         sym = ast.rep
-        if sym.name == 'sent':
-            print ('ast: {}, encode = {}'.format(ast,encode_as_array(sym)))
         if encode_as_array(sym):
             sname,ssorts = create_array_sort(sym.sort)
             asym = il.Symbol(sym.name,ssorts[0])
@@ -142,7 +142,7 @@ def encode_assign(asgn,lhs,rhs):
         lvs = set(ilu.variables_ast(lhs));
         rvs = set(ilu.variables_ast(rhs)) if rhs is not None else set();
         rhs_const = not any(v in rvs for v in lvs)
-        print ('rhs_const: {}'.format(rhs_const))
+        # print ('rhs_const: {}'.format(rhs_const))
         if any(v in rvs for v in lvs):
             if (il.is_app(rhs) and rhs.args == lhs.args and all(il.is_variable(x) for x in lhs.args)
                 and len(set(lhs.args)) == len(lhs.args)):
@@ -168,15 +168,23 @@ def encode_assign(asgn,lhs,rhs):
             if il.is_variable(idx):
                 if il.is_app(sval) and sval.rep.name == 'arrcst' or i == len(lhs.args)-1 and rhs_const:
                     return il.Symbol('arrcst',il.FunctionSort(ssorts[i+1],ssorts[i]))(sval)
-                print ('i: {}, {}'.format(i,len(lhs.args)-1))
+                # print ('i: {}, {}'.format(i,len(lhs.args)-1))
                 resval = il.Lambda([aidx],sval)
                 return il.Symbol('cast',il.FunctionSort(resval.sort,ssorts[i]))(resval)
             else:
                 upd = il.Symbol('arrupd',il.FunctionSort(ssorts[i],aidx.sort,ssorts[i+1],ssorts[i]))
                 return upd(val,aidx,sval)
         res = (asym,recur(0,asym))
-        print (res)
+        # print (res)
         return res
+
+ret_val_ctr = 0
+
+def make_ret_val(sort):
+    global ret_val_ctr
+    res = il.Symbol('retval$'+str(ret_val_ctr),sort)
+    ret_val_ctr += 1
+    return res
     
 def uf_to_array_action(action):
     if isinstance(action,ia.Action):
@@ -188,7 +196,18 @@ def uf_to_array_action(action):
             if action.args[0].args and not il.is_interpreted_symbol(action.args[0].rep):
                 args = encode_assign(action,action.args[0],None)
                 return ia.AssignAction(args[0],args[1]).set_lineno(action.lineno)
-        return action.clone(args)
+        elif isinstance(action,ia.CallAction) and len(args) > 1:
+            rvs = [make_ret_val(x.sort) for x in args[1:]]
+            code = ia.LocalAction(*(rvs + [
+                ia.Sequence(*(
+                    [action.clone([args[0]] + rvs)] +
+                    [uf_to_array_action(ia.AssignAction(v,w).set_lineno(action.lineno))
+                     for v,w in zip(action.args[1:],rvs)])).set_lineno(action.lineno)])).set_lineno(action.lineno)
+            return code
+        res = action.clone(args)
+        if isinstance(action,ia.WhileAction):
+            print (res)
+        return res
     else:
         return uf_to_arr_ast(action)
 
@@ -350,7 +369,12 @@ def check_isolate(method="mc",tagged_dfns=[],use_array_encoding=True):
 
     def add_sort(sort):
         if sort not in sorts:
-            sorts.append(sort)
+            if "Array" in sort.name():
+                add_sort(sort.range())
+                add_sort(sort.domain())
+            else:
+                sorts.append(sort)
+                        
 
     declared_symbols = set()
     enum_symbols = set()
