@@ -45,25 +45,6 @@ from . import ivy_printer
 #
 
 
-def renaming_hook(subs,tr,fcs):
-    return tr.rename(dict((x,y) for (y,x) in subs.items()))
-
-
-
-def ls2_g_to_globally(ast):
-    def g2g(ast):
-        if isinstance(ast,lg.NamedBinder) and ast.name == 'l2s_g':
-            return lg.Globally(ast.environ,ast.body)
-        return None
-    res = ilu.expand_named_binders_ast(ast,g2g)
-    return ilu.denormalize_temporal(res)
-
-def auto_hook(tasks,triggers,subs,tr,fcs):
-    tr = renaming_hook(subs,tr,fcs)
-    tr.pp = ls2_g_to_globally
-    # tr.hidden_symbols = temporal_and_l2s
-    return tr
-
 
 def instrument(prover, goal, sorted_tasks, triggers, tasks):
     # we assume one ranking in the proof
@@ -73,8 +54,14 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
     wp = tasks[sfx]['work_progress']
     rpred = ilg.Symbol('.r',wp.args[0].rep.sort) # symbol
     rdef = wp.args[1] # symbol rhs
-    rdefsyms = ilu.symbols_ast(rdef) # free symbols in rdef
+    rdefsyms = set(ilu.symbols_ast(rdef)) # free symbols in rdef
     rdefargs = wp.args[0].args # args in lhs
+
+    print('--- definitions')
+    print('rdefsyms: ', rdefsyms)
+    print('rdefargs: ', rdefargs)
+    print('rdef: ', rdef)
+    print('-----')
 
     defn_deps = defaultdict(list)
 
@@ -124,32 +111,37 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
         pre_events = []
         post_events = []
         if len(set(rdefsyms).intersection(mods)) > 0:
+            print('updating .r')
             asgn = AssignAction(rpred(*rdefargs), ilg.Or(rpred(*rdefargs), rdef)) # either current or previous value
-             
+            post_events.append(asgn)
+         
         res =  iact.prefix_action(res,pre_events)
         res =  iact.postfix_action(res,post_events)
         stmt.copy_formals(res) # HACK: This shouldn't be needed
         return res
 
         # Instrument all the actions
-
-    # add model 
-    # need to clone the bindings 
-    model.bindings = [b.clone([b.action.clone([instr_stmt(b.action.stmt,b.action.labels)])])
-                      for b in model.bindings]
     
-#    idle_action = concat_actions(*(
-#        assume_g_axioms +  # could be added to model.asms
-#        assume_when_axioms +
-#        reset_w + 
-#        add_consts_to_d
-#    )).set_lineno(lineno)
-#    idle_action.formal_params = []
-#    idle_action.formal_returns = []
-#    model.bindings.append(itm.ActionTermBinding('_idle',itm.ActionTerm([],[],[],idle_action)))
-#    model.calls.append('_idle')
-#    model.postconds['_idle']=postconds
-
+    def instr_stmt_toplevel(stmt, labels, name):
+        stmt = instr_stmt(stmt, labels)
+        if name in model.calls:
+            asgn = AssignAction(rpred(*rdefargs), ilg.Or()) # initialize to false
+            return iact.prefix_action(stmt, [asgn])
+        else:
+            return stmt
+    
+    idle_action = concat_actions().set_lineno(0)
+    idle_action.formal_params = []
+    idle_action.formal_returns = []
+    model.bindings.append(itm.ActionTermBinding('_idle',itm.ActionTerm([],[],[],idle_action)))
+    model.calls.append('_idle')
+  
+    # add model 
+    # need to clone the bindings
+    model.init = iact.prefix_action(model.init, [AssignAction(rpred(*rdefargs), ilg.Or())]) # initialize r to false initially. 
+    model.bindings = [b.clone([b.action.clone([instr_stmt_toplevel(b.action.stmt,b.action.labels, b.name)])])
+                      for b in model.bindings]
+  
     # create new goal 
     # HACK: reestablish invariant that shouldn't be needed
 
@@ -161,14 +153,12 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
     conc = ivy_ast.TemporalModels(model,lg.And())
 
     # Build the new goal
-    prems = list(ipr.goal_prems(goal))
+    # In particular, add fair symbol to premises
+    prems = list(ipr.goal_prems(goal)) + [ivy_ast.ConstantDecl(rpred)]
     non_temporal_prems = [x for x in prems if not (hasattr(x,'temporal') and x.temporal)]
     goal = ipr.clone_goal(goal,non_temporal_prems,conc)
 
     goal = ipr.remove_unused_definitions_goal(goal)
-
-    goal.trace_hook = lambda tr,fcs: auto_hook(tasks,triggers,subs,tr,fcs)
-    # goal.trace_hook = lambda tr,fcs: renaming_hook(subs,tr,fcs)
 
     # Return the new goal stack
     return goal 
@@ -180,6 +170,9 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
 def infer(prover, goal, sorted_tasks, triggers, tasks):
 
     # Filter out the definitional axioms for the work_* predicates
+    print('----------initial goal-----')
+    print(goal)
+    print('---------------------------')
 
     prems = [x for x in ipr.goal_prems(goal) if
              not(ipr.goal_is_property(x) and
@@ -190,6 +183,9 @@ def infer(prover, goal, sorted_tasks, triggers, tasks):
 
     goal = instrument(prover, goal, sorted_tasks, triggers, tasks)
 
+    print('------------ goal --------')
+    print(goal)
+    print('---------------------------')
     # get the goal as a module (ignoring the temporal property)
     # the module is expected ivy_vmt
     mod = ivy_temporal.to_module(goal)
@@ -229,4 +225,4 @@ def infer(prover, goal, sorted_tasks, triggers, tasks):
                 ]
 
                 # Convert to VMT without Array encoding (does not return)
-                ivy_vmt.check_isolate(tagged_dfns = tds, use_array_encoding=False)
+                ivy_vmt.check_isolate(tagged_dfns = tds, use_array_encoding=True)

@@ -286,10 +286,11 @@ def check_isolate(method="mc",tagged_dfns=[],use_array_encoding=True):
 
     mod_set.clear()
     if use_array_encoding:
+        print(' ***** Using array encoding *** ')
         add_to_mod_set(init_action)
         for x,action in mod.actions.items():
             add_to_mod_set(action)
-    # print ('mod_set: {}'.format([str(x) for x in mod_set]))
+        print ('mod_set: {}'.format([str(x) for x in mod_set]))
 
         for actname in list(mod.actions):
             action = mod.actions[actname]

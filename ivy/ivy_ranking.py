@@ -194,7 +194,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         # If tactic is 'ranking_infer', infer the ranking
 
         if tactic_name == 'ranking_infer':
-            ivy_ranking_infer.infer(goal, sorted_tasks, triggers, tasks)
+            ivy_ranking_infer.infer(prover, goal, sorted_tasks, triggers, tasks)
 
         # Helpful: if the trigger implies a globally, then that globally must
         # continue hold during work_invar. We establish this by strengthening
