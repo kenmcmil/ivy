@@ -200,8 +200,8 @@ def install_abc():
 if __name__ == "__main__":
     build_z3()
     install_z3()
-    build_picotls()
-    install_picotls()
+    # build_picotls()
+    # install_picotls()
 
     if platform.system() == 'Windows':
         print("*******************************************")
