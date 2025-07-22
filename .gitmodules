@@ -7,3 +7,6 @@
 [submodule "submodules/abc"]
 	path = submodules/abc
 	url = https://github.com/kenmcmil/abc
+[submodule "submodules/z3"]
+	path = submodules/z3
+	url = https://github.com/ruijiefang/z3-ivy
