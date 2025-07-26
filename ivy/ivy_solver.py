@@ -254,7 +254,10 @@ def functionsort(fs):
     return [s.to_z3() for s in fs.dom] + [fs.rng.to_z3()]
 
 def enumeratedsort(es):
+    s = z3_sorts.get(es.rep, None)
+    if s is not None: return s 
     res,consts = z3.EnumSort(es.name,es.extension)
+    z3_sorts[es.rep] = res
     for c in consts:
         z3_constants[str(c)] = c
 #    print "enum {} : {}".format(res,type(res))

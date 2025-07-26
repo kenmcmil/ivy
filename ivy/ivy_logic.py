@@ -780,6 +780,7 @@ EnumeratedSort.is_relational = lambda self: False
 EnumeratedSort.dom = property(lambda self: [])
 EnumeratedSort.rng = property(lambda self: self)
 EnumeratedSort.is_finite = lambda self: True
+EnumeratedSort.rep = property(lambda self: self.name)
 
 RangeSort = lg.RangeSort
 RangeSort.is_finite = lambda self: True
