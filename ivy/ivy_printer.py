@@ -22,7 +22,7 @@ def print_module(mod):
     for kwd,lst in [('axiom',mod.labeled_axioms),
                     ('property',mod.labeled_props),
                     ('init',mod.labeled_inits),
-                    ('conjecture',mod.labeled_conjs),
+                    ('invariant',mod.labeled_conjs),
                     ('definition',mod.definitions),
                     ('definition',mod.native_definitions),]:
         

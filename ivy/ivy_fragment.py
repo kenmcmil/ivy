@@ -544,7 +544,6 @@ def get_assumes_and_asserts(preconds_only):
             lhs,rhs = fmla.args
             if (il.is_app(lhs)):
                 if all(il.is_variable(x) for x in lhs.args):
-                    print ('foo: {}'.format(fmla))
                     if iu.distinct(lhs.args):
                         definitions.append(lf.clone([lf.label,il.Definition(lhs,rhs)]))
                         continue
@@ -555,17 +554,15 @@ def get_assumes_and_asserts(preconds_only):
             if (ldf.formula.defines() not in ilu.symbols_ast(ldf.formula.rhs())
                 and ldf.formula.defines() not in defined
                 and not isinstance(ldf.formula.rhs(),il.Some)):
-                print ('macro : {}'.format(ldf.formula))
                 macros.append((ldf.formula,ldf))
                 defined.add(ldf.formula.defines())
                 referenced.update(ilu.symbols_ast(ldf.formula.rhs()))
             else: # can't treat recursive definition as macro
-                print ('axiom : {}'.format(ldf.formula))
                 assumes.append((ldf.formula.to_constraint(),ldf))
 
     for ldf in axioms:
         if not ldf.temporal:
-            print ('orig axiom : {}'.format(ldf.formula))
+            # print ('orig axiom : {}'.format(ldf.formula))
             assumes.append((ldf.formula,ldf))
 
     pfs = set(lf.id for lf,p in im.module.proofs)

@@ -28,8 +28,10 @@ from . import ivy_l2s
 from . import ivy_ranking
 from . import ivy_mc
 from . import ivy_vmt
+from . import ivy_duoai
 from . import ivy_bmc
 from . import ivy_tactics
+from . import ivy_mypyvy
 
 print ('starting ivy_check...')
 
@@ -402,7 +404,7 @@ def check_fcs_in_state(mod,ag,post,fcs):
     return not any(fc.failed for fc in fcs)
 
 def convert_postconds(state,postconds):
-    updated,postcond,pre = state.update
+    updated,postcond,pre = state.update if state.update is not None else ([],None,None)
     renaming = dict((s,itr.old_of(s))
                     for s in lut.used_symbols_asts(x.formula for x in postconds)
                     if itr.is_old(s))
@@ -784,6 +786,34 @@ def vmt_tactic(prover,goals,proof):
 
 ivy_proof.register_tactic('vmt',vmt_tactic)
                     
+def mypyvy_tactic(prover,goals,proof):
+    goal = goals[0]
+    conc = ivy_proof.goal_conc(goal)
+    if isinstance(conc,ivy_ast.TemporalModels):
+        if not lg.is_true(conc.fmla):
+            goals = ivy_tactics.tempind(prover,goals,proof)
+            goals = ivy_tactics.skolemizenp(prover,goals,proof)
+            l2s_pf = proof.clone([proof.args[0],ivy_ast.TacticLets()]+list(proof.args[2:]))
+            goals = ivy_l2s.l2s_tactic_full(prover,goals,l2s_pf)
+    check_subgoals(goals[0:1],method=ivy_mypyvy.check_isolate)
+    return goals[1:]
+
+ivy_proof.register_tactic('mypyvy',mypyvy_tactic)
+
+def duoai_tactic(prover,goals,proof):
+    goal = goals[0]
+    conc = ivy_proof.goal_conc(goal)
+    if isinstance(conc,ivy_ast.TemporalModels):
+        if not lg.is_true(conc.fmla):
+            goals = ivy_tactics.tempind(prover,goals,proof)
+            goals = ivy_tactics.skolemizenp(prover,goals,proof)
+            l2s_pf = proof.clone([proof.args[0],ivy_ast.TacticLets()]+list(proof.args[2:]))
+            goals = ivy_l2s.l2s_tactic_full(prover,goals,l2s_pf)
+    check_subgoals(goals[0:1],method=ivy_duoai.check_isolate)
+    return goals[1:]
+
+ivy_proof.register_tactic('duoai',duoai_tactic)
+                    
 def all_assert_linenos():
     mod = im.module
     all = []
@@ -891,7 +921,9 @@ def check_module():
             if opt_trusted.get():
                 continue
             method_name = get_isolate_method(isolate)
-            if method_name == 'mc':
+            if method_name == 'convert_to_mypyvy':
+                ivy_mypyvy.check_isolate()
+            elif method_name == 'mc':
                 mc_isolate(isolate)
             elif method_name == 'vmt':
                 mc_isolate(isolate,meth=ivy_vmt.check_isolate)

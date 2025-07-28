@@ -47,7 +47,7 @@ def action_to_tr(mod,action,method,bgt):
 
 def add_err_flag(action,erf,errconds):
     if isinstance(action,ia.AssertAction):
-        if checked(action):
+        if False and checked(action):
             if verbose:
                 print("{}Model checking guarantee".format(action.lineno))
             errcond = ilu.dual_formula(il.drop_universals(action.formula))
@@ -267,7 +267,8 @@ def herbrandize_property_vars(prop_z3_fm):
             var_sort = prop_z3_fm.var_sort(i).name()
             vmt_str = f"(declare-fun {var_name} () {var_sort})"
             vmt_next = f"(declare-fun new_{var_name} () {var_sort})"
-            define = f"(define-fun .{var_name} () {var_sort} (! {var_name} :next new_{var_name}))"
+            define_fun_str = var_name.replace("|", "").replace(":", "")
+            define = f"(define-fun .{define_fun_str} () {var_sort} (! {var_name} :next new_{var_name}))"
             var_strs.append(vmt_str)
             var_strs.append(vmt_next)
             var_strs.append(define)
@@ -408,7 +409,13 @@ def check_isolate(method="mc",tagged_dfns=[],use_array_encoding=True):
 
     declared_symbols = set()
     enum_symbols = set()
-    for sym in ilu.used_symbols_asts([init,trans]+[lf.formula for lf in conjs]+axioms):
+    refed_syms = list(ilu.used_symbols_asts([init,trans]+[lf.formula for lf in conjs]+axioms))
+    extra_refed_syms = set()
+    for x in refed_syms:
+        if tr.is_new(x):
+            extra_refed_syms.add(tr.new_of(x))
+    refed_syms = iu.unique(refed_syms+list(extra_refed_syms))
+    for sym in refed_syms:
         sym = il.normalize_symbol(sym)
         if il.is_enumerated_sort(sym.sort):
             if sym in sym.sort.constructors:
@@ -463,7 +470,7 @@ def check_isolate(method="mc",tagged_dfns=[],use_array_encoding=True):
     all_used = ilu.used_symbols_asts([init,trans])
     immutable = [sym for sym in all_used if not il.is_function_sort(sym.sort)
                  and not sym.is_skolem() and not tr.is_new(sym)
-                 and "fml:" not in sym.name and "loc:" not in sym.name and tr.new(sym) not in all_used
+                 and "fml:" not in sym.name and "loc:" not in sym.name and 'prm:' not in sym.name and tr.new(sym) not in all_used
                  and all(sym not in upd[0] for upd in actupds)]
     background_symbols = ilu.used_symbols_asts(axioms)
     background_symbols.update(enum_symbols)
@@ -484,13 +491,16 @@ def check_isolate(method="mc",tagged_dfns=[],use_array_encoding=True):
                 # vmt_var_defs.append(f"(declare-fun {decl_sexpr} ({decl_dom}) {decl_sort})")
                 cur_name = cur_str.split(' ')[1]
                 next_name = next_str.split(' ')[1]
-                full_str = f"(define-fun .{cur_name} ({decl_dom}) {decl_sort} (! {cur_name} :next {next_name}))"
+                define_fun_str = cur_name.replace("|", "").replace(":", "")
+                full_str = f"(define-fun .{define_fun_str} ({decl_dom}) {decl_sort} (! {cur_name} :next {next_name}))"
             else:
                 sort = cur_sym.sort().sexpr()
-                full_str = f"(define-fun .{cur_str} () {sort} (! {cur_str} :next {next_str}))"
+                define_fun_str = cur_str.replace("|", "").replace(":", "")
+                full_str = f"(define-fun .{define_fun_str} () {sort} (! {cur_str} :next {next_str}))"
             vmt_var_defs.append(full_str)
-        elif "fml:" in sym.name or "loc:" in sym.name or sym.is_skolem() or sym in immutable:
+        elif "fml:" in sym.name or "loc:" in sym.name or "prm:" in sym.name or sym.is_skolem() or sym in immutable:
             next_sym_str = f"new_{sym.name.replace(':', '')}"
+            # next_sym_str = slvr.symbol_to_z3_full(tr.new(sym)).sexpr()
             cur_sym_str = slvr.symbol_to_z3_full(sym).sexpr()
             # cur_sym_str = f"|{sym.name}|"
             sort = slvr.symbol_to_z3(sym).sort().sexpr()

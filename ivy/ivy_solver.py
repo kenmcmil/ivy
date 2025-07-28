@@ -1298,7 +1298,15 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
                 else:
                     s.pop()
         print("done")
-    m = get_model(s)
+    try:
+        m = get_model(s)
+    except:
+        print ('get_model failed')
+        f = open("ivy.smt2","w")
+        f.write(s.to_smt2())
+        f.close()
+        exit(1)
+
     print ("model = {}".format(m.sexpr()))
     f = open("ivy.smt2","w")
     f.write(s.to_smt2())

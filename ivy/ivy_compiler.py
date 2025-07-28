@@ -1415,7 +1415,7 @@ class IvyARGSetup(IvyDeclInterp):
         global thunk_counter
         thunk_counter = 0
         name = a.args[0].relname
-        print ('action: {}'.format(a))
+        # print ('action: {}'.format(a))
         self.mod.actions[name] = compile_action_def(a,self.mod.sig)
         self.mod.public_actions.add(name)
     def state(self,a):

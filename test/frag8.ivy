@@ -18,7 +18,7 @@ function bar(X:t) = f(X) = h(X)
 
 var q : bool
 
-axiom g(X) = p if q else X
+axiom  (p if q else X) = g(X)
 
 # result: An interpreted symbol is applied to a universally quantified variable
 

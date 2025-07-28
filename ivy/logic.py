@@ -55,7 +55,8 @@ class EnumeratedSort(recstruct('EnumeratedSort', ['name','extension'], [])):
         extension = tuple(extension)
         return name,extension
     def __str__(self):
-        return '{' + ','.join(self.extension) + '}'
+        # return '{' + ','.join(self.extension) + '}'
+        return self.name
     @property
     def constructors(self):
         return [Const(n,self) for n in self.extension]
