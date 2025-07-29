@@ -11,7 +11,7 @@ from collections import defaultdict
 import re
 import functools
 
-import ivy.z3 as z3
+import z3
 from . import ivy_logic
 from .ivy_logic_utils import used_variables_clause, used_variables_ast, variables_ast,\
    to_clauses, constants_clauses, used_relations_clauses, rel_inst, fun_eq_inst, \

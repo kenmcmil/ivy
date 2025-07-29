@@ -38,18 +38,27 @@ Get the source like this:
     $ git clone --recurse-submodules https://github.com/kenmcmil/ivy.git
     $ cd ivy
 
-Build the submodules like this (it takes a while):
+Optional: build the submodules. This is needed to use model checking or automated test generation. Use this command (which takes a while):
 
     $ python3 build_submodules.py
 
+Optional, recommended: use a python virtal environment:
+
+    $ python3 -m venv venv
+    $ . venv/bin/activate
+    $ export PATH=`pwd`/venv/bin
+
 Install into your local Python like this:
 
-    $ sudo python3 setup.py install
+    $ pip3 install z3-solver
+    $ pip3 install .
 
+Instead of installing z3 with pip, as above, you can install it manually in your python environment. You can ask pip to install a specific version of z3 with `z3-solver==X.Y`. 
 If you want to run from the source tree for development purposes, do
 this instead:
 
-    $ sudo python3 setup.py develop
+    $ pip3 install z3-solver
+    $ pip3 install -e .
 
 Optionally, build the experimental Ivy v2.0 compiler:
 
@@ -109,46 +118,24 @@ These instructions have not been tested on recent MacOS versions.
         
 5. Install Ivy:
 
-        $ git clone --recurse-submodules https://github.com/kenmcmil/ivy.git
-        $ cd ivy
+    Follow the Linux instructions above, under "Install Ivy".
 
-    Build the submodules like this (it takes a while):
+    You may have to do this to work around a bug in the python setup tools installed by macports:
 
-        $ python3 build_submodules.py
-
-    Install into your local Python like this
-
-        $ sudo python3 setup.py install
         $ sudo ln -s /opt/local/Library/Frameworks/Python.framework/Versions/3.10/bin/ivy* /opt/local/bin
 
-    The second command may not be necessary, but works around a bug in
-    the python setup tools installed by macports.
-
-    If you want to run from the source tree for development purposes, do
-    this instead:
-
-        $ sudo python setup.py develop
-        $ sudo ln -s /opt/local/Library/Frameworks/Python.framework/Versions/3.10/bin/ivy* /opt/local/bin
-
-
-6. Running a test
-
-        $ cd doc/examples
-        $ ivy_check diagnose=true client_server_example_new.ivy
-
-    This should fire up a GUI.
 
 
 
 <a name="binary"></a> Binary releases
 --------------------
 
-Ivy is released as a Python package in the PyPI repository. I
+Ivy is released as a Python package in the PyPI repository.
 
 ### <a name="linuxbinary"> Install binary release on Linux
 
     $ sudo apt-get install python3 python3-pip g++ cmake python3-ply python3-pygraphviz git python3-tk tix pkg-config libssl-dev libreadline-dev
-    $ sudo pip3 install ms-ivy
+    $ sudo pip3 install z3-solver ms-ivy
 
 Note, if you omit `sudo` in the second command, Ivy will be installed
 into `~\.local\bin`, which is probably not what you want, so be
