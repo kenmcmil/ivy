@@ -74,8 +74,9 @@ def source_file(fn,f,**kwargs):
     except IvyError as e:
         if not hasattr(e,'filename'):
             e.filename = fn
-        print(str(e))
-        sys.exit(1)
+        raise e
+        # print(str(e))
+        # sys.exit(1)
 
 def ivy_init(**kwargs):
     read_params()

@@ -144,6 +144,16 @@ class Const(recstruct('Const', ['name', 'sort'], [])):
 def report_bad_sort(op,position,expected,got):
     raise SortError("in application of {}, at position {}, expected sort {}, got sort {}" 
                     .format(op,position+1,expected,got))
+def is_with_arity(arity):
+    return 'is' if arity == 1 else 'are'
+
+def explain_arity_error(func,terms):
+    bad_term = str(func) + (('(' + ', '.join(str(t) for t in terms) + ')') if terms else '')
+    res = (
+        f"In the term {bad_term}, there are too {'many' if func.sort.arity < len(terms) else 'few'} arguments. "
+        f"There {is_with_arity(len(terms))} {len(terms)} arguments provided, "
+        f"when {func.sort.arity} {is_with_arity(func.sort.arity)} required.")
+    return res
 
 class Apply(recstruct('Apply', [], ['func', '*terms'])):
     __slots__ = ()
@@ -155,10 +165,12 @@ class Apply(recstruct('Apply', [], ['func', '*terms'])):
         elif type(func.sort) is not FunctionSort:
             raise SortError("Tried to apply a non-function: {}".format(func))
         elif func.sort.arity != len(terms):
-            raise SortError("Bad arity in: {}({})".format(
+            err =  SortError("Bad arity in: {}({})".format(
                 str(func),
                 ', '.join(str(t) for t in terms)
             ))
+            err.explain = lambda: explain_arity_error(func,terms)
+            raise err
         else:
             bad_sorts = [i for i in range(func.sort.arity) if
                          terms[i].sort != func.sort.domain[i] and

@@ -387,15 +387,16 @@ def make_vc(action,precond=[],postcond=[],check_asserts=True):
         clauses.annot = act.RenameAnnotation(clauses.annot,stack.pop())
     
     clauses = lut.and_clauses(clauses,axioms)
-    fc = lut.Clauses([lf.formula for lf in postcond])
-    fc.annot = act.EmptyAnnotation()
-    used_names = frozenset(x.name for x in list(lg.sig.symbols.values()))
-    def witness(v):
-        c = lg.Symbol('@' + v.name, v.sort)
-        assert c.name not in used_names
-        return c
-    fcc = lut.dual_clauses(fc, witness)
-    clauses = lut.and_clauses(clauses,fcc)
+    if postcond is not None:
+        fc = lut.Clauses([lf.formula for lf in postcond])
+        fc.annot = act.EmptyAnnotation()
+        used_names = frozenset(x.name for x in list(lg.sig.symbols.values()))
+        def witness(v):
+            c = lg.Symbol('@' + v.name, v.sort)
+            assert c.name not in used_names
+            return c
+        fcc = lut.dual_clauses(fc, witness)
+        clauses = lut.and_clauses(clauses,fcc)
 
     return clauses
 

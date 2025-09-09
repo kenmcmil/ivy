@@ -9,6 +9,7 @@ import collections
 import re
 import os
 import platform
+import sys
 
 # some useful combinators
 
@@ -524,7 +525,11 @@ class ErrorPrinter(object):
         return self
     def __exit__(self,exc_type, exc_val, exc_tb):
         if exc_type == IvyError or isinstance(exc_val,IvyError):
-            print(str(exc_val))
+            if hasattr(exc_val,"explain"):
+                print('=== BEGIN EXPLANATION ===')
+                print(exc_val.explain())
+                print('=== END EXPLANATION ===')
+            print(str(exc_val),file=sys.stderr)
             exit(1)
             return True
         return False # don't block any other exceptions

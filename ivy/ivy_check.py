@@ -31,9 +31,8 @@ from . import ivy_vmt
 from . import ivy_duoai
 from . import ivy_bmc
 from . import ivy_tactics
+from . import ivy_expl
 from . import ivy_mypyvy
-
-print ('starting ivy_check...')
 
 import sys
 from collections import defaultdict

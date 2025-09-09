@@ -1925,7 +1925,10 @@ class ASTContext(object):
     def __exit__(self,exc_type, exc_val, exc_tb):
         if isinstance(exc_val,ivy_logic.Error):
 #            assert False
-            raise IvyError(self.ast,str(exc_val))
+            err = IvyError(self.ast,str(exc_val))
+            if hasattr(exc_val,"explain"):
+                err.explain = exc_val.explain
+            raise err
         if isinstance(exc_val,IvyError):
 #        if exc_type == IvyError:
 #            print "no lineno: {}".format(self.ast)

@@ -230,6 +230,18 @@ def normal_program_from_module(mod, with_definitions=False):
     macros = list(mod.definitions) if with_definitions else []
     return NormalProgram(bindings,macros,init,invars,asms,calls)
 
+# Converts an action binding to an action
+
+def binding_to_action(b):
+    name = b.name
+    act = b.action
+    ract = act.stmt
+    ract.formal_params = act.inputs
+    ract.formal_returns = act.outputs
+    ract.label = name[4:] if name.startswith('ext:') else name
+    return ract
+
+
 # The creates an "environment action" from a list of action
 # bindings. This represents the environment nondeterministically
 # calling one of the actions. Using an environment action for VC

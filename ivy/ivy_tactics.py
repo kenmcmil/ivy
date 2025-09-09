@@ -14,6 +14,7 @@ from . import logic_util as lu
 from . import ivy_proof as pr
 from . import ivy_auto_inst
 from . import ivy_module as im
+from . import ivy_solver as slv
 
 from ordered_set import OrderedSet
 from collections import OrderedDict
@@ -375,3 +376,5 @@ def macro_expand_binding(bnd,defns):
     return bnd
 
 pf.register_tactic('macro_expand',macro_expand)
+
+    

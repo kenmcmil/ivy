@@ -23,6 +23,7 @@ from . import ivy_unitres as ur
 from . import logic as lg
 from . import ivy_ast
 from . import ivy_z3_utils
+from . import logic_util as lu
 
 import sys
 
@@ -916,6 +917,42 @@ class HerbrandModel(object):
     def eval_to_constant(self,t):
         return constant_from_z3(t.sort,self.model.eval(term_to_z3(t),model_completion=True))
 
+    # This allows evaluation to a constant for formulas that contain quantifiers
+    # Z3 doesn't do this, so we have to fake it.
+    def eval_quant_to_constant(self,t):
+        const_interp = []
+        for sort,z3consts in self.constants.items():
+            consts = self.sort_universe(sort)
+            fake_consts = [term_to_z3(c) for c in consts]
+            const_interp.extend(zip(fake_consts,z3consts))
+        def to_const(t):
+            z3t = term_to_z3(t)
+            z3t = substitute(z3t,*const_interp)
+            return constant_from_z3(t.sort,self.model.eval(z3t,model_completion=True))
+        def recur(t):
+            if ivy_logic.is_quantifier(t):
+                vs = t.variables
+                ranges = [x.sort.defines() if isinstance(x.sort,ivy_logic.EnumeratedSort) else
+                          [ivy_logic.Or(),ivy_logic.And()] if isinstance(x.sort,ivy_logic.BooleanSort)
+                          else self.sort_universe(x.sort)
+                          for x in vs]
+                # print(f'ranges: {ranges}')
+                for tup in itertools.product(*ranges):
+                    interp = dict(zip(vs,tup))
+                    # print(f'interp: {interp}')
+                    fact = lu.substitute(t.body,interp)
+                    truth = to_const(recur(fact))
+                    # print(f'fact: {fact}, truth: {truth}')
+                    if (ivy_logic.is_true(truth) if ivy_logic.is_exists(t) else ivy_logic.is_false(truth)):
+                        return truth
+                return ivy_logic.Or() if ivy_logic.is_exists(t) else ivy_logic.And()
+            else:
+                return t.clone([recur(x) for x in t.args])
+        # print (f'quant: {t}')
+        res = to_const(recur(t))
+        # print (f'res: {res}')
+        return res
+
     def __str__(self):
         return self.model.sexpr()
     
@@ -1165,7 +1202,7 @@ def model_if_none(clauses1,implied,model):
                 s.add(formula_to_z3(sort_size_constraint(sort,sort_size)))
             if s.check() != z3.unsat:
                 m = get_model(s)
-                print("model = {}, size = {}".format(m,sort_size))
+                # print("model = {}, size = {}".format(m,sort_size))
 ##        print "clauses1 = {}".format(clauses1)
 ##        print "z3c = {}".format(str(z3c))
                 syms = used_symbols_clauses(clauses1)
@@ -1307,7 +1344,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
         f.close()
         exit(1)
 
-    print ("model = {}".format(m.sexpr()))
+    # print ("model = {}".format(m.sexpr()))
     f = open("ivy.smt2","w")
     f.write(s.to_smt2())
     f.close()

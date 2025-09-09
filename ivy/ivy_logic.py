@@ -1146,6 +1146,18 @@ def is_equals(symbol):
 def is_ite(ast):
     return isinstance(ast,lg.Ite)
 
+def is_and(ast):
+    return isinstance(ast,lg.And)
+
+def is_or(ast):
+    return isinstance(ast,lg.Or)
+
+def is_not(ast):
+    return isinstance(ast,lg.Not)
+
+def is_implies(ast):
+    return isinstance(ast,lg.Implies)
+
 def is_enumerated(term):
     return is_app(term) and isinstance(term.get_sort(),EnumeratedSort)
 
