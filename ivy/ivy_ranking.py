@@ -201,7 +201,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         # work_invar.
 
         D = 0
-        E = 1
+        # E = 1
 
         def trig_glob(prop,res,pos):
             if pos and isinstance(prop,lg.Globally):
@@ -272,6 +272,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             needed_args = work_needed.args[0].args
             helpful_args = work_helpful.args[0].args
             work_witness = tasks[sfx].get('work_witness',None)
+
+            E = 0 if ilg.has_temporal(work_helpful[1]) else 1
 
             # work_created, work_needed and work_done must have same sort
            
