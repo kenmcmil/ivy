@@ -283,6 +283,16 @@ class Module(object):
                 callgraph[called_name].append(actname)
         return callgraph
 
+    def rename_actions(self,rn):
+        acts = [(rn(aname),act.prefix_calls(rn)) for aname,act in self.actions.items()]
+        self.actions.clear()
+        self.actions.update(acts)
+        exported = [rn(aname) for aname in self.public_actions]
+        self.public_actions.clear()
+        self.public_actions.update(exported)
+
+
+
 def resort_ast(ast):
     return lu.resort_ast(ast,sort_refinement)
 

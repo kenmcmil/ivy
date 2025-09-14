@@ -1777,6 +1777,17 @@ def create_isolate(iso,mod = None,**kwargs):
 
         mod.isolate_proof = mod.isolate_proofs[iso] if iso in mod.isolate_proofs else None
 
+        # Get rid of the 'ext:' tags on the export actions:
+
+        remove_ext_map = dict()
+        for name in mod.public_actions:
+            if name.startswith('ext:'):
+                remove_ext_map[name] = name[4:]
+                remove_ext_map[name[4:]] = 'int$' + name[4:] 
+        def rn_actions(x):
+            return remove_ext_map.get(x,x)
+        mod.rename_actions(rn_actions)
+                
         # show the compiled code if requested
 
         if show_compiled.get():

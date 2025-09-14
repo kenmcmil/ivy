@@ -5037,8 +5037,9 @@ def emit_repl_boilerplate3test(header,impl,classname):
 """)
     totalweight = 0.0
     num_public_actions = 0
+    fin_name = 'ext:_finalize' if 'ext:_finalize' in im.module.public_actions else '_finalize'
     for actname in sorted(im.module.public_actions):
-        if actname == 'ext:_finalize':
+        if actname == fin_name:
             continue
         num_public_actions += 1
         action = im.module.actions[actname]
@@ -5059,7 +5060,7 @@ def emit_repl_boilerplate3test(header,impl,classname):
     impl.append("        double totalweight = {};\n".format(totalweight))
     impl.append("        int num_gens = {};\n".format(num_public_actions))
             
-    final_code = 'ivy.__lock(); ivy.ext___finalize(); ivy.__unlock();' if 'ext:_finalize' in im.module.public_actions else ''
+    final_code = f'ivy.__lock(); ivy.{varname(fin_name)}(); ivy.__unlock();' if '_finalize' in im.module.public_actions else ''
     
     impl.append("""
 
