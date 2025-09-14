@@ -1165,7 +1165,7 @@ def model_if_none(clauses1,implied,model):
                 s.add(formula_to_z3(sort_size_constraint(sort,sort_size)))
             if s.check() != z3.unsat:
                 m = get_model(s)
-                print("model = {}, size = {}".format(m,sort_size))
+                # print("model = {}, size = {}".format(m,sort_size))
 ##        print "clauses1 = {}".format(clauses1)
 ##        print "z3c = {}".format(str(z3c))
                 syms = used_symbols_clauses(clauses1)
@@ -1307,7 +1307,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
         f.close()
         exit(1)
 
-    print ("model = {}".format(m.sexpr()))
+    # print ("model = {}".format(m.sexpr()))
     f = open("ivy.smt2","w")
     f.write(s.to_smt2())
     f.close()
