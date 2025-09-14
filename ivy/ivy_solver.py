@@ -1308,9 +1308,9 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
         exit(1)
 
     # print ("model = {}".format(m.sexpr()))
-    f = open("ivy.smt2","w")
-    f.write(s.to_smt2())
-    f.close()
+    # f = open("ivy.smt2","w")
+    # f.write(s.to_smt2())
+    # f.close()
     h = HerbrandModel(s,m,used_symbols_clauses(clauses))
     return h
 
