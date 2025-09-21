@@ -1483,12 +1483,14 @@ def params_to_str(params):
     params = [(s.drop_prefix('fml:') if s.name.startswith('fml:') else s) for s in params]
     return '(' + ','.join('{}:{}'.format(p.name,p.sort) for p in params) + ')'
 
-def action_def_to_str(name,action):
+def action_def_to_str(name,action,body=True):
     res = "action {}".format(name)
     if action.formal_params:
         res += params_to_str(action.formal_params)
     if action.formal_returns:
         res += ' returns' + params_to_str(action.formal_returns)
+    if not body:
+        return res
     res += ' = '
     subs = dict()
     for s in action.formal_params + action.formal_returns:

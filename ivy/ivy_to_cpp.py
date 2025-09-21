@@ -20,6 +20,7 @@ import itertools
 from . import ivy_cpp
 from . import ivy_cpp_types
 from . import ivy_fragment as ifc
+from . import ivy_printer as iptr
 import sys
 import os
 import platform
@@ -5782,7 +5783,7 @@ def main_int(is_ivyc):
         emit_main = False
         
     with iu.ErrorPrinter():
-        if len(sys.argv) == 2 and ic.get_file_version(sys.argv[1]) >= [2]:
+        if False and len(sys.argv) == 2 and ic.get_file_version(sys.argv[1]) >= [2]:
             if not target.get() == 'repl' and emit_main:
                 raise iu.IvyError(None,'Version 2 compiler supports only target=repl')
             cdir = os.path.join(os.path.dirname(__file__), 'ivy2/s3')
@@ -5844,6 +5845,7 @@ def main_int(is_ivyc):
         mod_name = opt_classname.get() or im.module.name
         for isolate in isolates:
             with im.module.copy():
+                use_v2 = ic.get_file_version(sys.argv[1]) >= [2] and target.get() == 'repl' and emit_main
                 with iu.ErrorPrinter():
 
                     def do_cmd(cmd):
@@ -5875,7 +5877,7 @@ def main_int(is_ivyc):
 
                     # Tricky: cone of influence may eliminate this symbol, but
                     # run-time accesses it.
-                    if '_generating' not in im.module.sig.symbols:
+                    if not use_v2 and '_generating' not in im.module.sig.symbols:
                         im.module.sig.add_symbol('_generating',il.BooleanSort())
 
 
@@ -5883,23 +5885,27 @@ def main_int(is_ivyc):
                     im.module.labeled_props = []
 #                    if target.get() != 'repl':
 #                        ifc.check_fragment(True)
-                    with im.module.theory_context():
-                        basename = mod_name
-                        if len(isolates) > 1:
-                            basename = basename + '_' + isolate
-                        classname = varname(basename).replace('-','_')
-                        with ivy_cpp.CppContext():
-                            header,impl = module_to_cpp_class(classname,basename)
-            #        print header
-            #        print impl
-                    builddir = 'build' if os.path.exists('build') else '.'
-                    f = open(outfile(builddir+'/'+basename+'.h'),'w')
-                    f.write(header)
-                    f.close()
-                    f = open(outfile(builddir+'/'+basename+'.cpp'),'w')
-                    f.write(impl)
-                    f.close()
-                if opt_build.get():
+                    basename = mod_name
+                    if len(isolates) > 1:
+                        basename = basename + '_' + isolate
+                    classname = varname(basename).replace('-','_')
+                    if use_v2:
+                        iptr.print_module(im.module,code_only = True)
+                        exit(0)
+                    else:
+                        with im.module.theory_context():
+                            with ivy_cpp.CppContext():
+                                header,impl = module_to_cpp_class(classname,basename)
+                #        print header
+                #        print impl
+                        builddir = 'build' if os.path.exists('build') else '.'
+                        f = open(outfile(builddir+'/'+basename+'.h'),'w')
+                        f.write(header)
+                        f.close()
+                        f = open(outfile(builddir+'/'+basename+'.cpp'),'w')
+                        f.write(impl)
+                        f.close()
+                if (not use_v2) and opt_build.get():
                     import platform
                     libpath = os.path.join(os.path.dirname(os.path.dirname(__file__)),'lib')
                     specfilename = os.path.join(libpath,'specs')

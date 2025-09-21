@@ -170,6 +170,8 @@ reserved = all_reserved = {
     'whennext' : 'WHENNEXT',
     'unprovable' : 'UNPROVABLE',
     'trigger' : 'TRIGGER',
+    'extern' : 'EXTERN',
+    'header' : 'HEADER',
 }
 
 tokens += tuple(all_reserved.values())
@@ -296,6 +298,11 @@ class LexerVersion(object):
             for s in ['requires','ensures']:
                 if s in reserved:
                     del reserved[s]
+        if self.version < [2,0]:
+            for s in ['extern', 'header']:
+                if s in reserved:
+                    del reserved[s]
+            
 
         return self
     def __exit__(self,exc_type, exc_val, exc_tb):

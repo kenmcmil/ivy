@@ -1774,6 +1774,10 @@ else:
       'optimpex : IMPORT'
       p[0] = ImportDecl
 
+  def p_optimpex_extern(p):
+      'optimpex : EXTERN'
+      p[0] = ExternDecl
+
   def p_actmeth_action(p):
       'actmeth : ACTION'
       p[0] = False
@@ -1809,8 +1813,10 @@ else:
     if p[2]:
         if p[2] == ExportDecl:
             d = ExportDecl(ExportDef(Atom(p[4]),Atom('')))
-        else:
+        elif p[2] == ImportDecl:
             d = ImportDecl(ImportDef(Atom(p[4]),Atom('')))
+        else:
+            d = ExternDecl(ExternDef(Atom(p[4]),Atom('')))
         d.lineno = get_lineno(p,4)
         p[0].declare(d)
 

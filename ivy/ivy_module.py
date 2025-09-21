@@ -52,6 +52,7 @@ class Module(object):
         self.isolates = {}
         self.exports = []
         self.imports = []
+        self.externs = []
         self.delegates = []
         self.public_actions = set() # hash of the exported actions
         self.progress = []  # list of progress properties
@@ -290,6 +291,13 @@ class Module(object):
         exported = [rn(aname) for aname in self.public_actions]
         self.public_actions.clear()
         self.public_actions.update(exported)
+        initializers = [(name,act.prefix_calls(rn)) for name,act in self.initializers]
+        del self.initializers[:]
+        self.initializers.extend(initializers)
+        initial_actions = [act.prefix_calls(rn) for act in self.initial_actions]
+        del self.initial_actions[:]
+        self.initial_actions.extend(initial_actions)
+        
 
 
 

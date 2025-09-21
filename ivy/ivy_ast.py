@@ -1215,6 +1215,20 @@ class ImportDef(AST):
     def __repr__(self):
         return self.imported() + (' from {}'.format(self.scope()) if self.scope() else '')
 
+class ExternDecl(Decl):    
+    def name(self):
+        return 'extern'
+    def defines(self):
+        return []
+    
+class ExternDef(AST):
+    def externed(self):
+        return self.args[0].relname
+    def scope(self):
+        return self.args[1].relname
+    def __repr__(self):
+        return self.externed() + (' from {}'.format(self.scope()) if self.scope() else '')
+
 class PrivateDecl(Decl):    
     def name(self):
         return 'private'

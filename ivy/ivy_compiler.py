@@ -1439,6 +1439,9 @@ class IvyARGSetup(IvyDeclInterp):
     def import_(self,imp):
         check_is_action(self.mod,imp,imp.imported())
         self.mod.imports.append(imp)
+    def extern(self,imp):
+        check_is_action(self.mod,imp,imp.externed())
+        self.mod.externs.append(imp)
     def private(self,pvt):
         self.mod.privates.add(pvt.privatized())
     def delegate(self,exp):

@@ -1780,7 +1780,7 @@ def create_isolate(iso,mod = None,**kwargs):
         # Get rid of the 'ext:' tags on the export actions:
 
         remove_ext_map = dict()
-        for name in mod.public_actions:
+        for name in mod.actions:
             if name.startswith('ext:'):
                 remove_ext_map[name] = name[4:]
                 remove_ext_map[name[4:]] = 'int$' + name[4:] 

@@ -1527,7 +1527,7 @@ def sig_to_str(self):
     for name,sym in self.symbols.items():
         sorts = sym.sort.sorts if isinstance(sym.sort,UnionSort) else [sym.sort]
         for sort in sorts:
-            res +=  'relation ' if sort.is_relational() else 'function ' if sort.dom else 'individual '
+            res +=  'relation ' if sort.is_relational() else 'function ' if sort.dom else 'var '
             res += name
             if sort.dom:
                 res += '(' + ','.join('V{}:{}'.format(idx,s) for idx,s in enumerate(sort.dom)) + ')'
