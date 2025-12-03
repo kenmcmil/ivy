@@ -36,3 +36,27 @@ specs
 
 # These are library directories
 gnutls
+
+# z3 submodule-related
+bin/z3
+include/
+ivy/bin/
+ivy/include/z3++.h
+ivy/include/z3.h
+ivy/include/z3_algebraic.h
+ivy/include/z3_api.h
+ivy/include/z3_ast_containers.h
+ivy/include/z3_fixedpoint.h
+ivy/include/z3_fpa.h
+ivy/include/z3_macros.h
+ivy/include/z3_optimization.h
+ivy/include/z3_polynomial.h
+ivy/include/z3_rcf.h
+ivy/include/z3_spacer.h
+ivy/include/z3_v1.h
+ivy/include/z3_version.h
+ivy/lib/
+ivy/z3/
+lib/libz3.so
+
+
