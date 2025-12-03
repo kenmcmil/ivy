@@ -28,6 +28,7 @@ from . import ivy_compiler
 from . import ivy_theory as thy
 from . import ivy_transrel as itr
 from . import ivy_ranking_infer
+from . import ivy_ranking_infer_tdl
 
 debug = iu.BooleanParameter("ranking_debug",False)
 
@@ -195,6 +196,9 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
         if tactic_name == 'ranking_infer':
             ivy_ranking_infer.infer(prover, goal, sorted_tasks, triggers, tasks)
+
+        if tactic_name == 'ranking_infer_tdl':
+            ivy_ranking_infer_tdl.infer(prover, goal, sorted_tasks, triggers, tasks)
 
         # Helpful: if the trigger implies a globally, then that globally must
         # continue hold during work_invar. We establish this by strengthening
@@ -1048,3 +1052,4 @@ def auto_hook(tasks,triggers,subs,tr,fcs):
 
 ipr.register_tactic('ranking',l2s_tactic)
 ipr.register_tactic('ranking_infer',l2s_tactic)
+ipr.register_tactic('ranking_infer_tdl', l2s_tactic)

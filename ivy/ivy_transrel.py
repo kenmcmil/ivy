@@ -347,6 +347,7 @@ def add_post_axioms(update,axioms):
     map = dict((sym,new(sym)) for sym in update[0])
     syms = set(update[0])
     post_ax = clauses_using_symbols(syms,axioms)
+    print('add_post_axioms: ',update[0])
     return (update[0],and_clauses(update[1],rename_clauses(post_ax,map)),update[2])
 
 def exist_quant_map(syms,clauses):

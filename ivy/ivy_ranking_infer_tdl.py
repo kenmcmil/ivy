@@ -2,7 +2,7 @@
 # Copyright (c) Microsoft Corporation. All Rights Reserved.
 #
 """
-This module performs exporting of liveness proof goals to a VMT-like format
+This module performs exporting of liveness proof goals to a format called TDL (Transition Description Language)
 """
 
 from collections import defaultdict
@@ -28,18 +28,23 @@ from . import ivy_compiler
 from . import ivy_theory as thy
 from . import ivy_transrel as itr
 from . import ivy_temporal
-from . import ivy_vmt
 from . import ivy_printer
+from . import ivy_tdl
 #from .ivy_ranking import auto_hook 
-#
-# goal: as list of pairs (prog, fmla)
-# goal_conc(goal) is conclusion
-# goal_prem(goal) are premises of goals
+
+
+
+# instrument(...) instruments the transition system with history variables of
+# certain transition variables used in the liveness property statement
+#   goal: a list of pairs (prog, fmla)
+#       goal_conc(goal) is conclusion
+#       goal_prem(goal) are premises of goals
 # 
-# sorted_tasks, tasks: 
-# triggers: 
-#   contain auxilliary relations we put into to the ivy ranking tactic
-#   work_needed, work_progress, etc.
+#   sorted_tasks:
+#   tasks: 
+#   triggers: 
+#       contain auxilliary relations we put into to the ivy ranking tactic
+#       work_needed, work_progress, etc.
 #
 
 
@@ -55,7 +60,8 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
     rdefsyms = set(ilu.symbols_ast(rdef)) # free symbols in rdef
     rdefargs = wp.args[0].args # args in lhs
 
-    print('--- definitions')
+    print("instrument --------------- ")
+    print(' definitions')
     print('rdefsyms: ', rdefsyms)
     print('rdefargs: ', rdefargs)
     print('rdef: ', rdef)
@@ -222,5 +228,5 @@ def infer(prover, goal, sorted_tasks, triggers, tasks):
                     ('react_r',rdef),
                 ]
 
-                # Convert to VMT without Array encoding (does not return)
-                ivy_vmt.check_isolate(tagged_dfns = tds, use_array_encoding=True)
+                # Convert to TDL using Array encoding (does not return)
+                ivy_tdl.check_isolate(tagged_dfns = tds, use_array_encoding=True)
