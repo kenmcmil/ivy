@@ -95,6 +95,8 @@ module isolate unbounded_queue with time = {
                 definition work_needed(X) = pending(X) & X <= _X
                 definition work_invar = pending(_X)
                 definition work_progress = trying.now
+                definition work_init = sending.now
+                definition work_conclude = receiving.now
                 definition work_helpful = true
             }
             showgoals
