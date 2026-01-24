@@ -168,6 +168,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         get_aux_defn('work_helpful',tasks)
         get_aux_defn('work_start',triggers)
         get_aux_defn('work_witness',tasks)
+        get_aux_defn('work_init',tasks)
+        get_aux_defn('work_conclude',tasks)
         
         not_all_done_preds = []
         not_all_was_done_preds = []

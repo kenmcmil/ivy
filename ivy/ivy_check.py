@@ -8,7 +8,7 @@ from . import ivy_utils as utl
 from . import ivy_logic_utils as lut
 from . import ivy_logic as lg
 from . import ivy_utils as iu
-from . import ivy_ui
+#from . import ivy_ui
 from . import ivy_module as im
 from . import ivy_alpha
 from . import ivy_art
@@ -76,23 +76,23 @@ def show_counterexample(ag,state,bmc_res):
         state.universe = universe
     gui_art(other_art)
 
-def gui_art(other_art):
-    from . import tk_ui as ui
+#def gui_art(other_art):
+#    from . import tk_ui as ui
 #    iu.set_parameters({'mode':'induction'})
 #    iu.set_parameters({'ui':'cti'})
     gui = ui.new_ui()
-    if ivy_ui.default_ui.get() == "art":
-        print ("initializers: {}".format(im.module.initializers))
-        other_art = ivy_art.AnalysisGraph()
-        other_art.add_initial_state()
-        if 'initialize' in im.module.actions:
-            init_action = im.module.actions['initialize']
-            print ("initialize: {}".format(init_action))
-            ag.execute(init_action, None, None, 'initialize')
-    agui = gui.add(other_art)
-    gui.tk.update_idletasks() # so that dialog is on top of main window
-    gui.tk.mainloop()
-    exit(1)
+#if ivy_ui.default_ui.get() == "art":
+#        print ("initializers: {}".format(im.module.initializers))
+#        other_art = ivy_art.AnalysisGraph()
+#        other_art.add_initial_state()
+#        if 'initialize' in im.module.actions:
+#            init_action = im.module.actions['initialize']
+#            print ("initialize: {}".format(init_action))
+#            ag.execute(init_action, None, None, 'initialize')
+#    agui = gui.add(other_art)
+#    gui.tk.update_idletasks() # so that dialog is on top of main window
+#    gui.tk.mainloop()
+#    exit(1)
 
     
 def check_conjectures(kind,msg,ag,state):
@@ -390,7 +390,8 @@ def check_fcs_in_state(mod,ag,post,fcs):
             handler.is_cti = (lut.formula_to_clauses(ff.lf.formula) if isinstance(ff,ConjChecker)
                               else None)
             if not opt_trace.get():
-                gui_art(handler)
+                pass
+#    gui_art(handler)
             else:
                 print(str(handler))
             exit(0)
