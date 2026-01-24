@@ -74,6 +74,20 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
         qdefsyms = set(ilu.symbols_ast(qdef))
         qdefargs = wc.args[0].args
 
+    # init conditions (work_init -> .p history variable)
+    # work_init tracks a subformula in the p predicate in the "globally p -> eventually q" part of the liveness property
+    # that needs to be observed at small-step boundaries
+    wi = tasks[sfx].get('work_init', None)
+    ppred = None
+    pdef = None
+    pdefsyms = set()
+    pdefargs = ()
+    if wi is not None:
+        ppred = ilg.Symbol('.p', wi.args[0].rep.sort)
+        pdef = wi.args[1]
+        pdefsyms = set(ilu.symbols_ast(pdef))
+        pdefargs = wi.args[0].args
+
     print("instrument --------------- ")
     print(' definitions')
     print('rdefsyms: ', rdefsyms)
@@ -83,6 +97,10 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
         print('qdefsyms: ', qdefsyms)
         print('qdefargs: ', qdefargs)
         print('qdef: ', qdef)
+    if wi is not None:
+        print('pdefsyms: ', pdefsyms)
+        print('pdefargs: ', pdefargs)
+        print('pdef: ', pdef)
     print('-----')
 
     defn_deps = defaultdict(list)
@@ -143,6 +161,18 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
             asgn = AssignAction(qpred(*qdefargs), ilg.Or(qpred(*qdefargs), qdef)) # .q := .q | work_conclude
             post_events.append(asgn)
 
+        # Update .p when work_init symbols are modified
+        # Note that here the big-step encoding for p is a bit different from q and r.
+        # For q and r, we simply remember whether "at one big step in the past, small-step q/r happened"
+        # For p, we need to remember whether (1) at one big step in the past, small-step p happened, and
+        # (2) after p happened, q did not happen.
+        if ppred is not None and len(set(pdefsyms).intersection(mods)) > 0:
+            print('updating .p')
+            p1 = ilg.Or(ppred(*pdefargs), pdef)
+            p2 = ilg.Not(ilg.Or(qpred(*qdefargs), qdef))
+            asgn = AssignAction(ppred(*pdefargs), ilg.And(p1, p2)) # .p := .p | work_init
+            post_events.append(asgn)
+
         res =  iact.prefix_action(res,pre_events)
         res =  iact.postfix_action(res,post_events)
         stmt.copy_formals(res) # HACK: This shouldn't be needed
@@ -157,6 +187,8 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
             init_actions = [AssignAction(rpred(*rdefargs), ilg.Or())] # .r := false
             if qpred is not None:
                 init_actions.append(AssignAction(qpred(*qdefargs), ilg.Or())) # .q := false
+            if ppred is not None:
+                init_actions.append(AssignAction(ppred(*pdefargs), ilg.Or())) # .p := false
             return iact.prefix_action(stmt, init_actions)
         else:
             return stmt
@@ -173,6 +205,8 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
     init_actions = [AssignAction(rpred(*rdefargs), ilg.Or())] # .r := false
     if qpred is not None:
         init_actions.append(AssignAction(qpred(*qdefargs), ilg.Or())) # .q := false
+    if ppred is not None:
+        init_actions.append(AssignAction(ppred(*pdefargs), ilg.Or())) # .p := false
     model.init = iact.prefix_action(model.init, init_actions)
     model.bindings = [b.clone([b.action.clone([instr_stmt_toplevel(b.action.stmt,b.action.labels, b.name)])])
                       for b in model.bindings]
@@ -192,6 +226,8 @@ def instrument(prover, goal, sorted_tasks, triggers, tasks):
     prems = list(ipr.goal_prems(goal)) + [ivy_ast.ConstantDecl(rpred)]
     if qpred is not None:
         prems.append(ivy_ast.ConstantDecl(qpred))
+    if ppred is not None:
+        prems.append(ivy_ast.ConstantDecl(ppred))
     non_temporal_prems = [x for x in prems if not (hasattr(x,'temporal') and x.temporal)]
     goal = ipr.clone_goal(goal,non_temporal_prems,conc)
 
@@ -270,6 +306,22 @@ def infer(prover, goal, sorted_tasks, triggers, tasks):
                         # Substitute the predicate symbol with .q in q
                         q = lu.substitute(q, {wc_body: qpred_hist(*wc.args[0].args)})
                         print(f'Substituted {wc_body} with .q in q: {q}')
+                # Handle work_init: if present, substitute work_init predicate with .p in p formula
+                # .p records the history of the liveness assumption
+                wi = tasks[sfx].get('work_init', None)
+                if wi is not None:
+                    wi_sym = wi.args[0].rep 
+                    wi_body = wi.args[1]
+                    ppred_hist = ilg.Symbol('.p', wi.args[0].rep.sort)
+                    # Similar to above, find symbol in p that matches work_init's body and substitute with .p
+                    wi_body_syms = list(ilu.symbols_ast(wi_body))
+                    if len(wi_body_syms) == 1 and ilg.is_app(wi_body) and len(wi_body.args) == 0:
+                        # work_init is a nullary predicate as well
+                        wi_pred_sym = wi_body_syms[0]
+                        # Substitute predicate with .p
+                        p = lu.substitute(p, {wi_body: ppred_hist(*wi.args[0].args)})
+                        print(f"Substituted {wi_body} with .p in p: {p}")
+
 
                 ppred = ilg.Symbol('.p',work_start.defines().sort)
                 pdef = ilg.Definition(ppred(*work_start.lhs().args),p)
