@@ -492,7 +492,8 @@ def destr_asgn_val(lhs,fmlas):
         lval,new_clauses,mutated = destr_asgn_val(mut,fmlas)
     else:
         nondet = mut_n.suffix("_nd").skolem()
-        new_clauses = (mk_assign_clauses(mut_n,nondet(*sym_placeholders(mut_n))))
+#        new_clauses = (mk_assign_clauses(mut_n,nondet(*sym_placeholders(mut_n))))
+        new_clauses = (mk_assign_clauses(mut,nondet(*mut.args)))
         lval = nondet(*mut.args)
         mutated = mut_n
 
