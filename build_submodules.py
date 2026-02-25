@@ -46,7 +46,7 @@ def build_z3():
     cwd = os.getcwd()
 
     if not os.path.exists('submodules/z3'):
-        print("submodules/z3 not found. try 'git submodule update; git submodule update'")
+        print("submodules/z3 not found. try 'git submodule init; git submodule update'")
         exit(1)
 
     os.chdir('submodules/z3')

@@ -16,7 +16,7 @@ from . import ivy_proof
 from . import ivy_trace
 from . import ivy_solver as slvr
 
-from ivy.z3 import simplify, is_func_decl, DatatypeSortRef
+from z3 import simplify, is_func_decl, DatatypeSortRef
 import tempfile
 import subprocess
 from collections import defaultdict

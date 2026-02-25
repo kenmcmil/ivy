@@ -10,7 +10,7 @@ from typing import List, Union, Tuple, Optional, Dict, Iterator, \
     Callable, Any, Set, TypeVar, Generic, Iterable, Mapping, cast
 from typing import Protocol
 from . import mypyvy_utils as utils
-import ivy.z3 as z3
+import z3
 
 OrderedSet = utils.OrderedSet
 Token = ply.lex.LexToken

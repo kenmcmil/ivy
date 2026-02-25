@@ -7,7 +7,7 @@ Conversion of logic.py's formulas to Z3 and some tests using Z3
 Ideally, this file should be the only file to improt the z3 module
 """
 
-import ivy.z3 as z3
+import z3
 
 
 from .logic import (Var, Const, Apply, Eq, Ite, Not, And, Or, Implies,

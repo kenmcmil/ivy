@@ -1,4 +1,4 @@
-from ivy.z3 import *
+from z3 import *
 
 def _is_algebraic(ctx, a):
     return Z3_is_algebraic_number(ctx.ref(), a)
