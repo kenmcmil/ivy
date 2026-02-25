@@ -29,7 +29,7 @@ also work on other Debian-based distributions.
 
 ### Prerequisites
 
-    $ sudo apt-get install python3 python3-pip g++ cmake python3-ply python3-pygraphviz git python3-tk tix pkg-config libssl-dev libreadline-dev
+    $ sudo apt-get install python3 python3-pip python3-venv g++ cmake python3-ply python3-pygraphviz git python3-tk tix pkg-config libssl-dev libreadline-dev
 
 ### Install IVy
 
@@ -46,17 +46,16 @@ Optional, recommended: use a python virtal environment:
 
     $ python3 -m venv venv
     $ . venv/bin/activate
-    $ export PATH=`pwd`/venv/bin
 
 If you want to use a particular version of Z3, you can instal it like this:
 
-    $ pip3 install z3-solver==X.Y
+    $ sudo pip3 install z3-solver==X.Y
 
 where X.Y is the version. 
 
 Install into your local Python like this:
 
-    $ pip3 install .
+    $ sudo pip3 install .
 
 If Z3 is not already installed in your Python, you'll get the latest
 version in PyPI.
@@ -64,7 +63,7 @@ version in PyPI.
 If you want to run from the source tree for development purposes, do
 this instead:
 
-    $ pip3 install -e .
+    $ sudo pip3 install -e .
 
 Optionally, build the experimental Ivy v2.0 compiler:
 

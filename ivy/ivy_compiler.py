@@ -2237,9 +2237,9 @@ def ivy_compile(decls,mod=None,create_isolate=True,**kwargs):
                 pp,pc = iu.parent_child_name(p)
                 if pp == 'this' or iu.compose_names(pp,'global') not in im.module.attributes:
                     global_objects.append(ivy_ast.Atom(p,[]))
-        for iso in list(im.module.isolates.values()):
-            iso.args += tuple(global_objects)
-            iso.with_args += len(global_objects)
+        for isol in list(im.module.isolates.values()):
+            isol.args += tuple(global_objects)
+            isol.with_args += len(global_objects)
                     
 
         create_sort_order(mod)
