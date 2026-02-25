@@ -229,11 +229,12 @@ def is_solver_op(name):
 
 
 def clear():
+    z3.z3._main_ctx = z3.Context()
     global z3_sorts, z3_predicates, z3_constants, z3_functions, z3_enums
     z3_sorts = dict()
     z3_predicates = {ivy_logic.equals : my_eq}
-    z3_constants = dict()
     z3_functions = dict()
+    z3_constants = dict()
     z3_enums = dict()
 
 clear()    

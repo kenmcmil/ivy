@@ -55,9 +55,9 @@ def build_z3():
 
 
     if platform.system() != 'Windows':
-        cmd = 'python scripts/mk_make.py --python --prefix {} --pypkgdir {}/'.format(cwd,ivydir)
+        cmd = 'python3 scripts/mk_make.py --python --prefix {} --pypkgdir {}/'.format(cwd,ivydir)
     else:
-        cmd = 'python scripts/mk_make.py -x --python --pypkgdir {}/'.format(ivydir)
+        cmd = 'python3 scripts/mk_make.py -x --python --pypkgdir {}/'.format(ivydir)
 
     do_cmd(cmd)
 

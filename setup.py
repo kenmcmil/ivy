@@ -22,7 +22,7 @@ except:
 
 setup(name='ms_ivy',
       python_requires='>=3.10',
-      version='1.8.25',
+      version='1.8.26',
       description='IVy verification tool',
       long_description=long_description,
       url='https://github.com/microsoft/ivy',
