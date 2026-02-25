@@ -24,7 +24,7 @@ There are two ways to install ivy:
 <a name="linuxnotes"></a> Installation from source on Linux
 ===========================================================
 
-This describes the steps need to install IVy on Ubuntu 20.04. This may
+This describes the steps need to install IVy on Ubuntu 22.04. This may
 also work on other Debian-based distributions.
 
 ### Prerequisites
@@ -48,21 +48,27 @@ Optional, recommended: use a python virtal environment:
     $ . venv/bin/activate
     $ export PATH=`pwd`/venv/bin
 
+If you want to use a particular version of Z3, you can instal it like this:
+
+    $ pip3 install z3-solver==X.Y
+
+where X.Y is the version. 
+
 Install into your local Python like this:
 
-    $ pip3 install z3-solver
     $ pip3 install .
 
-Instead of installing z3 with pip, as above, you can install it manually in your python environment. You can ask pip to install a specific version of z3 with `z3-solver==X.Y`. 
+If Z3 is not already installed in your Python, you'll get the latest
+version in PyPI.
+
 If you want to run from the source tree for development purposes, do
 this instead:
 
-    $ pip3 install z3-solver
     $ pip3 install -e .
 
 Optionally, build the experimental Ivy v2.0 compiler:
 
-    $ python build_v2_compiler.py
+    $ python3 build_v2_compiler.py
 
 ### Run
 
