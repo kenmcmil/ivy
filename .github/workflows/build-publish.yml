@@ -35,7 +35,7 @@ jobs:
       - run: python3 build_submodules.py
       - run: python3 setup.py bdist_wheel --plat-name manylinux1_x86_64
       - run: ls -l dist
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: ivy-wheels
           path: dist/
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
 
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: ivy-wheels
           path: dist/
