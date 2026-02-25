@@ -1,0 +1,74 @@
+#lang ivy1.7
+
+# This file shows a simple example of module in Ivy, which is caleld
+# an 'isolate'. The interface of the isolate includes an exported type `t`
+# and an exported action `ub`. The function of `ub` is to output a value
+# that is an upper bound on all input values seen thus far.
+#
+# The specification part of the isolate includes a state predicate
+# `seen` that record the input values seen thus far. It is initialized so
+# that `seen(X)` is false for all `X`. The specification has a precondition,
+# requiring that input values are non-negative, and postcondition ensuring
+# that the output is greater than or equal to all seen values.
+#
+# The implementation has a state variable storing the maximum of all
+# values seen to date, initially zero. It updates `max` and returns
+# it.
+
+# In this version, we use the eager abstraction method to reduce the
+# problem to finite-state model checking using the ABC tool.  The
+# abstraction makes use of a set of axiom schemata for equality and
+# total orders, included in the Ivy standard library. We include
+# these as follows:
+
+include mc_schemata
+
+# In the implementation of the isoalte, we instantiate the total order
+# schemata for type `t`. These can be prooved because `t` is
+# interpreted as `int`. Finally `attribute method=mc` tells Ivy to
+# is model checking as the default tactic for this isolate.
+
+isolate foo = {
+    type t
+    action ub(x:t) returns (y:t)
+
+    specification {
+	relation seen(X:t)
+#	property forall X:t. ~(X<X)
+	after init {
+	    seen(X) := false;
+	}
+	before ub {
+	    require x >= 0;
+	}
+	after ub {
+	    seen(x) := true;
+ 	    ensure seen(X) -> X <= y;
+	}
+    }
+
+    implementation {
+	var max : t
+	after init {
+	    max := 0;
+	}
+	implement ub {
+	    max := x if x > max else max;
+	    y := max;
+	}
+        instantiate total_order_schemata(t)
+    }
+    attribute method=mc
+}
+
+# Ivy is a synchronous reactive langauge. This means that an Ivy
+# program executes only in response to input from its environment, and
+# execution of actions is atomic. For an action to be called from the
+# environment, we have to export it. Here, we export `foo.ub`.
+
+export foo.ub
+
+# We can verify this program using the following command:
+#
+# $ ivy_check modular_mc.ivy
+#

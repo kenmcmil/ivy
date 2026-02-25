@@ -1,0 +1,91 @@
+#lang ivy1.7
+
+# This example shows a simple use of a tactic to perform manual
+# quantifier instantiation in order to keep the VC in the decidable
+# fragment.
+
+# We have types for employees and employee ids.
+
+type emp
+type id
+
+# These maps describe the employee database.
+
+function eid(X:emp) : id
+relation mgr(X:emp,Y:emp)
+individual ceo : emp
+
+# We assume that employee ids are unique, that each employee has
+# exactly one manager, and the only the CEO is her own manager.
+# Notice that axiom `mgr_total` is tagged `explicit`.
+
+axiom eid(X) = eid(Y) -> X = Y
+axiom mgr(X,Y) & mgr(X,Z) -> Y = Z
+explicit axiom [mgr_total] exists Y. mgr(X,Y)
+axiom mgr(X,X) -> X = ceo 
+
+# Our program scans the database and constructs a map `mid` that gives
+# the manager id for each employee. For this we use state variables
+# `scanned` (giving the set of scanned managers) and the `mid` map.
+
+relation scanned(Y:emp)
+function mid(X:emp) : id
+
+# This is our scanning algorithm. Initially, no nodes are scanned.
+
+after init {
+    scanned(Y) := false;
+}
+
+# The scanning action updates `mid` to reflect the managees of
+# employee `y`.
+
+action scan(y:emp) = {
+    scanned(y) := true;
+    mid(X) := eid(y) if mgr(X,y) else mid(X);
+}
+
+# It maintains this invariant
+
+invariant mgr(X,Y) & scanned(Y) -> mid(X) = eid(Y)
+
+# Now we have an action that gets the manager id for emplyee `x`. It
+# requires that all employees have been scanned.  It ensures that the
+# returned manager id is different from the id of employee x, unless x
+# is the ceo. Of course, we could also prove that in fact `res` is the
+# id of the manager of `x`, but this is just an exercise to show
+# manual quantifier instantiation.
+#
+# The ensure condition doesn't verify without the `proof` clause, go
+# through because we have marked the `mgr_total` axiom as explicit, so
+# it is not used by default (try it to see, using the `trace=true`
+# option to see a counterexample trace).  On the other hand, if we
+# take away `explicit`, the fragment checker complains that the VC is
+# not in the decidable fragment because of the quantifier alternation
+# in that axiom (try this as well).  To fix this, we apply a tactic in
+# the proof.  This brings in the assumption `mgr_total` for only for
+# `X=x`. Since `x` is a logical constant here, there is no quantifier
+# alternation, so the fragment checker does not complain. With this
+# assumption, Z3 can prove the VC.
+#
+# To see this, use the following command:
+#
+#     $ ivy_check tactic.ivy
+#
+# This example is a bit contrived because it's actually tricky to get outside
+# of the FAU fragment. For example, without the axiom `mgr(X,X) -> X = ceo`
+# we would still be decidable, even with the quantifier alternation. 
+#
+
+action get_mid(x:emp) returns (res:id) = {
+    require forall Y. scanned(Y);
+    res := mid(x);
+    ensure x ~= ceo -> res ~= eid(x)
+    proof {
+        assume mgr_total with X = x
+    }
+}
+
+export scan
+export get_mid
+

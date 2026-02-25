@@ -1,0 +1,277 @@
+#lang ivy1.7
+
+#
+# QUIC Packet decoder
+# -------------------
+#
+# The action `quic_decode` takes a byte stream 
+
+include byte_stream
+include quic_frame
+
+# Parser state
+# ------------
+
+# A `decoder` object encodes the state of a decoder. It includes the
+# input buffer `b`, represented as a byte stream, the position
+# `p` of the next token to be read and a flag `ok` that is false
+# if a syntax error has occurred. The decoder state has an action
+# `consume` that consumes a given number of bytes, storing them in a field `tok`.
+# The `at_end` action returns true if the decoder is at the end of the buffer.
+
+object decoder = {
+    type this = struct {
+	b : stream_data,
+	p : stream_pos,
+	ok : bool
+    }
+
+    action make(s:stream_data) returns (st:decoder) = {
+        st.b := s;
+        st.p := s.begin;
+        st.ok := true;
+    }
+
+    action get_byte(st:decoder) returns (st:decoder,res:byte) = {
+        if p < b.end {
+            res := b.value(p);
+            p := p.next
+        }
+    }
+
+    action consume(st:decoder,x:stream_pos) returns(st:decoder,res:stream_data) = {
+        if ok & p + x < b.end {
+            res := stream_data.segment(p,p+x);
+            p := p + x;
+        } else {
+            ok := false;
+        }
+    }	
+
+    action remaining(st:decoder) returns (res:stream_pos) = {
+        res := b.end - p;
+    }
+}
+
+# Variable length integers
+# ========================
+#
+# Decode variable length integers.
+
+
+object var_int = {
+    # Get the length of a variable-length ingteger in a packet.
+
+    action get_len(pkt:stream_data,pos:stream_pos) returns (len:stream_pos) = {
+        var code := bvand(0xc0,pkt.value(pos));
+        if code = 0 {
+            len := 1;
+        } else if code = 0x40 {
+            len := 2;
+        } else if code = 0x80 {
+            len := 4;
+        } else {
+            len := 8;
+        }
+    }
+}
+
+module int_codecs(ty) = {
+
+    action decode_fixed_int_drop2(st:decoder, len:stream_pos, drop2 : bool)
+    returns (st:decoder, res:ty) = {
+        if st.remaining >= len  {
+            res := 0;
+            pos := st.p;
+            while st.p < pos + len {
+                var byte := pkt.value(st.p);
+                if drop2 & st.p = pos {
+                    byte := bvand(byte,0x3f);
+                };
+                val := 256 * val + bfe[0][7](byte);
+                st.p := st.p.next;
+            }
+        } else {
+            st.ok := false;
+        }
+
+    }
+
+    action decode_fixed_int(st:decoder, len:stream_pos) returns (st:decoder, res:ty) = {
+        (st,res) := decode_fixed_int_drop2(st,len,false);
+    }
+
+    action decode_var_int(st:decoder) returns (st:decoder, res:ty) = {
+        if st.remaining > 0 {
+            var len := var_int.get_len(st.b,st.p);
+            (st,res) := decode_fixed_int_drop2(st,len,true);
+        } else {
+            st.ok := false;
+        }
+    }
+}
+
+object stream_id = { ...
+    instantiate int_codecs(this)
+}
+
+object stream_pos = { ...
+    instantiate int_codecs(this)
+}
+
+object pkt_num = { ...
+    instantiate int_codecs(this)
+}
+
+object microsecs = { ...
+    instantiate int_codecs(this)
+}
+
+object error_code = { ...
+    instantiate int_codecs(this)
+}
+
+object cid_seq = { ...
+    instantiate int_codecs(this)
+}
+
+object frame = { ...
+    action decode(st:decoder) returns (st:decoder,res:frame) = {
+        var frame_type : byte;
+        (st,frame_type) := st.get_byte;
+        if st.ok {
+            if frame_type >= 0x08 & frame_type <= 0x0f {
+                var f : frame.stream;
+                f.off := bvand(frame_type,0x04) ~= 0;
+                f.len := bvand(frame_type,0x02) ~= 0;
+                f.fin := bvand(frame_type,0x01) ~= 0;
+                (st,f.id) := stream_id.decode_var_int(st);
+                f.offset := 0;
+                if f.off {
+                    (st,f.offset) := stream_pos.decode_var_int(st);
+                };
+                if f.len {
+                    (st,f.length) := stream_pos.decode_var_int(st);
+                } else {
+                    f.length := st.remaining;
+                };
+                (st,f.data) := st.consume(f.length);
+                res := f;
+            } else if frame_type = 0x02 {
+                var f : frame.ack;
+                (st,f.largest) := pkt_num.decode_var_int(st);
+                (st,f.ack_delay) := microsecs.decode_var_int(st);
+                var blocks := stream_pos.decode_var_int(st) + 1;
+                var idx : stream_pos := 0;
+                while idx < blocks {
+                    var b : ack.block;
+                    if idx ~= 0 { # no gap for first block
+                        b.gap := 0;
+                    } else {
+                        (st,b.gap) := pkt_num.decode_var_int(st);
+                    };
+                    (st,b.blocks) := pkt_num.decode_var_int(st);
+                    f.ack_blocks := f.ack_blocks.append(b);
+                    idx := idx.next;
+                };
+                res := f;
+            } else if frame_type = 0x04 {
+                var f : frame.reset_stream;
+                (st,f.id) := stream_id.decode_var_int(st);
+                (st,f.err_code) := error_code.decode_var_int(st);
+                (st,f.final_offset) := stream_pos.decode_var_int(st);
+                res := f;
+            } else if frame_type = 0x12 {
+                var f : frame.max_stream_id;
+                (st,f.id) := stream_id.decode_var_int(st);
+                res := f;
+            } else if frame_type = 0x1c {
+                var f : frame.connection_close;
+                (st,f.err_code) := error_code.decode_var_int(st);
+                (st,f.frame_type) := error_code.decode_var_int(st);
+                (st,f.reason_phrase_length) := stream_pos.decode_var_int(st);
+                (st,f.reason_phrase) := st.consume(f.reason_phrase_length);
+                res := f;
+            } else if frame_type = 0x11 {
+                var f : frame.max_stream_data;
+                (st,f.id) := stream_id.decode_var_int(st);
+                (st,f.pos) := stream_pos.decode_var_int(st);
+                res := f;
+            } else if frame_type = 0x16 {
+                var f : frame.stream_id_blocked;
+                (st,f.id) := stream_id.decode_var_int(st);
+                res := f;
+            } else if frame_type = 0x06 {
+                var f : frame.crypto;
+                (st,f.offset) := stream_pos.decode_var_int(st);
+                (st,f.length) := stream_pos.decode_var_int(st);
+                (st,f.data) := st.consume(f.length);
+                res := f;
+            } else if frame_type = 0x01 {
+                var f : frame.ping;
+                res := f;
+            } else if frame_type = 0x1d {
+                var f : frame.application_close;
+                (st,f.err_code) := error_code.decode_var_int(st);
+                (st,f.reason_phrase_length) := stream_pos.decode_var_int(st);
+                (st,f.reason_phrase) := st.consume(f.reason_phrase_length);
+                res := f;
+            } else if frame_type = 0x18 {
+                var f : frame.new_connection_id;
+                (st,f.seq_num) := cid_seq.decode_var_int(st);
+                (st,f.retire_prior_to) := cid_seq.decode_var_int(st);
+                (st,f.length) := stream_pos.decode_var_int(st);
+                (st,f.scid) := cid.decode_fixed_int(st,f.length);
+                (st,f.token) := reset_token.decode_fixed_int(st,16);
+                res := f;
+            } else if frame_type = 0x1a {
+                var f : frame.path_challenge;
+                (st,f.data) := st.consume(8);
+                res := f;
+            } else if frame_type = 0x1b {
+                var f : frame.path_response;
+                (st,f.data) := st.consume(8);
+                res := f;
+            } else if frame_type = 0x07 {
+                var f : frame.new_token;
+                (st,f.length) := stream_pos.decode_var_int(st);
+                (st,f.data) := st.consume(f.length);
+                res := f;
+            } else if frame_type = 0x10 { 
+                var f : frame.max_data;
+                (st,f.pos) := stream_pos.decode_var_int(st);
+                res := f;
+            } else if frame_type = 0x15 {
+                var f : frame.stream_blocked;
+                (st,f.id) := stream_id.decode_var_int(st);
+                (st,f.pos) := stream_pos.decode_var_int(st);
+                res := f;
+            } else if frame_type = 0x05 {
+                var f : frame.stop_sending;
+                (st,f.id) := stream_id.decode_var_int(st);
+                (st,f.err_code) := error_code.decode_var_int(st);
+                res := f;
+            } else if frame_type = 0x14 {
+                var f : frame.max_data;
+                (st,f.pos) := stream_pos.decode_var_int(st);
+                res := f;
+            } else {
+                st.ok := false;
+            }
+        }
+    }
+}
+
+include serdes
+
+instance frame_serdes : serdes(frame,stream_data,quic_ser,quic_deser)
+
+export action test(f:frame) = {
+    var bytes := frame_serdes.to_bytes(f);
+    var st := decoder.make(bytes);
+    var res : frame;
+    (st,res) := frame.decode(st);
+    assert st.ok;
+    assert st.remaining = 0;
+    assert res = f;
+}

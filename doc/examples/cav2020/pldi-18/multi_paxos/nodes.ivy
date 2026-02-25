@@ -1,0 +1,83 @@
+#lang ivy1.7
+
+# This file contains a specification and implementation of node sets with a majority test.
+# 
+
+include order
+include collections
+
+instance node : iterable
+
+# node sets
+
+isolate nset = {
+
+    type this
+    alias t = this
+    type index
+
+    relation member(N:node, S:t)
+    relation majority(S:t)
+
+    action emptyset returns (s:t) 
+    action add(s:t, n : node) returns (s:t) 
+
+    specification {
+        after emptyset {
+            ensure ~member(N, s)
+        }
+
+        after add {
+            ensure member(N,s) <-> (member(N , old s) | N = n)
+        }
+    }
+
+    private {
+        invariant [majorities_intersect]
+            (majority(S) & majority(T)) -> exists N. member(N,S) & member(N,T)
+    }
+
+    implementation {
+        interpret index -> int
+        function card(S:t) : index
+        instance arr : rel_array(index,node)
+        destructor repr(N:nset) : arr
+        individual all : nset
+	
+        definition member(N,S) = exists I. 0 <= I & I < repr(S).end & repr(S).value_is(I, N)
+        definition majority(S) = card(S) + card(S) > card(all)
+
+        after init {
+            card(S) := 0;
+            repr(all) := arr.empty;
+            var i := node.iter.create(0);
+            while ~i.is_end
+                invariant (forall N.~(member(N,S) & member(N,T))) ->
+                              card(S) + card(T) <= card(all)
+                invariant node.iter.done(N,i) <-> member(N,all)
+                invariant (forall N.(node.iter.done(N,i) -> member(N,S))) -> card(S) >= card(all)
+                invariant card(S) >= 0
+            {
+                repr(all) := repr(all).append(i.val);
+        	card(S) := card(S) + 1 if member(i.val, S) else card(S);
+                i := i.next
+            };
+        }
+
+        implement emptyset {
+            repr(s) := arr.empty()
+        }
+
+        implement add {
+            if ~member(n, s) {
+                repr(s) := repr(s).append(n)
+            }
+        }
+    }
+
+    # Using the Z3 macro finder feature is generally a good idea, but occasionally
+    # it goes crazy. For some reason it does here, so we turn it off.
+    
+    attribute macro_finder = false
+
+} with node

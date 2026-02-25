@@ -1,0 +1,38 @@
+#lang ivy1.7
+
+# ---
+# layout: page
+# title: QUIC connection protocol
+# ---
+
+# This document describes the wire specification of QUIC.  It is based
+# on the following IETF drafts:
+#
+# 1.[QUIC: A UDP-Based Multiplexed and Secure Transport
+# draft-ietf-quic-transport-14](https://tools.ietf.org/html/draft-ietf-quic-transport-14).
+#
+# 2. [Using Transport Layer Security (TLS) to Secure QUIC
+# draft-ietf-quic-tls-14](https://tools.ietf.org/html/draft-ietf-quic-tls-14).
+#
+# The protocol is modeled as a stack of layers. Each layer
+# is associated with one or more event types. The highest-level
+# events in this stack correspond to the sending and receiving of
+# application data, while the lowest-level events correspond
+# to UDP datagrams. The layers in the stack are, from top to bottom:
+#
+# - The application
+# - The TLS handshake protocol
+# - The QUIC frame protocol
+# - The QUIC packet protocol
+# - QUIC packet protection
+# - UDP
+#
+# References
+# ==========
+
+include quic_types
+include quic_application
+include quic_security
+include quic_frame
+include quic_packet
+

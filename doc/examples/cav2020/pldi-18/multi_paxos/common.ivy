@@ -1,0 +1,28 @@
+#lang ivy1.7
+
+# base types
+instance round : unbounded_sequence
+individual none : round
+instance inst : unbounded_sequence # instances, i.e. positions in the log
+type value
+# no_ops to fill holes in the log
+individual no_op : value
+
+type vote_struct = struct {
+   maxr : round,
+   maxv : value
+}
+
+individual not_a_vote : vote_struct
+
+isolate not_a_vote_def = {
+    invariant not_a_vote.maxr = none
+    after init { not_a_vote.maxr := none } }
+
+instance votemap : array(inst, vote_struct)
+
+function maxvote(M:votemap, I:inst) : vote_struct
+
+isolate maxvote_def = {
+    definition maxvote(M,I) = votemap.value(M,I) if I < votemap.end(M) else not_a_vote
+}

@@ -1,0 +1,96 @@
+#lang ivy2.0
+
+# This example shows the use of the 'borrow' pattern by the version 2
+# compiler in order to prevent copying. 
+
+# We define a structure that we want to operate on in-place
+
+type foo = struct {
+    a : bool,
+    b : bool
+}
+    
+# A map whose range type is the struct
+
+var f(X:bool) : foo
+
+# An operator on the struct. Notice the `x` is both an input and an
+# output of `g`, meaning we want to operator on `x` in place.
+
+action g(x:foo) returns(x:foo) = {
+    x.a := ~x.a;
+}
+
+# Action `a` has side effect on function f, operating on `f(x)` in
+# place. First we borrow the value in variable `b`. Then we operator
+# on `b`, then we give the value back. 
+
+action a(x:bool) = {
+
+    var b := f(x);
+    b := g(b);
+    f(x) := b;
+}
+
+# To compile the code, use this command:
+#
+#     $ ivyc borrow.ivy
+#
+# This generates files borrow.h and borrow.cpp, then uses the C++
+# compiler to produce a (rather useless) binary. In borrow.cpp you
+# will see the C++ implementation of action `a`:
+#
+#     void a  (const __bool &x) {
+#         foo b;
+#         {
+#             foo &b = f (x);
+#             g (b);
+#         }
+#     }
+#   
+# Notice that the local variable `b` has been shadowed by a new `b`
+# that holds a non-const reference to `f(x)`. The compiler has
+# determined that this is safe because there is no expression that
+# aliases with `f(x)` up until the value of `b` is assigned back to
+# `f(x)`. The function `g` then takes `b` as a by-reference argument
+# and updates it in place (because of the linear use of `b`). Here is
+# the C++ code for `g`:
+#
+#     void g  (foo &x) {
+#         x . a = ! x . a;
+#     }
+#
+# Notice that `x` is a non-const reference parameter. The result of
+# this is that `f(x)` is modified in place. The representation of `f`
+# could be either a vector or a hash table (this is determined
+# dynamically) but either way, this is safe, as the compiler knows that
+# the reference to `f(x)` remains valid.
+#
+# On the other hand, consider the following C++ code:
+#
+#     foo b = f[x];
+#     b = g(b);
+#     f[x] = b
+#
+# where `f` is an `std::vector` or `std::unorderd_map` (i.e., a hash table)/
+# The C++ can't apply the above optimization, because it doesn't know the
+# semantics of the `[]` and `=` operators, and because it cannot do the
+# necessary alias analysis. Ivy's value semantics and its high-level data model
+# make possible optimizations that are not possible in langauges like C++ and Java,
+# which put responsibility for managing references on the programmer. 
+#
+# This optimization could be accomplished in Rust with some help from
+# the programmer.  The difference in Ivy is that value semantics is
+# maintained and the optimization is performed by the compiler based
+# on a static analysis.
+#
+# Using these optimizations, it is possible to write pure functional
+# code in Ivy that does not incur overhead of deep copying of
+# structures. For example, the V2 Ivy compiler is written in Ivy and
+# is pure except for initialization of global tables, error reporting
+# and I/O.
+
+
+
+
+
