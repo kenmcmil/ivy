@@ -1,0 +1,171 @@
+#lang ivy1.8
+
+include order
+
+module signal0 = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# This version has a value we can reference in formulas.
+
+module signal1(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+instance nat : unbounded_sequence
+
+module isolate in_order_retire(nat) with nat = {
+
+    # create a work element with a givem logical time (must be ordered)
+    action send(lt:nat)
+
+    # complete a work element (may be out of order)
+    action complete(lt:nat)
+
+    # retire a completed work item (in order of creation)
+    action recv
+
+    specification {
+        # work that has been created
+        var begun(X:nat) : bool
+        # work that has been completed
+        var completed(X:nat) : bool
+        # work that has been retired
+        var done(X:nat) : bool
+
+        after init {
+            begun(X) := false;
+            completed(X) := false;
+            done(X) := false;
+        }
+
+        # signal indicates trying to retire a work item
+        instance trying : signal0
+
+        # Work items must be created in order
+        before send {
+            require begun(X) -> X < lt;
+        }
+
+        # TRICKY: proof requires that we set 'begun' after predq. That
+        # means we need to do this in an "after" monitor.
+
+        after send {
+            begun(lt) := true;
+        }
+
+        # We can complete a created work item without regard to order
+        before complete {
+            require begun(lt) & ~completed(lt);
+            completed(lt) := true;
+        }
+
+        # When retireing, we find the first work element
+        # that is begun but not done and, if completed, we mark it done, else
+        # we do nothing.
+        before recv {
+            trying.raise;
+            if some x:nat. ~done(x) & begun(x) minimizing x {
+                if completed(x) {
+                    done(x) := true;
+                }
+            }
+        }
+
+    }
+    
+    # Here are some more useful invariants.  We state the obvious
+    # (that there are no nats less than 0) to help the model
+    # checker, without adding 0 to the list of skolems.
+
+    invariant begun(X) & done(X) & Y < X & begun(Y) -> done(Y)
+    invariant completed(X) -> begun(X)
+    invariant done(X) -> begun(X) & completed(X)
+    invariant ~(X:nat < 0)
+    
+    # Now we can prove liveness with the model checker. We concretize the
+    # following individuals:
+    #
+    # - X is the cell of the element to be retired
+    # - Y is the predecessor of this cell
+    #
+    # The idea of the proof is this: we know by induction on time that
+    # cell Y is eventually done. Since there are no qualified cells
+    # between Y and X (an invariant stated above) we know the next
+    # cell to be processed is X. 
+
+    explicit temporal property [lemma1]
+    (□ ◇ trying.now) &
+    (forall X. □ begun(X) -> ◇ completed(X))
+    ->
+    forall X. (□ begun(X) -> ◇ done(X))
+    proof {
+        showgoals
+        tactic skolemizenp
+        tactic l2s_auto5 with {
+
+            # How to decode the following predicates:
+            # - work_created is R, the reached set, in the notes
+            # - work_needed is delta, the ranking
+            # - work_invar is phi, the liveness invariant
+            # - work_progress is r, the justice condition(s)
+            # - work_helpful is psi, the stable scheduler
+            #
+            # The number in square brackets are subscripts.
+            # Notice we actually have an R_i for each delta_i,
+            # rather that a single R to prove finiteness of all
+            # the delta_i. In this case R_i is the same for both
+            # rankings.
+
+            definition foo(X) = completed(X)
+
+            definition work_created[0](X) = begun(X)
+            definition work_needed[0](X) = X <= _X & begun(X) & ~completed(X)
+            definition work_invar[0] = begun(_X) & ~done(_X)
+            definition work_progress[0](X) = foo(X)
+            definition work_helpful[0](X) = X <= _X & begun(X) & ~completed(X)
+            
+            definition work_created[1](X) = begun(X)
+            definition work_needed[1](X) = X <= _X & begun(X) & ~done(X)
+            definition work_invar[1] = begun(_X) & ~done(_X)
+            definition work_progress[1] = trying.now
+            definition work_helpful[1] = forall X. ~(X <= _X & begun(X) & ~completed(X))
+            
+            # These invariants are rho, the safety invariant in
+            # the notes.  The invariants used to prove safety
+            # (above) are also included in rho.
+
+        }
+    }
+
+}
+
+instance q : in_order_retire(nat)
+
+export q.send
+export q.complete
+export q.recv
+
+

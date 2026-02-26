@@ -1,0 +1,152 @@
+#lang ivy1.7
+
+include queue
+include timeout
+include seqnum
+
+
+# This is a very simple reliable non-duplicating tansport service
+# built on top of an unreliable, duplicating service.
+
+# The parameteres of the module are:
+#
+# - lower: the unreliable, duplicating service
+# - packet: the type of packerts to be delivered
+# - id: the type of host identifiers (network addresses)
+
+module transport(lower,packet,id) = {
+
+    # We supply two actions:
+    #
+    # - send: send a packet from src to dst
+    # - recv: callback when receiving packet at dst
+    #
+
+    action send(src:id,dst:id,pkt:packet)
+    action recv(dst:id,pkt:packet)
+
+    # The specification says that we receive a packet just once, so
+    # long as it is sent just once.
+
+    specification {
+	relation sent(D:id,P:packet)
+
+	after init {
+	    sent(D,P) := false
+	}
+
+	before send {
+	    assert ~sent(dst,pkt);
+	    sent(dst,pkt) := true
+	}
+
+	before recv {
+	    assert sent(dst,pkt);
+	    sent(dst,pkt) := false
+	}
+    }
+
+    implementation {
+	
+	# The implementation uses sequence numbers to detect packet
+	# loss. The sequence number type is defined in `seqnum.ivy`.
+
+	instance seq_num : sequence_numbers
+
+	# Messages can be of two types: `msg_t` and `ack_t`.
+
+	type mtype = {msg_t, ack_t}
+
+	# Here is the format of a message
+
+	object net_msg = {
+	    type t = struct {
+		mty : mtype,
+		src : id,
+		num : seq_num.t,
+		payload : packet
+	    }
+	}
+
+	# Create one outgoing message queue for each host
+	# and a timout for each queue. The message queue type
+	# is defined in `queue.ivy`.
+
+	object host(me:id) = {
+	    instance mq(D:id) : message_queue(net_msg,seq_num)
+
+	    # Create one retry timer for each host. The `timeout_sec`
+	    # module is defined in the standard library.
+
+	    instance timer(D:id) : timeout_sec
+
+	    # Keep track of the latest sequence number sent and received
+	    # on each channel.
+
+	    individual send_seq(S:id) : seq_num.t
+	    individual recv_seq(S:id) : seq_num.t
+
+	    after init {
+		recv_seq(S) := 0;
+		send_seq(S) := 0;
+	    }
+
+	    # Implementations of interface actions.
+
+	    # On send, we create a new message containing the
+	    # packet and the next sequence number. We add the
+	    # message to the sending queue and transmit it for
+	    # the first time on the lower network service.
+
+	    implement send(dst:id,pkt:packet) {
+		local msg : net_msg.t, seq : seq_num.t {
+		    net_msg.mty(msg) := msg_t;
+		    net_msg.src(msg) := me;
+		    net_msg.num(msg) := send_seq(dst);
+		    net_msg.payload(msg) := pkt;
+		    send_seq(dst) := seq_num.next(send_seq(dst));
+		    call mq(dst).enqueue(msg);
+		    call lower.send(me,dst,msg)
+		}
+	    }
+
+	    # Receiving a message is the most complicated. First, we send
+	    # an ack. Then, if the sequence number is correct, we call the
+	    # application layer action determined by the message type.
+
+	    implement lower.recv(msg:net_msg.t) {
+		local src:id,seq:seq_num.t {
+		    seq := net_msg.num(msg);
+		    src := net_msg.src(msg);
+		    if seq <= recv_seq(src) & net_msg.mty(msg) ~= ack_t  {
+			local ack : net_msg.t {
+			    net_msg.mty(ack) := ack_t;
+			    net_msg.src(ack) := me;
+			    net_msg.num(ack) := seq;
+			    call lower.send(me,src,ack)
+			}
+		    };
+		    if net_msg.mty(msg) = ack_t {
+			call mq(src).delete_all(seq)
+		    }
+		    else if seq = recv_seq(src) {
+			recv_seq(src) := recv_seq(src).next;
+			call recv(me,net_msg.payload(msg))
+		    }
+		}
+	    }
+
+	    # If an outgoing channel times out and the queue is not empty,
+	    # we pick an arbitrary message in the queue and retransmit it.
+
+	    implement timer.timeout(dst:id) {
+		if ~mq(dst).empty {
+		    call lower.send(me,dst,mq(me).pick_one)
+		}
+	    }
+	}
+    }
+
+    isolate iso = this with lower, id
+
+}

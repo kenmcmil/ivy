@@ -1,0 +1,398 @@
+#lang ivy1.8
+
+# This is an implememtation of Lamport's distributed mutual excluson
+# (DME) algorithm.
+
+# We start by including libraries. In this case we need two:
+#
+# - The `network` library for network communication
+# - The `timout` library to implement a periodic timer
+# - The `numbers` library to get some basic ordered datatypes
+
+include network
+include timeout
+include order
+
+# Next comes the `global` section. This contaions the declarations
+# of any resources that are used in common by all processes. These
+# usually include:
+#
+# - Data types
+# - Services, such as network services
+# - Immutable global parameters, such as netwrok addresses
+#
+# We can't have mutable global variables, since processes, being
+# distributed, don't have shared memory.
+#
+
+module time = {
+    
+    
+    type this
+    alias t = this
+
+    # returns a timestamp greater than x
+    action next(x:t) returns (y:t)
+
+    function max2(X:t,Y:t) = Y if X <= Y else X
+
+    object spec = {
+
+	instantiate totally_ordered_with_zero(t)
+
+	after next {
+	    assert x < y;
+            assert ~(x < Z & Z < y)
+	}
+    }
+
+    object impl = {
+
+	interpret t -> nat
+
+	implement next {
+	    y := x + 1
+	}
+    }
+
+    isolate iso = impl,spec
+    
+    # When testing, use the integer implementation.
+
+    attribute test = impl
+
+}
+
+
+global {
+
+    # Our first global data type is the type of host identifiers.  We
+    # will have one process for each value of this type. Host
+    # identifiers take on integer values from `0` to `node_max`, where
+    # `node_max` is implicitly defined here as global parameter whose
+    # value can be selected a run time.
+    
+    instance host_id : iterable
+    alias node_max = host_id.max
+    # object host_id = {
+    #     type this = {0..2}
+    #     action next(x:host_id) returns (x:host_id) = {x := x + 1;}
+    # }
+    # alias node_max = 2
+    
+    # Since we have three kinds of messages in our protocol, we define
+    # an enumerated type for the message kind with three symbolic
+    # values.
+    
+    type msg_kind = {request,reply,release}
+
+    # In addition, we use a sequence type to represent timestamps. The
+    # `unbounded_sequence` template in the `order` library gives a
+    # discrete totally ordered type with a least value `0` and a
+    # `next` operator.
+
+    instance timestamp : time
+
+    # Our messages are stucts with three fields: the message kind and the
+    # host identifier of the sender and a timestamp. We order messages
+    # according to the timestamp. This ordering is useful in the proof
+    # of correctness. 
+    
+    object msg_t = {
+        type this = struct {
+            kind : msg_kind,
+            ts : timestamp
+        }
+        definition (M1:msg_t < M2:msg_t) = ts(M1) < ts(M2)
+        constructor cons(K:msg_kind,T:timestamp) : this
+    }
+
+    # Finally we instantiate a network service via which our processes
+    # will communicate. Here, `tcp.net` is a template defined in the
+    # `network` library that we included above. The template takes one
+    # parameter, which is the type of messages to be sent. Our instance
+    # of this template is an object called `net`. 
+
+    # instance net : tcp_ordered.net(msg_t)
+}
+
+
+# After the global section, we introduce some distribtued processes.
+# A process with parameters has one instance for each value of the
+# parameters. In this case we have one parameter of type `host_id`
+# which means there is one process in the system for each value of
+# `host_id` in the range `0..node_max`. The parameter is named `self`.
+# This means that the process can refer to its own host identifier by
+# the name `self`.
+
+process node(self:host_id) = {
+
+    # A process usually begins by declaring an *interface*. This
+    # consists of a set of *actions* that are either calls in from the
+    # environment (exports) or calls out to the environment (imports).
+
+    # Our action is an export `request_cs`, which our client uses to
+    # request to enter the critical section. It takes no parameters.
+    
+    export action request_cs
+
+    # This is fake. Tells us when to check if we can enter he critical
+    # section.
+    
+    export action check_cs
+
+    # Our second action is an import `enter_cs`. This is a callback to
+    # the client indicating that is is safe to enter the critical
+    # section.
+
+    import action enter_cs
+
+    # Our third action is an export `exit_cs`. This is called by the
+    # client when exiting the critical section, indicating it is safe to
+    # another process to enter.
+
+    export action exit_cs
+
+    # Next we declare per-process objects. Each process needs a socket
+    # on network `net` in order to communicate. We declare the socket
+    # here. The socket `sock` is an instance of the template `socket`
+    # declared by the network service `net`. 
+    
+    trusted isolate overlay = {
+        action unicast(msg:msg_t,dest:host_id)
+        action broadcast(msg:msg_t)
+        export action recv(msg:msg_t,src:host_id)
+        
+        common {
+            specification {
+                relation sent(S:host_id,D:host_id,M:msg_t)
+                after init {
+                    sent(S,D,M) := false;
+                }
+                before unicast(self:host_id,msg:msg_t,dest:host_id) {
+                    require sent(self,dest,M) -> M < msg;
+                    sent(self,dest,msg) := true;
+                }
+                before broadcast(self:host_id,msg:msg_t) {
+                    require sent(self,D,M) & D ~= self -> M < msg;
+                    sent(self,D,msg) := (D ~= self) | sent(self,D,msg);
+                }
+                before recv(self:host_id,msg:msg_t,src:host_id) {
+                    require sent(src,self,msg);
+                    require sent(S,self,M) -> ~(M < msg);
+                    sent(src,self,msg) := false;
+                }
+            }
+        }
+        # implementation {
+        #     instance sock : net.socket
+        # }
+    }    
+
+    # We also declare some local (per-process) types and variables. 
+    
+    type state_t = {idle,waiting,critical}
+    var state : state_t
+
+    # We also keep track of the current timestamp
+
+    var ts : timestamp
+
+    # Each process maintains a 'request queue', which a map from host_ids to
+    # the timestamp of the current request from that host, or `0` if none.
+
+    var request_ts(X:host_id) : timestamp
+
+    # This map records the highest timestamp of a reply received from
+    # each host.
+
+    var reply_ts(X:host_id) : timestamp
+
+    # Having declared our variables, we initialize them. Code in an
+    # `after init` section runs on initialization of the process. You
+    # aren't allowed to do much here, just assign values to local
+    # variables.
+    
+    after init {
+        state := idle;
+        ts := 0;
+        request_ts(X) := 0;
+        reply_ts(X) := 0;
+    }
+
+    # Now we come to the implementation code. Here we implement our
+    # exported actions, if any, and also any callback actions from the
+    # services we use (i.e., actions that these services import from
+    # us).
+
+    # We start with the `request_cs` action. This builds a request message,
+    # appends it to the request queue, and broadcasts it. The action `broadcast` is
+    # a local action (i.e., a subroutine) and is defined later.
+
+    implement request_cs {
+        ts := ts.next;
+        var outgoing : msg_t;
+        outgoing.kind := request;
+        outgoing.ts := ts;
+        overlay.broadcast(outgoing);
+        request_ts(self) := ts;
+        state := waiting;
+    }
+
+    # Next we implement the callback `recv` from our network socket,
+    # indicating we have an incoming message. This is called
+    # `sock.recv`. It gives us as input parameters the network address
+    # of the sending socket (not useful here) and the incoming
+    # message.
+
+    
+    implement overlay.recv(incoming:msg_t,src:host_id) {
+
+        # show_incoming(incoming);
+
+        # First, we update out timestamp to reflect the incoming
+        # message.
+
+        ts := timestamp.max2(incoming.ts,ts).next;
+
+        # We partly construct an outgoing message
+
+        var outgoing : msg_t;
+        outgoing.ts := ts;
+        
+        # What we do here depends on the kind of message.
+
+        # When we receive a `request` message, we put it on our request queue,
+        # and return a reply message to the sender.
+
+        if incoming.kind = request {
+            outgoing.kind := reply;
+            request_ts(src) := incoming.ts;
+            overlay.unicast(outgoing,src);
+        }
+        
+        # When we receive a `release` message, the sender's request
+        # must be at the head of our queue.  We dequeue it.
+
+        else if incoming.kind = release {
+            request_ts(src) := 0;
+        }
+
+        # On a reply, we update the highest timestamp received from
+        # this sender. Because of in-order devlivery, the timestamps
+        # are received in increasing order, so the incoming one must
+        # be the greatest so far.
+        
+        else if incoming.kind = reply {
+            reply_ts(src) := incoming.ts;
+        }
+
+    }                    
+
+    implement check_cs {
+        # Having proceesed the incoming message, we might now be able
+        # to enter our critical section. We do this if:
+        #
+        # - We are in the waiting state
+        # - Our request message has the least timestamp in lexicographic order
+        # - Every host has sent a reply later than our request
+        
+        assume state = waiting;
+        assume forall X. X = self | request_ts(X) = 0 | lexord(request_ts(self),self,request_ts(X),X);
+        assume forall X. X = self | reply_ts(X) > request_ts(self);
+        {
+            state := critical;
+            enter_cs;
+        }
+
+    }
+
+    implement exit_cs {
+        ts := ts.next;
+        request_ts(self) := 0;
+        var outgoing : msg_t;
+        outgoing.ts := ts;
+        outgoing.kind := release;
+        overlay.broadcast(outgoing);
+        state := idle;
+    }
+
+    # At the end, we have definitions of internal (non-interface)
+    # actions (in other words, subroutines) and functions (i.e., pure
+    # functions).
+
+    # This function takes two timestamp-host_id pairs and determines
+    # whether (X1,Y1) < (X2,Y2) in lexicogrpahic order.
+
+    function lexord(X1:timestamp,Y1:host_id,X2:timestamp,Y2:host_id) =
+        X1 < X2 | X1 = X2 & Y1 < Y2
+
+    import action show_incoming(incoming:msg_t)
+
+    specification {
+        
+        var client_state : state_t
+
+        after init {
+            client_state := idle;
+        }
+        
+        before request_cs {
+            require client_state = idle;
+            client_state := waiting;
+        }
+        
+        before enter_cs {
+            # require client_state = waiting;
+            # require node.client_state(X) ~= critical;
+
+            client_state := critical;
+        }
+        
+        before exit_cs {
+            require client_state = critical;
+            client_state := idle;
+        }
+
+        # Auxiliary invariants to help in the proof
+        
+        invariant overlay.sent(self,Y,msg_t.cons(K,T)) -> T <= ts
+        invariant node(Y).request_ts(self) <= ts
+        invariant node(Y).reply_ts(self) <= ts
+        # invariant request_ts(Y) <= ts
+        # invariant reply_ts(Y) <= ts
+        invariant ~overlay.sent(self,self,M)
+        invariant overlay.sent(self,Y,msg_t.cons(release,T)) & state ~= idle -> T < request_ts(self)
+        invariant overlay.sent(self,Y,msg_t.cons(K,T)) -> node(Y).request_ts(self) <= T
+        invariant overlay.sent(self,Y,msg_t.cons(K,T)) -> node(Y).reply_ts(self) <= T
+        invariant overlay.sent(self,Y,msg_t.cons(request,T)) & state ~= idle -> T <= request_ts(self)
+        invariant state ~= idle -> (overlay.sent(self,Y,msg_t.cons(request,request_ts(self)))
+                                    | node(Y).request_ts(self) = request_ts(self))
+        invariant state ~= idle -> request_ts(self) ~= 0
+        invariant state = critical & Y ~= self -> request_ts(self) < reply_ts(Y)
+        invariant state = critical & Y ~= self
+                 -> (request_ts(Y) = 0 | lexord(request_ts(self),self,request_ts(Y),Y))
+        # This also works in place of the above
+        # invariant state = critical & node(Y).state ~= idle & Y ~= self
+        #          -> lexord(request_ts(self),self,node(Y).request_ts(Y),Y)
+
+        # # The interface state matches the implementaiton state
+        # invariant client_state = state
+
+        # # No two processes are in critical state
+        invariant node.state(X) = critical & node.state(Y) = critical -> X=Y
+
+    }
+}
+
+proof [this] {
+    # showgoals
+    tactic flatten_structs
+    # showgoals
+    tactic macro_expand
+    # showgoals
+    # tactic mypyvy
+    # tactic duoai
+    # tactic vmt
+    # tactic sorry
+}

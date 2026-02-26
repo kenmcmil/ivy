@@ -1,0 +1,1659 @@
+
+Isolate index.iso:
+
+    The following definitions are used:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 54: index.impl.def14
+
+    The following properties are to be checked:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4 ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1 ... PASS
+
+Isolate m:
+
+    The following properties are to be checked:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1  [assumed]
+
+    The inductive invariant consists of the following conjectures:
+        examp2.ivy: line 129: m.invar95
+
+    The following action implementations are present:
+        examp2.ivy: line 120: implementation of m.poll
+        examp2.ivy: line 26: implementation of m.q1.receiving.raise
+        examp2.ivy: line 55: implementation of m.q1.recv
+        examp2.ivy: line 49: implementation of m.q1.send
+        examp2.ivy: line 26: implementation of m.q1.sending.raise
+        examp2.ivy: line 10: implementation of m.q1.trying.raise
+        examp2.ivy: line 26: implementation of m.q2.receiving.raise
+        examp2.ivy: line 55: implementation of m.q2.recv
+        examp2.ivy: line 49: implementation of m.q2.send
+        examp2.ivy: line 26: implementation of m.q2.sending.raise
+        examp2.ivy: line 10: implementation of m.q2.trying.raise
+
+    The following action monitors are present:
+        examp2.ivy: line 32: monitor of m.q1.receiving.raise
+        examp2.ivy: line 74: monitor of m.q1.recv
+        examp2.ivy: line 68: monitor of m.q1.send
+        examp2.ivy: line 32: monitor of m.q1.sending.raise
+        examp2.ivy: line 15: monitor of m.q1.trying.raise
+        examp2.ivy: line 32: monitor of m.q2.receiving.raise
+        examp2.ivy: line 74: monitor of m.q2.recv
+        examp2.ivy: line 68: monitor of m.q2.send
+        examp2.ivy: line 32: monitor of m.q2.sending.raise
+        examp2.ivy: line 15: monitor of m.q2.trying.raise
+
+    The following initializers are present:
+        examp2.ivy: line 61: m.q1.init[after85]
+        examp2.ivy: line 31: m.q1.receiving.init[after82]
+        examp2.ivy: line 31: m.q1.sending.init[after82]
+        examp2.ivy: line 14: m.q1.trying.init[after79]
+        examp2.ivy: line 61: m.q2.init[after85]
+        examp2.ivy: line 31: m.q2.receiving.init[after82]
+        examp2.ivy: line 31: m.q2.sending.init[after82]
+        examp2.ivy: line 14: m.q2.trying.init[after79]
+
+    Initialization must establish the invariant
+        examp2.ivy: line 129: m.invar95 ... PASS
+
+    The following set of external actions must preserve the invariant:
+        (internal) ext:m.poll
+            examp2.ivy: line 129: m.invar95 ... PASS
+        (internal) ext:m.q1.send
+            examp2.ivy: line 129: m.invar95 ... FAIL
+        (internal) ext:m.q2.recv
+            examp2.ivy: line 129: m.invar95 ... PASS
+
+    The following program assertions are treated as assumptions:
+        in action m.q1.send when called from the environment:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 69: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q1.recv when called from m.poll:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q2.send when called from m.poll:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q2.recv when called from the environment:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.poll when called from the environment:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+
+    The following program assertions are treated as guarantees:
+        in action m.q2.send when called from m.poll:
+            examp2.ivy: line 69: guarantee ... PASS
+
+    The following temporal property is being proved:
+
+        examp2.ivy: line 143: m.prop102 ... 
+examp2.ivy: line 151: Proof goals:
+
+theorem [m.prop102] {
+    individual _X : time
+    property [m.q1.lpq] □ ⬦ m.q1.trying.now -> □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)
+    property [m.q2.lpq] □ ⬦ m.q2.trying.now -> □ (m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)
+    property 
+let
+    ext:m.q1.send = action(fml:x:time){{assume ~m.q2.receiving.now; assume ~m.q2.sending.now; assume ~m.q2.trying.now; assume ~m.q1.receiving.now; assume ~m.q1.sending.now; assume ~m.q1.trying.now; {assume [m.q1.asrt86] m.q1.pending(T) -> T < fml:x; m.q1.pending(fml:x) := true; call ext:m.q1.sending.raise(fml:x)}; assume ~m.q2.receiving.now; assume ~m.q2.sending.now; assume ~m.q2.trying.now; assume ~m.q1.receiving.now; assume ~m.q1.sending.now; assume ~m.q1.trying.now}}
+    m.q1.recv = action returns(fml:x:time,fml:ok:Boolean){{{call m.q1.trying.raise; fml:ok := false; if some loc:y. m.q1.pending(loc:y) minimizing loc:y {fml:ok := true; fml:x := loc:y; m.q1.pending(fml:x) := false; call m.q1.receiving.raise(fml:x)}}; assume ~m.q1.receiving.now; assume ~m.q1.sending.now; assume ~m.q1.trying.now}}
+    ext:m.q1.sending.raise = action(fml:val:time){{m.q1.sending.value := fml:val; m.q1.sending.now := true; m.q1.sending.now := false}}
+    m.q1.trying.raise = action{{m.q1.trying.now := true; m.q1.trying.now := false}}
+    m.q1.receiving.raise = action(fml:val:time){{m.q1.receiving.value := fml:val; m.q1.receiving.now := true; m.q1.receiving.now := false}}
+    m.q2.send = action(fml:x:time){{{assert [m.q2.asrt86] m.q2.pending(T) -> T < fml:x; m.q2.pending(fml:x) := true; call m.q2.sending.raise(fml:x)}; assume ~m.q2.receiving.now; assume ~m.q2.sending.now; assume ~m.q2.trying.now}}
+    ext:m.q2.recv = action returns(fml:x:time,fml:ok:Boolean){{assume ~m.q2.receiving.now; assume ~m.q2.sending.now; assume ~m.q2.trying.now; assume ~m.q1.receiving.now; assume ~m.q1.sending.now; assume ~m.q1.trying.now; {call ext:m.q2.trying.raise; fml:ok := false; if some loc:y. m.q2.pending(loc:y) minimizing loc:y {fml:ok := true; fml:x := loc:y; m.q2.pending(fml:x) := false; call ext:m.q2.receiving.raise(fml:x)}}; assume ~m.q2.receiving.now; assume ~m.q2.sending.now; assume ~m.q2.trying.now; assume ~m.q1.receiving.now; assume ~m.q1.sending.now; assume ~m.q1.trying.now}}
+    m.q2.sending.raise = action(fml:val:time){{m.q2.sending.value := fml:val; m.q2.sending.now := true; m.q2.sending.now := false}}
+    ext:m.q2.trying.raise = action{{m.q2.trying.now := true; m.q2.trying.now := false}}
+    ext:m.q2.receiving.raise = action(fml:val:time){{m.q2.receiving.value := fml:val; m.q2.receiving.now := true; m.q2.receiving.now := false}}
+    ext:m.poll = action{{assume ~m.q2.receiving.now; assume ~m.q2.sending.now; assume ~m.q2.trying.now; assume ~m.q1.receiving.now; assume ~m.q1.sending.now; assume ~m.q1.trying.now; local loc:x {local loc:ok {call loc:x,loc:ok := m.q1.recv; if loc:ok {call m.q2.send(loc:x)}}}; assume ~m.q2.receiving.now; assume ~m.q2.sending.now; assume ~m.q2.trying.now; assume ~m.q1.receiving.now; assume ~m.q1.sending.now; assume ~m.q1.trying.now}}
+in
+    {m.q1.pending(X) := false; m.q1.sending.now := false; m.q1.trying.now := false; m.q1.receiving.now := false; m.q2.pending(X) := false; m.q2.sending.now := false; m.q2.trying.now := false; m.q2.receiving.now := false}
+    while *
+    {
+        diverge;
+        assume [m.q2.receiving.invar84] ~m.q2.receiving.now;
+        assume [m.q2.sending.invar84] ~m.q2.sending.now;
+        assume [m.q2.trying.invar81] ~m.q2.trying.now;
+        assume [m.q1.receiving.invar84] ~m.q1.receiving.now;
+        assume [m.q1.sending.invar84] ~m.q1.sending.now;
+        assume [m.q1.trying.invar81] ~m.q1.trying.now;
+        assume [m.invar95] forall Y,X. (m.q1.pending(X) & m.q2.pending(Y)) -> X > Y;
+        call one of {ext:m.poll,ext:m.q1.send,ext:m.q2.recv}
+    }
+ |= (□ ⬦ m.q1.trying.now & □ ⬦ m.q2.trying.now) -> □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)
+}
+
+
+--- l2s_auto invariants ---
+invariant [l2s_needed_when_start] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) -> (true -> true)
+invariant [l2s_created] true -> true
+invariant [l2s_needed_are_frozen] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & ~l2s_waiting) -> (~(true -> false) -> true)
+invariant [l2s_needed_were_frozen] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & l2s_saved) -> (~($l2s_s . true -> false) -> true)
+invariant [l2s_needed_implies_created] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) -> (true -> true)
+invariant [l2s_work_preserved] (l2s_saved & ($l2s_s . true -> false)) -> (true -> false)
+invariant [l2s_progress_made] (l2s_saved & ~($l2s_w . (m.q1.receiving.now & m.q1.receiving.value = _X))) -> (~($l2s_s . true -> false) & (true -> false))
+invariant [l2s_progress_invar] ($l2s_init . □ ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)) -> □ ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)
+invariant [l2s_not_all_done] (~(($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) | ~(⬦ (m.q1.receiving.now & m.q1.receiving.value = _X) -> (true -> false)))
+invariant [l2s_globally_0] globally[](eventually[](m.q1.trying.now))
+invariant [l2s_globally_1] ~⬦ m.q1.trying.now -> ~l2s_waiting | ~($l2s_w . m.q1.trying.now)
+invariant [l2s_globally_2] $l2s_init . ⬦ m.q1.trying.now
+invariant [l2s_globally_3] globally[](eventually[](m.q2.trying.now))
+invariant [l2s_globally_4] ~⬦ m.q2.trying.now -> ~l2s_waiting | ~($l2s_w . m.q2.trying.now)
+invariant [l2s_globally_5] $l2s_init . ⬦ m.q2.trying.now
+invariant [l2s_globally_6] □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X) -> ~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)))
+invariant [l2s_globally_7] $l2s_init . ~□ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)
+invariant [l2s_globally_8] ($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) | ~⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))
+invariant [l2s_globally_9] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & ~⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) -> ~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)))
+invariant [l2s_globally_10] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) -> ~⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)
+invariant [l2s_status_0] l2s_waiting | l2s_frozen | l2s_saved
+invariant [l2s_status_1] ~l2s_waiting | ~l2s_frozen
+invariant [l2s_status_2] ~l2s_waiting | ~l2s_saved
+invariant [l2s_status_3] ~l2s_frozen | ~l2s_saved
+invariant [l2s_consts_d] (l2s_d(m.q1.sending.value) & l2s_d(m.q1.receiving.value) & l2s_d(m.q2.sending.value) & l2s_d(m.q2.receiving.value) & l2s_d(_X))
+invariant [l2s_init_glob_0] ($l2s_init . □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)) -> □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)
+invariant [l2s_init_glob_1] ($l2s_init . □ (m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)) -> □ (m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)
+invariant [l2s_init_glob_2] $l2s_init X:time. □ (m.q1.sending.now & m.q1.sending.value = X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = X)(X) -> □ (m.q1.sending.now & m.q1.sending.value = X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = X)
+invariant [l2s_init_glob_3] $l2s_init X:time. □ (m.q2.sending.now & m.q2.sending.value = X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = X)(X) -> □ (m.q2.sending.now & m.q2.sending.value = X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = X)
+invariant [neg_prop_init] ~(((($l2s_init . □ ⬦ m.q1.trying.now) -> ($l2s_init . □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & (($l2s_init . □ ⬦ m.q2.trying.now) -> ($l2s_init . □ (m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (($l2s_init . □ ⬦ m.q1.trying.now) -> (forall X. $l2s_init X:time. □ (m.q1.sending.now & m.q1.sending.value = X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = X)(X))) & (($l2s_init . □ ⬦ m.q2.trying.now) -> (forall X. $l2s_init X:time. □ (m.q2.sending.now & m.q2.sending.value = X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = X)(X)))) -> ((($l2s_init . □ ⬦ m.q1.trying.now) & ($l2s_init . □ ⬦ m.q2.trying.now)) -> ($l2s_init . □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))
+---------------------------
+reset_w:
+$l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ~($l2s_g . ~(m.q2.receiving.now & m.q2.receiving.value = _X))) := (~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~($l2s_g . ~(m.q2.receiving.now & m.q2.receiving.value = _X))) & ~($l2s_g . (m.q1.sending.now & m.q1.sending.value = _X) -> ~($l2s_g . ~(m.q2.receiving.now & m.q2.receiving.value = _X))))
+$l2s_w . m.q2.trying.now := (~m.q2.trying.now & ~($l2s_g . ~m.q2.trying.now))
+$l2s_w . (m.q1.receiving.now & m.q1.receiving.value = _X) := (~(m.q1.receiving.now & m.q1.receiving.value = _X) & ~($l2s_g . ~(m.q1.receiving.now & m.q1.receiving.value = _X)))
+$l2s_w . m.q1.trying.now := (~m.q1.trying.now & ~($l2s_g . ~m.q1.trying.now))
+
+examp2.ivy: line 161: Proof goals:
+
+theorem [m.prop102] {
+    individual _X : time
+    property 
+let
+    ext:m.q1.send = action(fml:x:time){{l2s_d(fml:x) := true; assume l2s_g_8 -> ~m.q1.trying.now; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_9 -> ~m.q2.trying.now; assume l2s_g_4 -> ~l2s_g_8; assume l2s_g_5 -> ~l2s_g_9; assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume l2s_g_3 -> ~l2s_g_6; assume ~(~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & l2s_w_3); assume ~(m.q2.trying.now & l2s_w_2); assume ~((m.q1.receiving.now & m.q1.receiving.value = _X) & l2s_w_0); assume ~(m.q1.trying.now & l2s_w_1); {{assume ~m.q2.receiving.now}; {assume ~m.q2.sending.now}; {assume ~m.q2.trying.now}; {assume ~m.q1.receiving.now}; {assume ~m.q1.sending.now}; {assume ~m.q1.trying.now}; {{{assume [m.q1.asrt86] m.q1.pending(T) -> T < fml:x}; {m.q1.pending(fml:x) := true}; {call ext:m.q1.sending.raise(fml:x)}}}; {assume ~m.q2.receiving.now}; {assume ~m.q2.sending.now}; {assume ~m.q2.trying.now}; {assume ~m.q1.receiving.now}; {assume ~m.q1.sending.now}; {assume ~m.q1.trying.now}}; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true}}
+    m.q1.recv = action returns(fml:x:time,fml:ok:Boolean){{{{{{call m.q1.trying.raise}; {fml:ok := false}; {if some loc:y. m.q1.pending(loc:y) minimizing loc:y {{{fml:ok := true}; {fml:x := loc:y}; {m.q1.pending(fml:x) := false}; {call m.q1.receiving.raise(fml:x)}}}}}}; {assume ~m.q1.receiving.now}; {assume ~m.q1.sending.now}; {assume ~m.q1.trying.now}}}}
+    ext:m.q1.sending.raise = action(fml:val:time){{{{{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_10(V0) := l2s_g_10(V0); l2s_g_10(V0) := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6)) -> ~l2s_g_0; assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_1; assume forall V0. _old_l2s_g_10(V0) -> l2s_g_10(V0); assume forall V0. (~_old_l2s_g_10(V0) & ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0))) -> ~l2s_g_10(V0); m.q1.sending.value := fml:val}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); l2s_w_3 := (l2s_w_3 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_10(V0) := l2s_g_10(V0); l2s_g_10(V0) := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6)) -> ~l2s_g_0; assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_1; assume forall V0. _old_l2s_g_10(V0) -> l2s_g_10(V0); assume forall V0. (~_old_l2s_g_10(V0) & ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0))) -> ~l2s_g_10(V0); m.q1.sending.now := true}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); l2s_w_3 := (l2s_w_3 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_10(V0) := l2s_g_10(V0); l2s_g_10(V0) := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6)) -> ~l2s_g_0; assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_1; assume forall V0. _old_l2s_g_10(V0) -> l2s_g_10(V0); assume forall V0. (~_old_l2s_g_10(V0) & ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0))) -> ~l2s_g_10(V0); m.q1.sending.now := false}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); l2s_w_3 := (l2s_w_3 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1)}}}}
+    m.q1.trying.raise = action{{{{{_old_l2s_g_4 := l2s_g_4; l2s_g_4 := *; _old_l2s_g_8 := l2s_g_8; l2s_g_8 := *; assume _old_l2s_g_4 -> l2s_g_4; assume (~_old_l2s_g_4 & ~l2s_g_8) -> ~l2s_g_4; assume _old_l2s_g_8 -> l2s_g_8; assume (~_old_l2s_g_8 & ~m.q1.trying.now) -> ~l2s_g_8; m.q1.trying.now := true}; assume l2s_g_4 -> ~l2s_g_8; assume l2s_g_8 -> ~m.q1.trying.now; l2s_w_1 := (l2s_w_1 & ~m.q1.trying.now & ~l2s_g_8)}; {{_old_l2s_g_4 := l2s_g_4; l2s_g_4 := *; _old_l2s_g_8 := l2s_g_8; l2s_g_8 := *; assume _old_l2s_g_4 -> l2s_g_4; assume (~_old_l2s_g_4 & ~l2s_g_8) -> ~l2s_g_4; assume _old_l2s_g_8 -> l2s_g_8; assume (~_old_l2s_g_8 & ~m.q1.trying.now) -> ~l2s_g_8; m.q1.trying.now := false}; assume l2s_g_4 -> ~l2s_g_8; assume l2s_g_8 -> ~m.q1.trying.now; l2s_w_1 := (l2s_w_1 & ~m.q1.trying.now & ~l2s_g_8)}}}}
+    m.q1.receiving.raise = action(fml:val:time){{{{{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_12(V0) := l2s_g_12(V0); l2s_g_12(V0) := *; _old_l2s_g_6 := l2s_g_6; l2s_g_6 := *; _old_l2s_g_3 := l2s_g_3; l2s_g_3 := *; _old_l2s_g_10(V0) := l2s_g_10(V0); l2s_g_10(V0) := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6)) -> ~l2s_g_0; assume forall V0. _old_l2s_g_12(V0) -> l2s_g_12(V0); assume forall V0. (~_old_l2s_g_12(V0) & ~(m.q1.receiving.now & m.q1.receiving.value = V0)) -> ~l2s_g_12(V0); assume _old_l2s_g_6 -> l2s_g_6; assume (~_old_l2s_g_6 & ~(m.q1.receiving.now & m.q1.receiving.value = _X)) -> ~l2s_g_6; assume _old_l2s_g_3 -> l2s_g_3; assume (~_old_l2s_g_3 & ~l2s_g_6) -> ~l2s_g_3; assume forall V0. _old_l2s_g_10(V0) -> l2s_g_10(V0); assume forall V0. (~_old_l2s_g_10(V0) & ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0))) -> ~l2s_g_10(V0); m.q1.receiving.value := fml:val}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_3 -> ~l2s_g_6; assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); l2s_w_0 := (l2s_w_0 & ~(m.q1.receiving.now & m.q1.receiving.value = _X) & ~l2s_g_6)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_12(V0) := l2s_g_12(V0); l2s_g_12(V0) := *; _old_l2s_g_6 := l2s_g_6; l2s_g_6 := *; _old_l2s_g_3 := l2s_g_3; l2s_g_3 := *; _old_l2s_g_10(V0) := l2s_g_10(V0); l2s_g_10(V0) := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6)) -> ~l2s_g_0; assume forall V0. _old_l2s_g_12(V0) -> l2s_g_12(V0); assume forall V0. (~_old_l2s_g_12(V0) & ~(m.q1.receiving.now & m.q1.receiving.value = V0)) -> ~l2s_g_12(V0); assume _old_l2s_g_6 -> l2s_g_6; assume (~_old_l2s_g_6 & ~(m.q1.receiving.now & m.q1.receiving.value = _X)) -> ~l2s_g_6; assume _old_l2s_g_3 -> l2s_g_3; assume (~_old_l2s_g_3 & ~l2s_g_6) -> ~l2s_g_3; assume forall V0. _old_l2s_g_10(V0) -> l2s_g_10(V0); assume forall V0. (~_old_l2s_g_10(V0) & ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0))) -> ~l2s_g_10(V0); m.q1.receiving.now := true}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_3 -> ~l2s_g_6; assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); l2s_w_0 := (l2s_w_0 & ~(m.q1.receiving.now & m.q1.receiving.value = _X) & ~l2s_g_6)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_12(V0) := l2s_g_12(V0); l2s_g_12(V0) := *; _old_l2s_g_6 := l2s_g_6; l2s_g_6 := *; _old_l2s_g_3 := l2s_g_3; l2s_g_3 := *; _old_l2s_g_10(V0) := l2s_g_10(V0); l2s_g_10(V0) := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6)) -> ~l2s_g_0; assume forall V0. _old_l2s_g_12(V0) -> l2s_g_12(V0); assume forall V0. (~_old_l2s_g_12(V0) & ~(m.q1.receiving.now & m.q1.receiving.value = V0)) -> ~l2s_g_12(V0); assume _old_l2s_g_6 -> l2s_g_6; assume (~_old_l2s_g_6 & ~(m.q1.receiving.now & m.q1.receiving.value = _X)) -> ~l2s_g_6; assume _old_l2s_g_3 -> l2s_g_3; assume (~_old_l2s_g_3 & ~l2s_g_6) -> ~l2s_g_3; assume forall V0. _old_l2s_g_10(V0) -> l2s_g_10(V0); assume forall V0. (~_old_l2s_g_10(V0) & ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0))) -> ~l2s_g_10(V0); m.q1.receiving.now := false}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_3 -> ~l2s_g_6; assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); l2s_w_0 := (l2s_w_0 & ~(m.q1.receiving.now & m.q1.receiving.value = _X) & ~l2s_g_6)}}}}
+    m.q2.send = action(fml:x:time){{{{{{assert [m.q2.asrt86] m.q2.pending(T) -> T < fml:x}; {m.q2.pending(fml:x) := true}; {call m.q2.sending.raise(fml:x)}}}; {assume ~m.q2.receiving.now}; {assume ~m.q2.sending.now}; {assume ~m.q2.trying.now}}}}
+    ext:m.q2.recv = action returns(fml:x:time,fml:ok:Boolean){{assume l2s_g_8 -> ~m.q1.trying.now; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_9 -> ~m.q2.trying.now; assume l2s_g_4 -> ~l2s_g_8; assume l2s_g_5 -> ~l2s_g_9; assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume l2s_g_3 -> ~l2s_g_6; assume ~(~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & l2s_w_3); assume ~(m.q2.trying.now & l2s_w_2); assume ~((m.q1.receiving.now & m.q1.receiving.value = _X) & l2s_w_0); assume ~(m.q1.trying.now & l2s_w_1); {{assume ~m.q2.receiving.now}; {assume ~m.q2.sending.now}; {assume ~m.q2.trying.now}; {assume ~m.q1.receiving.now}; {assume ~m.q1.sending.now}; {assume ~m.q1.trying.now}; {{{call ext:m.q2.trying.raise}; {fml:ok := false}; {if some loc:y. m.q2.pending(loc:y) minimizing loc:y {{{fml:ok := true}; {fml:x := loc:y}; {m.q2.pending(fml:x) := false}; {call ext:m.q2.receiving.raise(fml:x)}}}}}}; {assume ~m.q2.receiving.now}; {assume ~m.q2.sending.now}; {assume ~m.q2.trying.now}; {assume ~m.q1.receiving.now}; {assume ~m.q1.sending.now}; {assume ~m.q1.trying.now}}; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true}}
+    m.q2.sending.raise = action(fml:val:time){{{{{_old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_11(V0) := l2s_g_11(V0); l2s_g_11(V0) := *; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_2; assume forall V0. _old_l2s_g_11(V0) -> l2s_g_11(V0); assume forall V0. (~_old_l2s_g_11(V0) & ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))) -> ~l2s_g_11(V0); m.q2.sending.value := fml:val}; assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))}; {{_old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_11(V0) := l2s_g_11(V0); l2s_g_11(V0) := *; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_2; assume forall V0. _old_l2s_g_11(V0) -> l2s_g_11(V0); assume forall V0. (~_old_l2s_g_11(V0) & ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))) -> ~l2s_g_11(V0); m.q2.sending.now := true}; assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))}; {{_old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_11(V0) := l2s_g_11(V0); l2s_g_11(V0) := *; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_2; assume forall V0. _old_l2s_g_11(V0) -> l2s_g_11(V0); assume forall V0. (~_old_l2s_g_11(V0) & ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))) -> ~l2s_g_11(V0); m.q2.sending.now := false}; assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))}}}}
+    ext:m.q2.trying.raise = action{{{{{_old_l2s_g_5 := l2s_g_5; l2s_g_5 := *; _old_l2s_g_9 := l2s_g_9; l2s_g_9 := *; assume _old_l2s_g_5 -> l2s_g_5; assume (~_old_l2s_g_5 & ~l2s_g_9) -> ~l2s_g_5; assume _old_l2s_g_9 -> l2s_g_9; assume (~_old_l2s_g_9 & ~m.q2.trying.now) -> ~l2s_g_9; m.q2.trying.now := true}; assume l2s_g_5 -> ~l2s_g_9; assume l2s_g_9 -> ~m.q2.trying.now; l2s_w_2 := (l2s_w_2 & ~m.q2.trying.now & ~l2s_g_9)}; {{_old_l2s_g_5 := l2s_g_5; l2s_g_5 := *; _old_l2s_g_9 := l2s_g_9; l2s_g_9 := *; assume _old_l2s_g_5 -> l2s_g_5; assume (~_old_l2s_g_5 & ~l2s_g_9) -> ~l2s_g_5; assume _old_l2s_g_9 -> l2s_g_9; assume (~_old_l2s_g_9 & ~m.q2.trying.now) -> ~l2s_g_9; m.q2.trying.now := false}; assume l2s_g_5 -> ~l2s_g_9; assume l2s_g_9 -> ~m.q2.trying.now; l2s_w_2 := (l2s_w_2 & ~m.q2.trying.now & ~l2s_g_9)}}}}
+    ext:m.q2.receiving.raise = action(fml:val:time){{{{{_old_l2s_g_13(V0) := l2s_g_13(V0); l2s_g_13(V0) := *; _old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_11(V0) := l2s_g_11(V0); l2s_g_11(V0) := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_7 := l2s_g_7; l2s_g_7 := *; assume forall V0. _old_l2s_g_13(V0) -> l2s_g_13(V0); assume forall V0. (~_old_l2s_g_13(V0) & ~(m.q2.receiving.now & m.q2.receiving.value = V0)) -> ~l2s_g_13(V0); assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_2; assume forall V0. _old_l2s_g_11(V0) -> l2s_g_11(V0); assume forall V0. (~_old_l2s_g_11(V0) & ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))) -> ~l2s_g_11(V0); assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_1; assume _old_l2s_g_7 -> l2s_g_7; assume (~_old_l2s_g_7 & ~(m.q2.receiving.now & m.q2.receiving.value = _X)) -> ~l2s_g_7; m.q2.receiving.value := fml:val}; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); l2s_w_3 := (l2s_w_3 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1)}; {{_old_l2s_g_13(V0) := l2s_g_13(V0); l2s_g_13(V0) := *; _old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_11(V0) := l2s_g_11(V0); l2s_g_11(V0) := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_7 := l2s_g_7; l2s_g_7 := *; assume forall V0. _old_l2s_g_13(V0) -> l2s_g_13(V0); assume forall V0. (~_old_l2s_g_13(V0) & ~(m.q2.receiving.now & m.q2.receiving.value = V0)) -> ~l2s_g_13(V0); assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_2; assume forall V0. _old_l2s_g_11(V0) -> l2s_g_11(V0); assume forall V0. (~_old_l2s_g_11(V0) & ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))) -> ~l2s_g_11(V0); assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_1; assume _old_l2s_g_7 -> l2s_g_7; assume (~_old_l2s_g_7 & ~(m.q2.receiving.now & m.q2.receiving.value = _X)) -> ~l2s_g_7; m.q2.receiving.now := true}; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); l2s_w_3 := (l2s_w_3 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1)}; {{_old_l2s_g_13(V0) := l2s_g_13(V0); l2s_g_13(V0) := *; _old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_11(V0) := l2s_g_11(V0); l2s_g_11(V0) := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_7 := l2s_g_7; l2s_g_7 := *; assume forall V0. _old_l2s_g_13(V0) -> l2s_g_13(V0); assume forall V0. (~_old_l2s_g_13(V0) & ~(m.q2.receiving.now & m.q2.receiving.value = V0)) -> ~l2s_g_13(V0); assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_2; assume forall V0. _old_l2s_g_11(V0) -> l2s_g_11(V0); assume forall V0. (~_old_l2s_g_11(V0) & ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0))) -> ~l2s_g_11(V0); assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7)) -> ~l2s_g_1; assume _old_l2s_g_7 -> l2s_g_7; assume (~_old_l2s_g_7 & ~(m.q2.receiving.now & m.q2.receiving.value = _X)) -> ~l2s_g_7; m.q2.receiving.now := false}; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); l2s_w_3 := (l2s_w_3 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1)}}}}
+    ext:m.poll = action{{assume l2s_g_8 -> ~m.q1.trying.now; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_9 -> ~m.q2.trying.now; assume l2s_g_4 -> ~l2s_g_8; assume l2s_g_5 -> ~l2s_g_9; assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume l2s_g_3 -> ~l2s_g_6; assume ~(~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & l2s_w_3); assume ~(m.q2.trying.now & l2s_w_2); assume ~((m.q1.receiving.now & m.q1.receiving.value = _X) & l2s_w_0); assume ~(m.q1.trying.now & l2s_w_1); {{assume ~m.q2.receiving.now}; {assume ~m.q2.sending.now}; {assume ~m.q2.trying.now}; {assume ~m.q1.receiving.now}; {assume ~m.q1.sending.now}; {assume ~m.q1.trying.now}; {local loc:x {{{local loc:ok {{{call loc:x,loc:ok := m.q1.recv}; {if loc:ok {call m.q2.send(loc:x)}}}}}}}}; {assume ~m.q2.receiving.now}; {assume ~m.q2.sending.now}; {assume ~m.q2.trying.now}; {assume ~m.q1.receiving.now}; {assume ~m.q1.sending.now}; {assume ~m.q1.trying.now}}; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true}}
+    idle = action{{if * {assume l2s_waiting; l2s_waiting := false; l2s_frozen := true; assume ~l2s_w_3; assume ~l2s_w_2; assume ~l2s_w_0; assume ~l2s_w_1; l2s_a(X:index) := l2s_d(X:index); l2s_a(X:time) := l2s_d(X:time)}
+else if * {assume l2s_frozen; l2s_frozen := false; l2s_saved := true; l2s_s_0 := true -> false; l2s_w_3 := (~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1); l2s_w_2 := (~m.q2.trying.now & ~l2s_g_9); l2s_w_0 := (~(m.q1.receiving.now & m.q1.receiving.value = _X) & ~l2s_g_6); l2s_w_1 := (~m.q1.trying.now & ~l2s_g_8)}
+else {}; assume l2s_g_8 -> ~m.q1.trying.now; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_9 -> ~m.q2.trying.now; assume l2s_g_4 -> ~l2s_g_8; assume l2s_g_5 -> ~l2s_g_9; assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume l2s_g_3 -> ~l2s_g_6; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true; assert ~(l2s_saved & ~l2s_w_3 & ~l2s_w_2 & ~l2s_w_0 & ~l2s_w_1 & (l2s_s_0 <-> (true -> false)))}}
+in
+    {{m.q1.pending(X) := false; m.q1.sending.now := false; m.q1.trying.now := false; m.q1.receiving.now := false; m.q2.pending(X) := false; m.q2.sending.now := false; m.q2.trying.now := false; m.q2.receiving.now := false}; l2s_waiting := true; l2s_frozen := false; l2s_saved := false; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true; l2s_w_3 := (~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7) & ~l2s_g_1); l2s_w_2 := (~m.q2.trying.now & ~l2s_g_9); l2s_w_0 := (~(m.q1.receiving.now & m.q1.receiving.value = _X) & ~l2s_g_6); l2s_w_1 := (~m.q1.trying.now & ~l2s_g_8); assume l2s_g_8 -> ~m.q1.trying.now; assume forall V0. l2s_g_13(V0) -> ~(m.q2.receiving.now & m.q2.receiving.value = V0); assume forall V0. l2s_g_11(V0) -> ((m.q2.sending.now & m.q2.sending.value = V0) -> ~l2s_g_13(V0)); assume l2s_g_9 -> ~m.q2.trying.now; assume l2s_g_4 -> ~l2s_g_8; assume l2s_g_5 -> ~l2s_g_9; assume l2s_g_1 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_7); assume forall V0. l2s_g_12(V0) -> ~(m.q1.receiving.now & m.q1.receiving.value = V0); assume l2s_g_6 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume forall V0. l2s_g_10(V0) -> ((m.q1.sending.now & m.q1.sending.value = V0) -> ~l2s_g_12(V0)); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_6); assume l2s_g_7 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_2 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_7); assume l2s_g_3 -> ~l2s_g_6; assume l2s_init_3 = l2s_g_3; assume l2s_init_5 = l2s_g_5; assume forall V0. l2s_init_9(V0) = l2s_g_11(V0); assume l2s_init_1 = l2s_g_1; assume l2s_init_7 = l2s_g_9; assume l2s_init_4 = l2s_g_4; assume forall V0. l2s_init_8(V0) = l2s_g_10(V0); assume l2s_init_0 = l2s_g_0; assume l2s_init_6 = l2s_g_8; assume l2s_init_2 = l2s_g_2; assume ~(((l2s_g_4 -> l2s_g_0) & (l2s_g_5 -> l2s_g_2) & (l2s_g_4 -> (forall X. l2s_g_10(X))) & (l2s_g_5 -> (forall X. l2s_g_11(X)))) -> ((l2s_g_4 & l2s_g_5) -> l2s_g_1))}
+    while *
+        invariant [l2s_needed_when_start] (~l2s_init_1 & (~l2s_waiting | ~l2s_w_3)) -> (true -> true)
+        invariant [l2s_created] true -> true
+        invariant [l2s_needed_are_frozen] (~l2s_init_1 & ~l2s_waiting) -> (~(true -> false) -> true)
+        invariant [l2s_needed_were_frozen] (~l2s_init_1 & l2s_saved) -> (~l2s_s_0 -> true)
+        invariant [l2s_needed_implies_created] (~l2s_init_1 & (~l2s_waiting | ~l2s_w_3)) -> (true -> true)
+        invariant [l2s_work_preserved] (l2s_saved & l2s_s_0) -> (true -> false)
+        invariant [l2s_progress_made] (l2s_saved & ~l2s_w_0) -> (~l2s_s_0 & (true -> false))
+        invariant [l2s_progress_invar] l2s_init_3 -> l2s_g_3
+        invariant [l2s_not_all_done] (~(~l2s_init_1 & (~l2s_waiting | ~l2s_w_3)) | ~(~l2s_g_6 -> (true -> false)))
+        invariant [l2s_globally_0] l2s_g_4
+        invariant [l2s_globally_1] l2s_g_8 -> ~l2s_waiting | ~l2s_w_1
+        invariant [l2s_globally_2] ~l2s_init_6
+        invariant [l2s_globally_3] l2s_g_5
+        invariant [l2s_globally_4] l2s_g_9 -> ~l2s_waiting | ~l2s_w_2
+        invariant [l2s_globally_5] ~l2s_init_7
+        invariant [l2s_globally_6] l2s_g_1 -> ~l2s_waiting | ~l2s_w_3
+        invariant [l2s_globally_7] ~l2s_init_1
+        invariant [l2s_globally_8] ~l2s_init_1 | l2s_g_1
+        invariant [l2s_globally_9] (~l2s_init_1 & l2s_g_1) -> ~l2s_waiting | ~l2s_w_3
+        invariant [l2s_globally_10] (~l2s_init_1 & (~l2s_waiting | ~l2s_w_3)) -> l2s_g_7
+        invariant [l2s_status_0] l2s_waiting | l2s_frozen | l2s_saved
+        invariant [l2s_status_1] ~l2s_waiting | ~l2s_frozen
+        invariant [l2s_status_2] ~l2s_waiting | ~l2s_saved
+        invariant [l2s_status_3] ~l2s_frozen | ~l2s_saved
+        invariant [l2s_consts_d] (l2s_d(m.q1.sending.value) & l2s_d(m.q1.receiving.value) & l2s_d(m.q2.sending.value) & l2s_d(m.q2.receiving.value) & l2s_d(_X))
+        invariant [l2s_init_glob_0] l2s_init_0 -> l2s_g_0
+        invariant [l2s_init_glob_1] l2s_init_2 -> l2s_g_2
+        invariant [l2s_init_glob_2] l2s_init_8(X) -> l2s_g_10(X)
+        invariant [l2s_init_glob_3] l2s_init_9(X) -> l2s_g_11(X)
+        invariant [neg_prop_init] ~(((l2s_init_4 -> l2s_init_0) & (l2s_init_5 -> l2s_init_2) & (l2s_init_4 -> (forall X. l2s_init_8(X))) & (l2s_init_5 -> (forall X. l2s_init_9(X)))) -> ((l2s_init_4 & l2s_init_5) -> l2s_init_1))
+    {
+        diverge;
+        assume [m.q2.receiving.invar84] ~m.q2.receiving.now;
+        assume [m.q2.sending.invar84] ~m.q2.sending.now;
+        assume [m.q2.trying.invar81] ~m.q2.trying.now;
+        assume [m.q1.receiving.invar84] ~m.q1.receiving.now;
+        assume [m.q1.sending.invar84] ~m.q1.sending.now;
+        assume [m.q1.trying.invar81] ~m.q1.trying.now;
+        assume [m.invar95] forall Y,X. (m.q1.pending(X) & m.q2.pending(Y)) -> X > Y;
+        call one of {ext:m.poll,ext:m.q1.send,ext:m.q2.recv,idle}
+    }
+ |= true
+}
+
+
+
+    The following properties are assumed as axioms:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1
+
+    The inductive invariant consists of the following conjectures:
+        examp2.ivy: line 152: l2s_needed_when_start
+        examp2.ivy: line 152: l2s_created
+        examp2.ivy: line 152: l2s_needed_are_frozen
+        examp2.ivy: line 152: l2s_needed_were_frozen
+        examp2.ivy: line 152: l2s_needed_implies_created
+        examp2.ivy: line 152: l2s_work_preserved
+        examp2.ivy: line 152: l2s_progress_made
+        examp2.ivy: line 152: l2s_progress_invar
+        examp2.ivy: line 152: l2s_not_all_done
+        examp2.ivy: line 152: l2s_globally_0
+        examp2.ivy: line 152: l2s_globally_1
+        examp2.ivy: line 152: l2s_globally_2
+        examp2.ivy: line 152: l2s_globally_3
+        examp2.ivy: line 152: l2s_globally_4
+        examp2.ivy: line 152: l2s_globally_5
+        examp2.ivy: line 152: l2s_globally_6
+        examp2.ivy: line 152: l2s_globally_7
+        examp2.ivy: line 152: l2s_globally_8
+        examp2.ivy: line 152: l2s_globally_9
+        examp2.ivy: line 152: l2s_globally_10
+        examp2.ivy: line 152: l2s_status_0
+        examp2.ivy: line 152: l2s_status_1
+        examp2.ivy: line 152: l2s_status_2
+        examp2.ivy: line 152: l2s_status_3
+        examp2.ivy: line 152: l2s_consts_d
+        examp2.ivy: line 152: l2s_init_glob_0
+        examp2.ivy: line 152: l2s_init_glob_1
+        examp2.ivy: line 152: l2s_init_glob_2
+        examp2.ivy: line 152: l2s_init_glob_3
+        examp2.ivy: line 152: neg_prop_init
+
+    The following action implementations are present:
+        examp2.ivy: line 120: implementation of m.poll
+        examp2.ivy: line 26: implementation of m.q1.receiving.raise
+        examp2.ivy: line 55: implementation of m.q1.recv
+        examp2.ivy: line 49: implementation of m.q1.send
+        examp2.ivy: line 26: implementation of m.q1.sending.raise
+        examp2.ivy: line 10: implementation of m.q1.trying.raise
+        examp2.ivy: line 26: implementation of m.q2.receiving.raise
+        examp2.ivy: line 55: implementation of m.q2.recv
+        examp2.ivy: line 49: implementation of m.q2.send
+        examp2.ivy: line 26: implementation of m.q2.sending.raise
+        examp2.ivy: line 10: implementation of m.q2.trying.raise
+
+    The following action monitors are present:
+        examp2.ivy: line 32: monitor of m.q1.receiving.raise
+        examp2.ivy: line 74: monitor of m.q1.recv
+        examp2.ivy: line 68: monitor of m.q1.send
+        examp2.ivy: line 32: monitor of m.q1.sending.raise
+        examp2.ivy: line 15: monitor of m.q1.trying.raise
+        examp2.ivy: line 32: monitor of m.q2.receiving.raise
+        examp2.ivy: line 74: monitor of m.q2.recv
+        examp2.ivy: line 68: monitor of m.q2.send
+        examp2.ivy: line 32: monitor of m.q2.sending.raise
+        examp2.ivy: line 15: monitor of m.q2.trying.raise
+
+    The following initializers are present:
+        Noneinit
+
+    Initialization must establish the invariant
+        examp2.ivy: line 152: l2s_needed_when_start ... PASS
+        examp2.ivy: line 152: l2s_created ... PASS
+        examp2.ivy: line 152: l2s_needed_are_frozen ... PASS
+        examp2.ivy: line 152: l2s_needed_were_frozen ... PASS
+        examp2.ivy: line 152: l2s_needed_implies_created ... PASS
+        examp2.ivy: line 152: l2s_work_preserved ... PASS
+        examp2.ivy: line 152: l2s_progress_made ... PASS
+        examp2.ivy: line 152: l2s_progress_invar ... PASS
+        examp2.ivy: line 152: l2s_not_all_done ... PASS
+        examp2.ivy: line 152: l2s_globally_0 ... PASS
+        examp2.ivy: line 152: l2s_globally_1 ... PASS
+        examp2.ivy: line 152: l2s_globally_2 ... PASS
+        examp2.ivy: line 152: l2s_globally_3 ... PASS
+        examp2.ivy: line 152: l2s_globally_4 ... PASS
+        examp2.ivy: line 152: l2s_globally_5 ... PASS
+        examp2.ivy: line 152: l2s_globally_6 ... PASS
+        examp2.ivy: line 152: l2s_globally_7 ... PASS
+        examp2.ivy: line 152: l2s_globally_8 ... PASS
+        examp2.ivy: line 152: l2s_globally_9 ... PASS
+        examp2.ivy: line 152: l2s_globally_10 ... PASS
+        examp2.ivy: line 152: l2s_status_0 ... PASS
+        examp2.ivy: line 152: l2s_status_1 ... PASS
+        examp2.ivy: line 152: l2s_status_2 ... PASS
+        examp2.ivy: line 152: l2s_status_3 ... PASS
+        examp2.ivy: line 152: l2s_consts_d ... PASS
+        examp2.ivy: line 152: l2s_init_glob_0 ... PASS
+        examp2.ivy: line 152: l2s_init_glob_1 ... PASS
+        examp2.ivy: line 152: l2s_init_glob_2 ... PASS
+        examp2.ivy: line 152: l2s_init_glob_3 ... PASS
+        examp2.ivy: line 152: neg_prop_init ... PASS
+
+    The following set of external actions must preserve the invariant:
+        (internal) ext:m.poll
+            examp2.ivy: line 152: l2s_needed_when_start ... PASS
+            examp2.ivy: line 152: l2s_created ... PASS
+            examp2.ivy: line 152: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 152: l2s_work_preserved ... PASS
+            examp2.ivy: line 152: l2s_progress_made ... PASS
+            examp2.ivy: line 152: l2s_progress_invar ... PASS
+            examp2.ivy: line 152: l2s_not_all_done ... PASS
+            examp2.ivy: line 152: l2s_globally_0 ... PASS
+            examp2.ivy: line 152: l2s_globally_1 ... PASS
+            examp2.ivy: line 152: l2s_globally_2 ... PASS
+            examp2.ivy: line 152: l2s_globally_3 ... PASS
+            examp2.ivy: line 152: l2s_globally_4 ... PASS
+            examp2.ivy: line 152: l2s_globally_5 ... PASS
+            examp2.ivy: line 152: l2s_globally_6 ... PASS
+            examp2.ivy: line 152: l2s_globally_7 ... PASS
+            examp2.ivy: line 152: l2s_globally_8 ... PASS
+            examp2.ivy: line 152: l2s_globally_9 ... PASS
+            examp2.ivy: line 152: l2s_globally_10 ... PASS
+            examp2.ivy: line 152: l2s_status_0 ... PASS
+            examp2.ivy: line 152: l2s_status_1 ... PASS
+            examp2.ivy: line 152: l2s_status_2 ... PASS
+            examp2.ivy: line 152: l2s_status_3 ... PASS
+            examp2.ivy: line 152: l2s_consts_d ... PASS
+            examp2.ivy: line 152: l2s_init_glob_0 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_1 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_2 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_3 ... PASS
+            examp2.ivy: line 152: neg_prop_init ... PASS
+        (internal) ext:m.q1.send
+            examp2.ivy: line 152: l2s_needed_when_start ... PASS
+            examp2.ivy: line 152: l2s_created ... PASS
+            examp2.ivy: line 152: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 152: l2s_work_preserved ... PASS
+            examp2.ivy: line 152: l2s_progress_made ... PASS
+            examp2.ivy: line 152: l2s_progress_invar ... PASS
+            examp2.ivy: line 152: l2s_not_all_done ... PASS
+            examp2.ivy: line 152: l2s_globally_0 ... PASS
+            examp2.ivy: line 152: l2s_globally_1 ... PASS
+            examp2.ivy: line 152: l2s_globally_2 ... PASS
+            examp2.ivy: line 152: l2s_globally_3 ... PASS
+            examp2.ivy: line 152: l2s_globally_4 ... PASS
+            examp2.ivy: line 152: l2s_globally_5 ... PASS
+            examp2.ivy: line 152: l2s_globally_6 ... PASS
+            examp2.ivy: line 152: l2s_globally_7 ... PASS
+            examp2.ivy: line 152: l2s_globally_8 ... PASS
+            examp2.ivy: line 152: l2s_globally_9 ... PASS
+            examp2.ivy: line 152: l2s_globally_10 ... PASS
+            examp2.ivy: line 152: l2s_status_0 ... PASS
+            examp2.ivy: line 152: l2s_status_1 ... PASS
+            examp2.ivy: line 152: l2s_status_2 ... PASS
+            examp2.ivy: line 152: l2s_status_3 ... PASS
+            examp2.ivy: line 152: l2s_consts_d ... PASS
+            examp2.ivy: line 152: l2s_init_glob_0 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_1 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_2 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_3 ... PASS
+            examp2.ivy: line 152: neg_prop_init ... PASS
+        (internal) ext:m.q2.recv
+            examp2.ivy: line 152: l2s_needed_when_start ... PASS
+            examp2.ivy: line 152: l2s_created ... PASS
+            examp2.ivy: line 152: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 152: l2s_work_preserved ... PASS
+            examp2.ivy: line 152: l2s_progress_made ... PASS
+            examp2.ivy: line 152: l2s_progress_invar ... PASS
+            examp2.ivy: line 152: l2s_not_all_done ... PASS
+            examp2.ivy: line 152: l2s_globally_0 ... PASS
+            examp2.ivy: line 152: l2s_globally_1 ... PASS
+            examp2.ivy: line 152: l2s_globally_2 ... PASS
+            examp2.ivy: line 152: l2s_globally_3 ... PASS
+            examp2.ivy: line 152: l2s_globally_4 ... PASS
+            examp2.ivy: line 152: l2s_globally_5 ... PASS
+            examp2.ivy: line 152: l2s_globally_6 ... PASS
+            examp2.ivy: line 152: l2s_globally_7 ... PASS
+            examp2.ivy: line 152: l2s_globally_8 ... PASS
+            examp2.ivy: line 152: l2s_globally_9 ... PASS
+            examp2.ivy: line 152: l2s_globally_10 ... PASS
+            examp2.ivy: line 152: l2s_status_0 ... PASS
+            examp2.ivy: line 152: l2s_status_1 ... PASS
+            examp2.ivy: line 152: l2s_status_2 ... PASS
+            examp2.ivy: line 152: l2s_status_3 ... PASS
+            examp2.ivy: line 152: l2s_consts_d ... PASS
+            examp2.ivy: line 152: l2s_init_glob_0 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_1 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_2 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_3 ... PASS
+            examp2.ivy: line 152: neg_prop_init ... PASS
+        (internal) idle
+            examp2.ivy: line 152: l2s_needed_when_start ... PASS
+            examp2.ivy: line 152: l2s_created ... PASS
+            examp2.ivy: line 152: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 152: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 152: l2s_work_preserved ... PASS
+            examp2.ivy: line 152: l2s_progress_made ... PASS
+            examp2.ivy: line 152: l2s_progress_invar ... PASS
+            examp2.ivy: line 152: l2s_not_all_done ... PASS
+            examp2.ivy: line 152: l2s_globally_0 ... PASS
+            examp2.ivy: line 152: l2s_globally_1 ... PASS
+            examp2.ivy: line 152: l2s_globally_2 ... PASS
+            examp2.ivy: line 152: l2s_globally_3 ... PASS
+            examp2.ivy: line 152: l2s_globally_4 ... PASS
+            examp2.ivy: line 152: l2s_globally_5 ... PASS
+            examp2.ivy: line 152: l2s_globally_6 ... PASS
+            examp2.ivy: line 152: l2s_globally_7 ... PASS
+            examp2.ivy: line 152: l2s_globally_8 ... PASS
+            examp2.ivy: line 152: l2s_globally_9 ... PASS
+            examp2.ivy: line 152: l2s_globally_10 ... PASS
+            examp2.ivy: line 152: l2s_status_0 ... PASS
+            examp2.ivy: line 152: l2s_status_1 ... PASS
+            examp2.ivy: line 152: l2s_status_2 ... PASS
+            examp2.ivy: line 152: l2s_status_3 ... PASS
+            examp2.ivy: line 152: l2s_consts_d ... PASS
+            examp2.ivy: line 152: l2s_init_glob_0 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_1 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_2 ... PASS
+            examp2.ivy: line 152: l2s_init_glob_3 ... PASS
+            examp2.ivy: line 152: neg_prop_init ... PASS
+
+    The following program assertions are treated as assumptions:
+        in action m.q1.send when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 69: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q1.recv when called from m.poll:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q1.sending.raise when called from m.q1.send:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q1.trying.raise when called from m.q1.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q1.receiving.raise when called from m.q1.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q2.send when called from m.poll:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q2.recv when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q2.sending.raise when called from m.q2.send:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q2.trying.raise when called from m.q2.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q2.receiving.raise when called from m.q2.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.poll when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action idle when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+
+    The following program assertions are treated as guarantees:
+        in action m.q2.send when called from m.poll:
+            examp2.ivy: line 69: guarantee ... PASS
+        in action idle when called from the environment,the environment:
+            examp2.ivy: line 159: guarantee ... PASS
+
+Isolate m.q1.iso:
+
+    The following properties are to be checked:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1  [assumed]
+
+    The inductive invariant consists of the following conjectures:
+        examp2.ivy: line 37: m.q1.sending.invar84
+        examp2.ivy: line 19: m.q1.trying.invar81
+        examp2.ivy: line 37: m.q1.receiving.invar84
+
+    The following action implementations are present:
+        examp2.ivy: line 26: implementation of m.q1.receiving.raise
+        examp2.ivy: line 55: implementation of m.q1.recv
+        examp2.ivy: line 49: implementation of m.q1.send
+        examp2.ivy: line 26: implementation of m.q1.sending.raise
+        examp2.ivy: line 10: implementation of m.q1.trying.raise
+
+    The following action monitors are present:
+        examp2.ivy: line 32: monitor of m.q1.receiving.raise
+        examp2.ivy: line 74: monitor of m.q1.recv
+        examp2.ivy: line 68: monitor of m.q1.send
+        examp2.ivy: line 32: monitor of m.q1.sending.raise
+        examp2.ivy: line 15: monitor of m.q1.trying.raise
+
+    The following initializers are present:
+        examp2.ivy: line 61: m.q1.init[after85]
+        examp2.ivy: line 31: m.q1.receiving.init[after82]
+        examp2.ivy: line 31: m.q1.sending.init[after82]
+        examp2.ivy: line 14: m.q1.trying.init[after79]
+
+    Initialization must establish the invariant
+        examp2.ivy: line 37: m.q1.sending.invar84 ... PASS
+        examp2.ivy: line 19: m.q1.trying.invar81 ... PASS
+        examp2.ivy: line 37: m.q1.receiving.invar84 ... PASS
+
+    The following set of external actions must preserve the invariant:
+        (internal) ext:m.q1.recv
+            examp2.ivy: line 37: m.q1.sending.invar84 ... PASS
+            examp2.ivy: line 19: m.q1.trying.invar81 ... PASS
+            examp2.ivy: line 37: m.q1.receiving.invar84 ... PASS
+        (internal) ext:m.q1.send
+            examp2.ivy: line 37: m.q1.sending.invar84 ... PASS
+            examp2.ivy: line 19: m.q1.trying.invar81 ... PASS
+            examp2.ivy: line 37: m.q1.receiving.invar84 ... PASS
+
+    The following program assertions are treated as assumptions:
+        in action m.q1.send when called from the environment:
+            examp2.ivy: line 69: assumption
+
+    The following temporal property is being proved:
+
+        examp2.ivy: line 88: m.q1.lpq ... --- l2s_auto invariants ---
+invariant [l2s_needed_when_start] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))))) -> ((m.q1.pending(X) & X <= _X) -> m.q1.pending(X))
+invariant [l2s_created] m.q1.pending(X) -> (l2s_d(X))
+invariant [l2s_needed_are_frozen] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & ~l2s_waiting) -> (~((m.q1.pending(X) & X <= _X) -> false) -> (l2s_a(X)))
+invariant [l2s_needed_were_frozen] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & l2s_saved) -> (~$l2s_s X:time. (m.q1.pending(X) & X <= _X) -> false(X) -> (l2s_a(X)))
+invariant [l2s_needed_implies_created] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))))) -> ((m.q1.pending(X) & X <= _X) -> m.q1.pending(X))
+invariant [l2s_work_preserved] (l2s_saved & $l2s_s X:time. (m.q1.pending(X) & X <= _X) -> false(X)) -> ((m.q1.pending(X) & X <= _X) -> false)
+invariant [l2s_progress_made] (l2s_saved & ~($l2s_w . m.q1.trying.now)) -> (exists X. (~$l2s_s X:time. (m.q1.pending(X) & X <= _X) -> false(X) & ((m.q1.pending(X) & X <= _X) -> false)))
+invariant [l2s_progress_invar] ($l2s_init . □ ⬦ m.q1.trying.now) -> □ ⬦ m.q1.trying.now
+invariant [l2s_not_all_done] (~(($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))))) | ~(forall X. m.q1.pending(_X) -> ((m.q1.pending(X) & X <= _X) -> false)))
+invariant [l2s_globally_0] globally[](eventually[](m.q1.trying.now))
+invariant [l2s_globally_1] ~⬦ m.q1.trying.now -> ~l2s_waiting | ~($l2s_w . m.q1.trying.now)
+invariant [l2s_globally_2] $l2s_init . ⬦ m.q1.trying.now
+invariant [l2s_globally_3] □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X) -> ~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)))
+invariant [l2s_globally_4] $l2s_init . ~□ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)
+invariant [l2s_globally_5] ($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) | ~⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))
+invariant [l2s_globally_6] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & ~⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) -> ~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)))
+invariant [l2s_globally_7] (($l2s_init . ⬦ ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X))))) -> ~⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)
+invariant [l2s_status_0] l2s_waiting | l2s_frozen | l2s_saved
+invariant [l2s_status_1] ~l2s_waiting | ~l2s_frozen
+invariant [l2s_status_2] ~l2s_waiting | ~l2s_saved
+invariant [l2s_status_3] ~l2s_frozen | ~l2s_saved
+invariant [l2s_consts_d] (l2s_d(m.q1.sending.value) & l2s_d(m.q1.receiving.value) & l2s_d(m.q2.sending.value) & l2s_d(m.q2.receiving.value) & l2s_d(_X))
+invariant [neg_prop_init] ~(($l2s_init . □ ⬦ m.q1.trying.now) -> ($l2s_init . □ (m.q1.sending.now & m.q1.sending.value = _X) -> ⬦ (m.q1.receiving.now & m.q1.receiving.value = _X)))
+---------------------------
+reset_w:
+$l2s_w . m.q1.trying.now := (~m.q1.trying.now & ~($l2s_g . ~m.q1.trying.now))
+$l2s_w . ~((m.q1.sending.now & m.q1.sending.value = _X) -> ~($l2s_g . ~(m.q1.receiving.now & m.q1.receiving.value = _X))) := (~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~($l2s_g . ~(m.q1.receiving.now & m.q1.receiving.value = _X))) & ~($l2s_g . (m.q1.sending.now & m.q1.sending.value = _X) -> ~($l2s_g . ~(m.q1.receiving.now & m.q1.receiving.value = _X))))
+
+examp2.ivy: line 104: Proof goals:
+
+theorem [m.q1.lpq] {
+    individual _X : time
+    property 
+let
+    ext:m.q1.send = action(fml:x:time){{l2s_d(fml:x) := true; assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); assume l2s_g_2 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_3 -> ~m.q1.trying.now; assume ~(m.q1.trying.now & l2s_w_0); assume ~(~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & l2s_w_1); {{{{assume [m.q1.asrt86] m.q1.pending(T) -> T < fml:x}; {m.q1.pending(fml:x) := true}; {call ext:m.q1.sending.raise(fml:x)}}}}; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true}}
+    ext:m.q1.recv = action returns(fml:x:time,fml:ok:Boolean){{assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); assume l2s_g_2 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_3 -> ~m.q1.trying.now; assume ~(m.q1.trying.now & l2s_w_0); assume ~(~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & l2s_w_1); {{{{call ext:m.q1.trying.raise}; {fml:ok := false}; {if some loc:y. m.q1.pending(loc:y) minimizing loc:y {{{fml:ok := true}; {fml:x := loc:y}; {m.q1.pending(fml:x) := false}; {call ext:m.q1.receiving.raise(fml:x)}}}}}}}; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true}}
+    ext:m.q1.sending.raise = action(fml:val:time){{{{{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q1.sending.value := fml:val}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q1.sending.now := true}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q1.sending.now := false}; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}}}}
+    ext:m.q1.trying.raise = action{{{{{_old_l2s_g_3 := l2s_g_3; l2s_g_3 := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; assume _old_l2s_g_3 -> l2s_g_3; assume (~_old_l2s_g_3 & ~m.q1.trying.now) -> ~l2s_g_3; assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ~l2s_g_3) -> ~l2s_g_1; m.q1.trying.now := true}; assume l2s_g_3 -> ~m.q1.trying.now; assume l2s_g_1 -> ~l2s_g_3; l2s_w_0 := (l2s_w_0 & ~m.q1.trying.now & ~l2s_g_3)}; {{_old_l2s_g_3 := l2s_g_3; l2s_g_3 := *; _old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; assume _old_l2s_g_3 -> l2s_g_3; assume (~_old_l2s_g_3 & ~m.q1.trying.now) -> ~l2s_g_3; assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ~l2s_g_3) -> ~l2s_g_1; m.q1.trying.now := false}; assume l2s_g_3 -> ~m.q1.trying.now; assume l2s_g_1 -> ~l2s_g_3; l2s_w_0 := (l2s_w_0 & ~m.q1.trying.now & ~l2s_g_3)}}}}
+    ext:m.q1.receiving.raise = action(fml:val:time){{{{{_old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ~(m.q1.receiving.now & m.q1.receiving.value = _X)) -> ~l2s_g_2; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q1.receiving.value := fml:val}; assume l2s_g_2 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ~(m.q1.receiving.now & m.q1.receiving.value = _X)) -> ~l2s_g_2; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q1.receiving.now := true}; assume l2s_g_2 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; _old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ~(m.q1.receiving.now & m.q1.receiving.value = _X)) -> ~l2s_g_2; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q1.receiving.now := false}; assume l2s_g_2 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}}}}
+    idle = action{{if * {assume l2s_waiting; l2s_waiting := false; l2s_frozen := true; assume ~l2s_w_0; assume ~l2s_w_1; l2s_a(X:index) := l2s_d(X:index); l2s_a(X:time) := l2s_d(X:time)}
+else if * {assume l2s_frozen; l2s_frozen := false; l2s_saved := true; l2s_s_0(V0) := (m.q1.pending(V0) & V0 <= _X) -> false; l2s_w_0 := (~m.q1.trying.now & ~l2s_g_3); l2s_w_1 := (~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}
+else {}; assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); assume l2s_g_2 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_3 -> ~m.q1.trying.now; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true; assert ~(l2s_saved & ~l2s_w_0 & ~l2s_w_1 & (forall V0. (l2s_a(V0:time)) -> (l2s_s_0(V0) <-> ((m.q1.pending(V0) & V0 <= _X) -> false))))}}
+in
+    {{m.q1.pending(X) := false; m.q1.sending.now := false; m.q1.trying.now := false; m.q1.receiving.now := false}; l2s_waiting := true; l2s_frozen := false; l2s_saved := false; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true; l2s_w_0 := (~m.q1.trying.now & ~l2s_g_3); l2s_w_1 := (~~((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0); assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_0 -> ((m.q1.sending.now & m.q1.sending.value = _X) -> ~l2s_g_2); assume l2s_g_2 -> ~(m.q1.receiving.now & m.q1.receiving.value = _X); assume l2s_g_3 -> ~m.q1.trying.now; assume l2s_init_2 = l2s_g_3; assume l2s_init_1 = l2s_g_1; assume l2s_init_0 = l2s_g_0; assume ~(l2s_g_1 -> l2s_g_0)}
+    while *
+        invariant [l2s_needed_when_start] (~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) -> ((m.q1.pending(X) & X <= _X) -> m.q1.pending(X))
+        invariant [l2s_created] m.q1.pending(X) -> (l2s_d(X))
+        invariant [l2s_needed_are_frozen] (~l2s_init_0 & ~l2s_waiting) -> (~((m.q1.pending(X) & X <= _X) -> false) -> (l2s_a(X)))
+        invariant [l2s_needed_were_frozen] (~l2s_init_0 & l2s_saved) -> (~l2s_s_0(X) -> (l2s_a(X)))
+        invariant [l2s_needed_implies_created] (~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) -> ((m.q1.pending(X) & X <= _X) -> m.q1.pending(X))
+        invariant [l2s_work_preserved] (l2s_saved & l2s_s_0(X)) -> ((m.q1.pending(X) & X <= _X) -> false)
+        invariant [l2s_progress_made] (l2s_saved & ~l2s_w_0) -> (exists X. (~l2s_s_0(X) & ((m.q1.pending(X) & X <= _X) -> false)))
+        invariant [l2s_progress_invar] l2s_init_1 -> l2s_g_1
+        invariant [l2s_not_all_done] (~(~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) | ~(forall X. m.q1.pending(_X) -> ((m.q1.pending(X) & X <= _X) -> false)))
+        invariant [l2s_globally_0] l2s_g_1
+        invariant [l2s_globally_1] l2s_g_3 -> ~l2s_waiting | ~l2s_w_0
+        invariant [l2s_globally_2] ~l2s_init_2
+        invariant [l2s_globally_3] l2s_g_0 -> ~l2s_waiting | ~l2s_w_1
+        invariant [l2s_globally_4] ~l2s_init_0
+        invariant [l2s_globally_5] ~l2s_init_0 | l2s_g_0
+        invariant [l2s_globally_6] (~l2s_init_0 & l2s_g_0) -> ~l2s_waiting | ~l2s_w_1
+        invariant [l2s_globally_7] (~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) -> l2s_g_2
+        invariant [l2s_status_0] l2s_waiting | l2s_frozen | l2s_saved
+        invariant [l2s_status_1] ~l2s_waiting | ~l2s_frozen
+        invariant [l2s_status_2] ~l2s_waiting | ~l2s_saved
+        invariant [l2s_status_3] ~l2s_frozen | ~l2s_saved
+        invariant [l2s_consts_d] (l2s_d(m.q1.sending.value) & l2s_d(m.q1.receiving.value) & l2s_d(m.q2.sending.value) & l2s_d(m.q2.receiving.value) & l2s_d(_X))
+        invariant [neg_prop_init] ~(l2s_init_1 -> l2s_init_0)
+    {
+        diverge;
+        assume [m.q1.sending.invar84] ~m.q1.sending.now;
+        assume [m.q1.trying.invar81] ~m.q1.trying.now;
+        assume [m.q1.receiving.invar84] ~m.q1.receiving.now;
+        call one of {ext:m.q1.recv,ext:m.q1.send,idle}
+    }
+ |= true
+}
+
+
+
+    The following properties are assumed as axioms:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1
+
+    The inductive invariant consists of the following conjectures:
+        examp2.ivy: line 95: l2s_needed_when_start
+        examp2.ivy: line 95: l2s_created
+        examp2.ivy: line 95: l2s_needed_are_frozen
+        examp2.ivy: line 95: l2s_needed_were_frozen
+        examp2.ivy: line 95: l2s_needed_implies_created
+        examp2.ivy: line 95: l2s_work_preserved
+        examp2.ivy: line 95: l2s_progress_made
+        examp2.ivy: line 95: l2s_progress_invar
+        examp2.ivy: line 95: l2s_not_all_done
+        examp2.ivy: line 95: l2s_globally_0
+        examp2.ivy: line 95: l2s_globally_1
+        examp2.ivy: line 95: l2s_globally_2
+        examp2.ivy: line 95: l2s_globally_3
+        examp2.ivy: line 95: l2s_globally_4
+        examp2.ivy: line 95: l2s_globally_5
+        examp2.ivy: line 95: l2s_globally_6
+        examp2.ivy: line 95: l2s_globally_7
+        examp2.ivy: line 95: l2s_status_0
+        examp2.ivy: line 95: l2s_status_1
+        examp2.ivy: line 95: l2s_status_2
+        examp2.ivy: line 95: l2s_status_3
+        examp2.ivy: line 95: l2s_consts_d
+        examp2.ivy: line 95: neg_prop_init
+
+    The following action implementations are present:
+        examp2.ivy: line 26: implementation of m.q1.receiving.raise
+        examp2.ivy: line 55: implementation of m.q1.recv
+        examp2.ivy: line 49: implementation of m.q1.send
+        examp2.ivy: line 26: implementation of m.q1.sending.raise
+        examp2.ivy: line 10: implementation of m.q1.trying.raise
+
+    The following action monitors are present:
+        examp2.ivy: line 32: monitor of m.q1.receiving.raise
+        examp2.ivy: line 74: monitor of m.q1.recv
+        examp2.ivy: line 68: monitor of m.q1.send
+        examp2.ivy: line 32: monitor of m.q1.sending.raise
+        examp2.ivy: line 15: monitor of m.q1.trying.raise
+
+    The following initializers are present:
+        Noneinit
+
+    Initialization must establish the invariant
+        examp2.ivy: line 95: l2s_needed_when_start ... PASS
+        examp2.ivy: line 95: l2s_created ... PASS
+        examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+        examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+        examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+        examp2.ivy: line 95: l2s_work_preserved ... PASS
+        examp2.ivy: line 95: l2s_progress_made ... PASS
+        examp2.ivy: line 95: l2s_progress_invar ... PASS
+        examp2.ivy: line 95: l2s_not_all_done ... PASS
+        examp2.ivy: line 95: l2s_globally_0 ... PASS
+        examp2.ivy: line 95: l2s_globally_1 ... PASS
+        examp2.ivy: line 95: l2s_globally_2 ... PASS
+        examp2.ivy: line 95: l2s_globally_3 ... PASS
+        examp2.ivy: line 95: l2s_globally_4 ... PASS
+        examp2.ivy: line 95: l2s_globally_5 ... PASS
+        examp2.ivy: line 95: l2s_globally_6 ... PASS
+        examp2.ivy: line 95: l2s_globally_7 ... PASS
+        examp2.ivy: line 95: l2s_status_0 ... PASS
+        examp2.ivy: line 95: l2s_status_1 ... PASS
+        examp2.ivy: line 95: l2s_status_2 ... PASS
+        examp2.ivy: line 95: l2s_status_3 ... PASS
+        examp2.ivy: line 95: l2s_consts_d ... PASS
+        examp2.ivy: line 95: neg_prop_init ... PASS
+
+    The following set of external actions must preserve the invariant:
+        (internal) ext:m.q1.recv
+            examp2.ivy: line 95: l2s_needed_when_start ... PASS
+            examp2.ivy: line 95: l2s_created ... PASS
+            examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 95: l2s_work_preserved ... PASS
+            examp2.ivy: line 95: l2s_progress_made ... PASS
+            examp2.ivy: line 95: l2s_progress_invar ... PASS
+            examp2.ivy: line 95: l2s_not_all_done ... PASS
+            examp2.ivy: line 95: l2s_globally_0 ... PASS
+            examp2.ivy: line 95: l2s_globally_1 ... PASS
+            examp2.ivy: line 95: l2s_globally_2 ... PASS
+            examp2.ivy: line 95: l2s_globally_3 ... PASS
+            examp2.ivy: line 95: l2s_globally_4 ... PASS
+            examp2.ivy: line 95: l2s_globally_5 ... PASS
+            examp2.ivy: line 95: l2s_globally_6 ... PASS
+            examp2.ivy: line 95: l2s_globally_7 ... PASS
+            examp2.ivy: line 95: l2s_status_0 ... PASS
+            examp2.ivy: line 95: l2s_status_1 ... PASS
+            examp2.ivy: line 95: l2s_status_2 ... PASS
+            examp2.ivy: line 95: l2s_status_3 ... PASS
+            examp2.ivy: line 95: l2s_consts_d ... PASS
+            examp2.ivy: line 95: neg_prop_init ... PASS
+        (internal) ext:m.q1.send
+            examp2.ivy: line 95: l2s_needed_when_start ... PASS
+            examp2.ivy: line 95: l2s_created ... PASS
+            examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 95: l2s_work_preserved ... PASS
+            examp2.ivy: line 95: l2s_progress_made ... PASS
+            examp2.ivy: line 95: l2s_progress_invar ... PASS
+            examp2.ivy: line 95: l2s_not_all_done ... PASS
+            examp2.ivy: line 95: l2s_globally_0 ... PASS
+            examp2.ivy: line 95: l2s_globally_1 ... PASS
+            examp2.ivy: line 95: l2s_globally_2 ... PASS
+            examp2.ivy: line 95: l2s_globally_3 ... PASS
+            examp2.ivy: line 95: l2s_globally_4 ... PASS
+            examp2.ivy: line 95: l2s_globally_5 ... PASS
+            examp2.ivy: line 95: l2s_globally_6 ... PASS
+            examp2.ivy: line 95: l2s_globally_7 ... PASS
+            examp2.ivy: line 95: l2s_status_0 ... PASS
+            examp2.ivy: line 95: l2s_status_1 ... PASS
+            examp2.ivy: line 95: l2s_status_2 ... PASS
+            examp2.ivy: line 95: l2s_status_3 ... PASS
+            examp2.ivy: line 95: l2s_consts_d ... PASS
+            examp2.ivy: line 95: neg_prop_init ... PASS
+        (internal) idle
+            examp2.ivy: line 95: l2s_needed_when_start ... PASS
+            examp2.ivy: line 95: l2s_created ... PASS
+            examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 95: l2s_work_preserved ... PASS
+            examp2.ivy: line 95: l2s_progress_made ... PASS
+            examp2.ivy: line 95: l2s_progress_invar ... PASS
+            examp2.ivy: line 95: l2s_not_all_done ... PASS
+            examp2.ivy: line 95: l2s_globally_0 ... PASS
+            examp2.ivy: line 95: l2s_globally_1 ... PASS
+            examp2.ivy: line 95: l2s_globally_2 ... PASS
+            examp2.ivy: line 95: l2s_globally_3 ... PASS
+            examp2.ivy: line 95: l2s_globally_4 ... PASS
+            examp2.ivy: line 95: l2s_globally_5 ... PASS
+            examp2.ivy: line 95: l2s_globally_6 ... PASS
+            examp2.ivy: line 95: l2s_globally_7 ... PASS
+            examp2.ivy: line 95: l2s_status_0 ... PASS
+            examp2.ivy: line 95: l2s_status_1 ... PASS
+            examp2.ivy: line 95: l2s_status_2 ... PASS
+            examp2.ivy: line 95: l2s_status_3 ... PASS
+            examp2.ivy: line 95: l2s_consts_d ... PASS
+            examp2.ivy: line 95: neg_prop_init ... PASS
+
+    The following program assertions are treated as assumptions:
+        in action m.q1.send when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            examp2.ivy: line 69: assumption
+        in action m.q1.recv when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q1.sending.raise when called from m.q1.send:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q1.trying.raise when called from m.q1.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q1.receiving.raise when called from m.q1.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action idle when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+
+    The following program assertions are treated as guarantees:
+        in action idle when called from the environment,the environment:
+            examp2.ivy: line 102: guarantee ... PASS
+
+Isolate m.q2.iso:
+
+    The following properties are to be checked:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1  [assumed]
+
+    The inductive invariant consists of the following conjectures:
+        examp2.ivy: line 37: m.q2.sending.invar84
+        examp2.ivy: line 19: m.q2.trying.invar81
+        examp2.ivy: line 37: m.q2.receiving.invar84
+
+    The following action implementations are present:
+        examp2.ivy: line 26: implementation of m.q2.receiving.raise
+        examp2.ivy: line 55: implementation of m.q2.recv
+        examp2.ivy: line 49: implementation of m.q2.send
+        examp2.ivy: line 26: implementation of m.q2.sending.raise
+        examp2.ivy: line 10: implementation of m.q2.trying.raise
+
+    The following action monitors are present:
+        examp2.ivy: line 32: monitor of m.q2.receiving.raise
+        examp2.ivy: line 74: monitor of m.q2.recv
+        examp2.ivy: line 68: monitor of m.q2.send
+        examp2.ivy: line 32: monitor of m.q2.sending.raise
+        examp2.ivy: line 15: monitor of m.q2.trying.raise
+
+    The following initializers are present:
+        examp2.ivy: line 61: m.q2.init[after85]
+        examp2.ivy: line 31: m.q2.receiving.init[after82]
+        examp2.ivy: line 31: m.q2.sending.init[after82]
+        examp2.ivy: line 14: m.q2.trying.init[after79]
+
+    Initialization must establish the invariant
+        examp2.ivy: line 37: m.q2.sending.invar84 ... PASS
+        examp2.ivy: line 19: m.q2.trying.invar81 ... PASS
+        examp2.ivy: line 37: m.q2.receiving.invar84 ... PASS
+
+    The following set of external actions must preserve the invariant:
+        (internal) ext:m.q2.recv
+            examp2.ivy: line 37: m.q2.sending.invar84 ... PASS
+            examp2.ivy: line 19: m.q2.trying.invar81 ... PASS
+            examp2.ivy: line 37: m.q2.receiving.invar84 ... PASS
+        (internal) ext:m.q2.send
+            examp2.ivy: line 37: m.q2.sending.invar84 ... PASS
+            examp2.ivy: line 19: m.q2.trying.invar81 ... PASS
+            examp2.ivy: line 37: m.q2.receiving.invar84 ... PASS
+
+    The following program assertions are treated as assumptions:
+        in action m.q2.send when called from the environment:
+            examp2.ivy: line 69: assumption
+
+    The following temporal property is being proved:
+
+        examp2.ivy: line 88: m.q2.lpq ... --- l2s_auto invariants ---
+invariant [l2s_needed_when_start] (($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) -> ((m.q2.pending(X) & X <= _X) -> m.q2.pending(X))
+invariant [l2s_created] m.q2.pending(X) -> (l2s_d(X))
+invariant [l2s_needed_are_frozen] (($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & ~l2s_waiting) -> (~((m.q2.pending(X) & X <= _X) -> false) -> (l2s_a(X)))
+invariant [l2s_needed_were_frozen] (($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & l2s_saved) -> (~$l2s_s X:time. (m.q2.pending(X) & X <= _X) -> false(X) -> (l2s_a(X)))
+invariant [l2s_needed_implies_created] (($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) -> ((m.q2.pending(X) & X <= _X) -> m.q2.pending(X))
+invariant [l2s_work_preserved] (l2s_saved & $l2s_s X:time. (m.q2.pending(X) & X <= _X) -> false(X)) -> ((m.q2.pending(X) & X <= _X) -> false)
+invariant [l2s_progress_made] (l2s_saved & ~($l2s_w . m.q2.trying.now)) -> (exists X. (~$l2s_s X:time. (m.q2.pending(X) & X <= _X) -> false(X) & ((m.q2.pending(X) & X <= _X) -> false)))
+invariant [l2s_progress_invar] ($l2s_init . □ ⬦ m.q2.trying.now) -> □ ⬦ m.q2.trying.now
+invariant [l2s_not_all_done] (~(($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) | ~(forall X. m.q2.pending(_X) -> ((m.q2.pending(X) & X <= _X) -> false)))
+invariant [l2s_globally_0] globally[](eventually[](m.q2.trying.now))
+invariant [l2s_globally_1] ~⬦ m.q2.trying.now -> ~l2s_waiting | ~($l2s_w . m.q2.trying.now)
+invariant [l2s_globally_2] $l2s_init . ⬦ m.q2.trying.now
+invariant [l2s_globally_3] □ (m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X) -> ~l2s_waiting | ~($l2s_w . ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)))
+invariant [l2s_globally_4] $l2s_init . ~□ (m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)
+invariant [l2s_globally_5] ($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) | ~⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))
+invariant [l2s_globally_6] (($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & ~⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) -> ~l2s_waiting | ~($l2s_w . ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)))
+invariant [l2s_globally_7] (($l2s_init . ⬦ ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))) & (~l2s_waiting | ~($l2s_w . ~((m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X))))) -> ~⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)
+invariant [l2s_status_0] l2s_waiting | l2s_frozen | l2s_saved
+invariant [l2s_status_1] ~l2s_waiting | ~l2s_frozen
+invariant [l2s_status_2] ~l2s_waiting | ~l2s_saved
+invariant [l2s_status_3] ~l2s_frozen | ~l2s_saved
+invariant [l2s_consts_d] (l2s_d(m.q1.sending.value) & l2s_d(m.q1.receiving.value) & l2s_d(m.q2.sending.value) & l2s_d(m.q2.receiving.value) & l2s_d(_X))
+invariant [neg_prop_init] ~(($l2s_init . □ ⬦ m.q2.trying.now) -> ($l2s_init . □ (m.q2.sending.now & m.q2.sending.value = _X) -> ⬦ (m.q2.receiving.now & m.q2.receiving.value = _X)))
+---------------------------
+reset_w:
+$l2s_w . ~((m.q2.sending.now & m.q2.sending.value = _X) -> ~($l2s_g . ~(m.q2.receiving.now & m.q2.receiving.value = _X))) := (~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~($l2s_g . ~(m.q2.receiving.now & m.q2.receiving.value = _X))) & ~($l2s_g . (m.q2.sending.now & m.q2.sending.value = _X) -> ~($l2s_g . ~(m.q2.receiving.now & m.q2.receiving.value = _X))))
+$l2s_w . m.q2.trying.now := (~m.q2.trying.now & ~($l2s_g . ~m.q2.trying.now))
+
+examp2.ivy: line 104: Proof goals:
+
+theorem [m.q2.lpq] {
+    individual _X : time
+    property 
+let
+    ext:m.q2.send = action(fml:x:time){{l2s_d(fml:x) := true; assume l2s_g_2 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_3 -> ~m.q2.trying.now; assume ~(~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & l2s_w_1); assume ~(m.q2.trying.now & l2s_w_0); {{{{assume [m.q2.asrt86] m.q2.pending(T) -> T < fml:x}; {m.q2.pending(fml:x) := true}; {call ext:m.q2.sending.raise(fml:x)}}}}; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true}}
+    ext:m.q2.recv = action returns(fml:x:time,fml:ok:Boolean){{assume l2s_g_2 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_3 -> ~m.q2.trying.now; assume ~(~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & l2s_w_1); assume ~(m.q2.trying.now & l2s_w_0); {{{{call ext:m.q2.trying.raise}; {fml:ok := false}; {if some loc:y. m.q2.pending(loc:y) minimizing loc:y {{{fml:ok := true}; {fml:x := loc:y}; {m.q2.pending(fml:x) := false}; {call ext:m.q2.receiving.raise(fml:x)}}}}}}}; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true}}
+    ext:m.q2.sending.raise = action(fml:val:time){{{{{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q2.sending.value := fml:val}; assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q2.sending.now := true}; assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; m.q2.sending.now := false}; assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); l2s_w_1 := (l2s_w_1 & ~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}}}}
+    ext:m.q2.trying.raise = action{{{{{_old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_3 := l2s_g_3; l2s_g_3 := *; assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ~l2s_g_3) -> ~l2s_g_1; assume _old_l2s_g_3 -> l2s_g_3; assume (~_old_l2s_g_3 & ~m.q2.trying.now) -> ~l2s_g_3; m.q2.trying.now := true}; assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_3 -> ~m.q2.trying.now; l2s_w_0 := (l2s_w_0 & ~m.q2.trying.now & ~l2s_g_3)}; {{_old_l2s_g_1 := l2s_g_1; l2s_g_1 := *; _old_l2s_g_3 := l2s_g_3; l2s_g_3 := *; assume _old_l2s_g_1 -> l2s_g_1; assume (~_old_l2s_g_1 & ~l2s_g_3) -> ~l2s_g_1; assume _old_l2s_g_3 -> l2s_g_3; assume (~_old_l2s_g_3 & ~m.q2.trying.now) -> ~l2s_g_3; m.q2.trying.now := false}; assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_3 -> ~m.q2.trying.now; l2s_w_0 := (l2s_w_0 & ~m.q2.trying.now & ~l2s_g_3)}}}}
+    ext:m.q2.receiving.raise = action(fml:val:time){{{{{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ~(m.q2.receiving.now & m.q2.receiving.value = _X)) -> ~l2s_g_2; m.q2.receiving.value := fml:val}; assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); assume l2s_g_2 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); l2s_w_1 := (l2s_w_1 & ~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ~(m.q2.receiving.now & m.q2.receiving.value = _X)) -> ~l2s_g_2; m.q2.receiving.now := true}; assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); assume l2s_g_2 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); l2s_w_1 := (l2s_w_1 & ~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}; {{_old_l2s_g_0 := l2s_g_0; l2s_g_0 := *; _old_l2s_g_2 := l2s_g_2; l2s_g_2 := *; assume _old_l2s_g_0 -> l2s_g_0; assume (~_old_l2s_g_0 & ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2)) -> ~l2s_g_0; assume _old_l2s_g_2 -> l2s_g_2; assume (~_old_l2s_g_2 & ~(m.q2.receiving.now & m.q2.receiving.value = _X)) -> ~l2s_g_2; m.q2.receiving.now := false}; assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); assume l2s_g_2 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); l2s_w_1 := (l2s_w_1 & ~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0)}}}}
+    idle = action{{if * {assume l2s_waiting; l2s_waiting := false; l2s_frozen := true; assume ~l2s_w_1; assume ~l2s_w_0; l2s_a(X:index) := l2s_d(X:index); l2s_a(X:time) := l2s_d(X:time)}
+else if * {assume l2s_frozen; l2s_frozen := false; l2s_saved := true; l2s_s_0(V0) := (m.q2.pending(V0) & V0 <= _X) -> false; l2s_w_1 := (~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0); l2s_w_0 := (~m.q2.trying.now & ~l2s_g_3)}
+else {}; assume l2s_g_2 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_3 -> ~m.q2.trying.now; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true; assert ~(l2s_saved & ~l2s_w_1 & ~l2s_w_0 & (forall V0. (l2s_a(V0:time)) -> (l2s_s_0(V0) <-> ((m.q2.pending(V0) & V0 <= _X) -> false))))}}
+in
+    {{m.q2.pending(X) := false; m.q2.sending.now := false; m.q2.trying.now := false; m.q2.receiving.now := false}; l2s_waiting := true; l2s_frozen := false; l2s_saved := false; l2s_d(m.q1.sending.value) := true; l2s_d(m.q1.receiving.value) := true; l2s_d(m.q2.sending.value) := true; l2s_d(m.q2.receiving.value) := true; l2s_d(_X) := true; l2s_w_1 := (~~((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2) & ~l2s_g_0); l2s_w_0 := (~m.q2.trying.now & ~l2s_g_3); assume l2s_g_2 -> ~(m.q2.receiving.now & m.q2.receiving.value = _X); assume l2s_g_0 -> ((m.q2.sending.now & m.q2.sending.value = _X) -> ~l2s_g_2); assume l2s_g_1 -> ~l2s_g_3; assume l2s_g_3 -> ~m.q2.trying.now; assume l2s_init_2 = l2s_g_3; assume l2s_init_1 = l2s_g_1; assume l2s_init_0 = l2s_g_0; assume ~(l2s_g_1 -> l2s_g_0)}
+    while *
+        invariant [l2s_needed_when_start] (~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) -> ((m.q2.pending(X) & X <= _X) -> m.q2.pending(X))
+        invariant [l2s_created] m.q2.pending(X) -> (l2s_d(X))
+        invariant [l2s_needed_are_frozen] (~l2s_init_0 & ~l2s_waiting) -> (~((m.q2.pending(X) & X <= _X) -> false) -> (l2s_a(X)))
+        invariant [l2s_needed_were_frozen] (~l2s_init_0 & l2s_saved) -> (~l2s_s_0(X) -> (l2s_a(X)))
+        invariant [l2s_needed_implies_created] (~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) -> ((m.q2.pending(X) & X <= _X) -> m.q2.pending(X))
+        invariant [l2s_work_preserved] (l2s_saved & l2s_s_0(X)) -> ((m.q2.pending(X) & X <= _X) -> false)
+        invariant [l2s_progress_made] (l2s_saved & ~l2s_w_0) -> (exists X. (~l2s_s_0(X) & ((m.q2.pending(X) & X <= _X) -> false)))
+        invariant [l2s_progress_invar] l2s_init_1 -> l2s_g_1
+        invariant [l2s_not_all_done] (~(~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) | ~(forall X. m.q2.pending(_X) -> ((m.q2.pending(X) & X <= _X) -> false)))
+        invariant [l2s_globally_0] l2s_g_1
+        invariant [l2s_globally_1] l2s_g_3 -> ~l2s_waiting | ~l2s_w_0
+        invariant [l2s_globally_2] ~l2s_init_2
+        invariant [l2s_globally_3] l2s_g_0 -> ~l2s_waiting | ~l2s_w_1
+        invariant [l2s_globally_4] ~l2s_init_0
+        invariant [l2s_globally_5] ~l2s_init_0 | l2s_g_0
+        invariant [l2s_globally_6] (~l2s_init_0 & l2s_g_0) -> ~l2s_waiting | ~l2s_w_1
+        invariant [l2s_globally_7] (~l2s_init_0 & (~l2s_waiting | ~l2s_w_1)) -> l2s_g_2
+        invariant [l2s_status_0] l2s_waiting | l2s_frozen | l2s_saved
+        invariant [l2s_status_1] ~l2s_waiting | ~l2s_frozen
+        invariant [l2s_status_2] ~l2s_waiting | ~l2s_saved
+        invariant [l2s_status_3] ~l2s_frozen | ~l2s_saved
+        invariant [l2s_consts_d] (l2s_d(m.q1.sending.value) & l2s_d(m.q1.receiving.value) & l2s_d(m.q2.sending.value) & l2s_d(m.q2.receiving.value) & l2s_d(_X))
+        invariant [neg_prop_init] ~(l2s_init_1 -> l2s_init_0)
+    {
+        diverge;
+        assume [m.q2.sending.invar84] ~m.q2.sending.now;
+        assume [m.q2.trying.invar81] ~m.q2.trying.now;
+        assume [m.q2.receiving.invar84] ~m.q2.receiving.now;
+        call one of {ext:m.q2.recv,ext:m.q2.send,idle}
+    }
+ |= true
+}
+
+
+
+    The following properties are assumed as axioms:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1
+
+    The inductive invariant consists of the following conjectures:
+        examp2.ivy: line 95: l2s_needed_when_start
+        examp2.ivy: line 95: l2s_created
+        examp2.ivy: line 95: l2s_needed_are_frozen
+        examp2.ivy: line 95: l2s_needed_were_frozen
+        examp2.ivy: line 95: l2s_needed_implies_created
+        examp2.ivy: line 95: l2s_work_preserved
+        examp2.ivy: line 95: l2s_progress_made
+        examp2.ivy: line 95: l2s_progress_invar
+        examp2.ivy: line 95: l2s_not_all_done
+        examp2.ivy: line 95: l2s_globally_0
+        examp2.ivy: line 95: l2s_globally_1
+        examp2.ivy: line 95: l2s_globally_2
+        examp2.ivy: line 95: l2s_globally_3
+        examp2.ivy: line 95: l2s_globally_4
+        examp2.ivy: line 95: l2s_globally_5
+        examp2.ivy: line 95: l2s_globally_6
+        examp2.ivy: line 95: l2s_globally_7
+        examp2.ivy: line 95: l2s_status_0
+        examp2.ivy: line 95: l2s_status_1
+        examp2.ivy: line 95: l2s_status_2
+        examp2.ivy: line 95: l2s_status_3
+        examp2.ivy: line 95: l2s_consts_d
+        examp2.ivy: line 95: neg_prop_init
+
+    The following action implementations are present:
+        examp2.ivy: line 26: implementation of m.q2.receiving.raise
+        examp2.ivy: line 55: implementation of m.q2.recv
+        examp2.ivy: line 49: implementation of m.q2.send
+        examp2.ivy: line 26: implementation of m.q2.sending.raise
+        examp2.ivy: line 10: implementation of m.q2.trying.raise
+
+    The following action monitors are present:
+        examp2.ivy: line 32: monitor of m.q2.receiving.raise
+        examp2.ivy: line 74: monitor of m.q2.recv
+        examp2.ivy: line 68: monitor of m.q2.send
+        examp2.ivy: line 32: monitor of m.q2.sending.raise
+        examp2.ivy: line 15: monitor of m.q2.trying.raise
+
+    The following initializers are present:
+        Noneinit
+
+    Initialization must establish the invariant
+        examp2.ivy: line 95: l2s_needed_when_start ... PASS
+        examp2.ivy: line 95: l2s_created ... PASS
+        examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+        examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+        examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+        examp2.ivy: line 95: l2s_work_preserved ... PASS
+        examp2.ivy: line 95: l2s_progress_made ... PASS
+        examp2.ivy: line 95: l2s_progress_invar ... PASS
+        examp2.ivy: line 95: l2s_not_all_done ... PASS
+        examp2.ivy: line 95: l2s_globally_0 ... PASS
+        examp2.ivy: line 95: l2s_globally_1 ... PASS
+        examp2.ivy: line 95: l2s_globally_2 ... PASS
+        examp2.ivy: line 95: l2s_globally_3 ... PASS
+        examp2.ivy: line 95: l2s_globally_4 ... PASS
+        examp2.ivy: line 95: l2s_globally_5 ... PASS
+        examp2.ivy: line 95: l2s_globally_6 ... PASS
+        examp2.ivy: line 95: l2s_globally_7 ... PASS
+        examp2.ivy: line 95: l2s_status_0 ... PASS
+        examp2.ivy: line 95: l2s_status_1 ... PASS
+        examp2.ivy: line 95: l2s_status_2 ... PASS
+        examp2.ivy: line 95: l2s_status_3 ... PASS
+        examp2.ivy: line 95: l2s_consts_d ... PASS
+        examp2.ivy: line 95: neg_prop_init ... PASS
+
+    The following set of external actions must preserve the invariant:
+        (internal) ext:m.q2.recv
+            examp2.ivy: line 95: l2s_needed_when_start ... PASS
+            examp2.ivy: line 95: l2s_created ... PASS
+            examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 95: l2s_work_preserved ... PASS
+            examp2.ivy: line 95: l2s_progress_made ... PASS
+            examp2.ivy: line 95: l2s_progress_invar ... PASS
+            examp2.ivy: line 95: l2s_not_all_done ... PASS
+            examp2.ivy: line 95: l2s_globally_0 ... PASS
+            examp2.ivy: line 95: l2s_globally_1 ... PASS
+            examp2.ivy: line 95: l2s_globally_2 ... PASS
+            examp2.ivy: line 95: l2s_globally_3 ... PASS
+            examp2.ivy: line 95: l2s_globally_4 ... PASS
+            examp2.ivy: line 95: l2s_globally_5 ... PASS
+            examp2.ivy: line 95: l2s_globally_6 ... PASS
+            examp2.ivy: line 95: l2s_globally_7 ... PASS
+            examp2.ivy: line 95: l2s_status_0 ... PASS
+            examp2.ivy: line 95: l2s_status_1 ... PASS
+            examp2.ivy: line 95: l2s_status_2 ... PASS
+            examp2.ivy: line 95: l2s_status_3 ... PASS
+            examp2.ivy: line 95: l2s_consts_d ... PASS
+            examp2.ivy: line 95: neg_prop_init ... PASS
+        (internal) ext:m.q2.send
+            examp2.ivy: line 95: l2s_needed_when_start ... PASS
+            examp2.ivy: line 95: l2s_created ... PASS
+            examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 95: l2s_work_preserved ... PASS
+            examp2.ivy: line 95: l2s_progress_made ... PASS
+            examp2.ivy: line 95: l2s_progress_invar ... PASS
+            examp2.ivy: line 95: l2s_not_all_done ... PASS
+            examp2.ivy: line 95: l2s_globally_0 ... PASS
+            examp2.ivy: line 95: l2s_globally_1 ... PASS
+            examp2.ivy: line 95: l2s_globally_2 ... PASS
+            examp2.ivy: line 95: l2s_globally_3 ... PASS
+            examp2.ivy: line 95: l2s_globally_4 ... PASS
+            examp2.ivy: line 95: l2s_globally_5 ... PASS
+            examp2.ivy: line 95: l2s_globally_6 ... PASS
+            examp2.ivy: line 95: l2s_globally_7 ... PASS
+            examp2.ivy: line 95: l2s_status_0 ... PASS
+            examp2.ivy: line 95: l2s_status_1 ... PASS
+            examp2.ivy: line 95: l2s_status_2 ... PASS
+            examp2.ivy: line 95: l2s_status_3 ... PASS
+            examp2.ivy: line 95: l2s_consts_d ... PASS
+            examp2.ivy: line 95: neg_prop_init ... PASS
+        (internal) idle
+            examp2.ivy: line 95: l2s_needed_when_start ... PASS
+            examp2.ivy: line 95: l2s_created ... PASS
+            examp2.ivy: line 95: l2s_needed_are_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_were_frozen ... PASS
+            examp2.ivy: line 95: l2s_needed_implies_created ... PASS
+            examp2.ivy: line 95: l2s_work_preserved ... PASS
+            examp2.ivy: line 95: l2s_progress_made ... PASS
+            examp2.ivy: line 95: l2s_progress_invar ... PASS
+            examp2.ivy: line 95: l2s_not_all_done ... PASS
+            examp2.ivy: line 95: l2s_globally_0 ... PASS
+            examp2.ivy: line 95: l2s_globally_1 ... PASS
+            examp2.ivy: line 95: l2s_globally_2 ... PASS
+            examp2.ivy: line 95: l2s_globally_3 ... PASS
+            examp2.ivy: line 95: l2s_globally_4 ... PASS
+            examp2.ivy: line 95: l2s_globally_5 ... PASS
+            examp2.ivy: line 95: l2s_globally_6 ... PASS
+            examp2.ivy: line 95: l2s_globally_7 ... PASS
+            examp2.ivy: line 95: l2s_status_0 ... PASS
+            examp2.ivy: line 95: l2s_status_1 ... PASS
+            examp2.ivy: line 95: l2s_status_2 ... PASS
+            examp2.ivy: line 95: l2s_status_3 ... PASS
+            examp2.ivy: line 95: l2s_consts_d ... PASS
+            examp2.ivy: line 95: neg_prop_init ... PASS
+
+    The following program assertions are treated as assumptions:
+        in action m.q2.send when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            examp2.ivy: line 69: assumption
+        in action m.q2.recv when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q2.sending.raise when called from m.q2.send:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q2.trying.raise when called from m.q2.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action m.q2.receiving.raise when called from m.q2.recv:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+        in action idle when called from the environment:
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+            nowhere: assumption
+
+    The following program assertions are treated as guarantees:
+        in action idle when called from the environment,the environment:
+            examp2.ivy: line 102: guarantee ... PASS
+
+Isolate this:
+
+    The following properties are to be checked:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1  [assumed]
+
+    The following action implementations are present:
+        examp2.ivy: line 120: implementation of m.poll
+        examp2.ivy: line 26: implementation of m.q1.receiving.raise
+        examp2.ivy: line 55: implementation of m.q1.recv
+        examp2.ivy: line 49: implementation of m.q1.send
+        examp2.ivy: line 26: implementation of m.q1.sending.raise
+        examp2.ivy: line 10: implementation of m.q1.trying.raise
+        examp2.ivy: line 26: implementation of m.q2.receiving.raise
+        examp2.ivy: line 55: implementation of m.q2.recv
+        examp2.ivy: line 49: implementation of m.q2.send
+        examp2.ivy: line 26: implementation of m.q2.sending.raise
+        examp2.ivy: line 10: implementation of m.q2.trying.raise
+
+    The following action monitors are present:
+        examp2.ivy: line 32: monitor of m.q1.receiving.raise
+        examp2.ivy: line 74: monitor of m.q1.recv
+        examp2.ivy: line 68: monitor of m.q1.send
+        examp2.ivy: line 32: monitor of m.q1.sending.raise
+        examp2.ivy: line 15: monitor of m.q1.trying.raise
+        examp2.ivy: line 32: monitor of m.q2.receiving.raise
+        examp2.ivy: line 74: monitor of m.q2.recv
+        examp2.ivy: line 68: monitor of m.q2.send
+        examp2.ivy: line 32: monitor of m.q2.sending.raise
+        examp2.ivy: line 15: monitor of m.q2.trying.raise
+
+    The following initializers are present:
+        examp2.ivy: line 61: m.q1.init[after85]
+        examp2.ivy: line 31: m.q1.receiving.init[after82]
+        examp2.ivy: line 31: m.q1.sending.init[after82]
+        examp2.ivy: line 14: m.q1.trying.init[after79]
+        examp2.ivy: line 61: m.q2.init[after85]
+        examp2.ivy: line 31: m.q2.receiving.init[after82]
+        examp2.ivy: line 31: m.q2.sending.init[after82]
+        examp2.ivy: line 14: m.q2.trying.init[after79]
+
+    The following program assertions are treated as assumptions:
+        in action m.q1.send when called from the environment:
+            examp2.ivy: line 129: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 69: assumption
+            examp2.ivy: line 129: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q1.recv when called from m.poll:
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q2.send when called from m.poll:
+            examp2.ivy: line 69: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.q2.recv when called from the environment:
+            examp2.ivy: line 129: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 129: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+        in action m.poll when called from the environment:
+            examp2.ivy: line 129: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 129: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 37: assumption
+            examp2.ivy: line 19: assumption
+
+Isolate time.iso:
+
+    The following definitions are used:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 54: time.impl.def14
+
+    The following properties are to be checked:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: time.spec.prop4 ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: time.spec.transitivity ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: time.spec.antisymmetry ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: time.spec.totality ... PASS
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: time.spec.prop1 ... PASS
+
+error: failed checks: 1

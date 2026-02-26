@@ -1,0 +1,2582 @@
+-*- mode: compilation; default-directory: "~/ivy/doc/examples/apple/" -*-
+Compilation started at Fri Jan  5 15:45:16
+
+ivy_check isolate=sys_live trace=true complete=fo ord_live2d.ivy 
+
+Isolate sys_live:
+
+    The following properties are assumed as axioms:
+        ord_live2d.ivy: line 1675: sys_live.lemma4
+        ord_live2d.ivy: line 1679: sys_live.lemma3a
+        ord_live2d.ivy: line 1682: sys_live.lemma3b
+        ord_live2d.ivy: line 1685: sys_live.memc_cpl_fair
+        ord_live2d.ivy: line 1688: sys_live.cf_cpl_fair
+        ord_live2d.ivy: line 1691: sys_live.cpl_fair
+
+    The following definitions are used:
+        ord_live2d.ivy: line 168: ref.def80
+        ord_live2d.ivy: line 177: ref.def81
+        ord_live2d.ivy: line 188: ref.def84
+        ord_live2d.ivy: line 190: ref.def85
+        ord_live2d.ivy: line 191: ref.def86
+        ord_live2d.ivy: line 192: ref.def87
+        ord_live2d.ivy: line 193: ref.def88
+        ord_live2d.ivy: line 194: ref.def89
+        ord_live2d.ivy: line 196: ref.def90
+        ord_live2d.ivy: line 1655: sys_live.def216
+        ord_live2d.ivy: line 1659: sys_live.def217
+        ord_live2d.ivy: line 1663: sys_live.def218
+        ord_live2d.ivy: line 1667: sys_live.def219
+        ord_live2d.ivy: line 1672: sys_live.def220
+
+    The following properties are to be checked:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: lclock.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: lclock.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: lclock.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: lclock.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: lclock.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: tar_clock.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: tar_clock.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: tar_clock.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: tar_clock.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: tar_clock.spec.prop1  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: tar_cf_clock.spec.prop4  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: tar_cf_clock.spec.transitivity  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: tar_cf_clock.spec.antisymmetry  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: tar_cf_clock.spec.totality  [assumed]
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: tar_cf_clock.spec.prop1  [assumed]
+
+    The following action implementations are present:
+        ord_live2d.ivy: line 308: implementation of arm.retire_hook
+        ord_live2d.ivy: line 312: implementation of arm.step_north
+        ord_live2d.ivy: line 491: implementation of arm.step_south
+        ord_live2d.ivy: line 573: implementation of cfabric.complete_hook
+        ord_live2d.ivy: line 576: implementation of cfabric.step
+        ord_live2d.ivy: line 930: implementation of dramc.init[after105]
+        ord_live2d.ivy: line 938: implementation of dramc.step_rd
+        ord_live2d.ivy: line 963: implementation of dramc.step_wr
+        ord_live2d.ivy: line 718: implementation of ifabric.init[after100]
+        ord_live2d.ivy: line 726: implementation of ifabric.step
+        ord_live2d.ivy: line 807: implementation of memc.memc_arr_hook
+        ord_live2d.ivy: line 809: implementation of memc.memc_cpl_hook
+        ord_live2d.ivy: line 808: implementation of memc.memc_push_hook
+        ord_live2d.ivy: line 814: implementation of memc.step
+        ord_live2d.ivy: line 244: implementation of ref.perform
+        ord_live2d.ivy: line 264: implementation of ref.perform_grd
+
+    The following action monitors are present:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 37: monitor of lclock.next
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 37: monitor of tar_cf_clock.next
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 37: monitor of tar_clock.next
+
+    The following initializers are present:
+        ord_live2d.ivy: line 487: arm.init[after95]
+        ord_live2d.ivy: line 562: cfabric.init[after98]
+        ord_live2d.ivy: line 102: isd.init[after79]
+        ord_live2d.ivy: line 800: memc.init[after102]
+        ord_live2d.ivy: line 204: ref.init[after93]
+
+    The following program assertions are treated as assumptions:
+        in action lclock.next when called from cfabric.step:
+            /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 38: assumption
+            /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 39: assumption
+        in action tar_clock.next when called from ref.perform_grd,ref.perform_grd,memc.step,memc.step:
+            /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 38: assumption
+            /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 39: assumption
+        in action tar_cf_clock.next when called from cfabric.step:
+            /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 38: assumption
+            /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 39: assumption
+        in action ref.perform_grd when called from memc.step,memc.step,dramc.step_rd,dramc.step_wr:
+            ord_live2d.ivy: line 272: assumption
+        in action cfabric.step when called from the environment:
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+            ord_live2d.ivy: line 683: assumption
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+        in action ifabric.step when called from the environment:
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+            ord_live2d.ivy: line 781: assumption
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+        in action memc.step when called from the environment:
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+            ord_live2d.ivy: line 864: assumption
+            ord_live2d.ivy: line 895: assumption
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+        in action arm.step_north when called from the environment:
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+        in action arm.step_south when called from the environment:
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+            ord_live2d.ivy: line 528: assumption
+            ord_live2d.ivy: line 535: assumption
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+        in action dramc.step_rd when called from the environment:
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+            ord_live2d.ivy: line 951: assumption
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+        in action dramc.step_wr when called from the environment:
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+            ord_live2d.ivy: line 979: assumption
+            ord_live2d.ivy: line 1112: assumption
+            ord_live2d.ivy: line 1455: assumption
+            ord_live2d.ivy: line 1379: assumption
+            ord_live2d.ivy: line 1370: assumption
+            ord_live2d.ivy: line 1327: assumption
+            ord_live2d.ivy: line 1297: assumption
+            ord_live2d.ivy: line 1338: assumption
+            ord_live2d.ivy: line 1470: assumption
+            ord_live2d.ivy: line 1541: assumption
+            ord_live2d.ivy: line 1343: assumption
+            ord_live2d.ivy: line 1107: assumption
+            ord_live2d.ivy: line 1266: assumption
+            ord_live2d.ivy: line 1354: assumption
+            ord_live2d.ivy: line 1382: assumption
+            ord_live2d.ivy: line 1324: assumption
+            ord_live2d.ivy: line 1209: assumption
+            ord_live2d.ivy: line 1001: assumption
+            ord_live2d.ivy: line 1228: assumption
+            ord_live2d.ivy: line 1217: assumption
+            ord_live2d.ivy: line 1396: assumption
+            ord_live2d.ivy: line 1084: assumption
+            ord_live2d.ivy: line 1032: assumption
+            ord_live2d.ivy: line 1061: assumption
+            ord_live2d.ivy: line 1053: assumption
+            ord_live2d.ivy: line 1326: assumption
+            ord_live2d.ivy: line 1077: assumption
+            ord_live2d.ivy: line 1336: assumption
+            ord_live2d.ivy: line 1122: assumption
+            ord_live2d.ivy: line 1140: assumption
+            ord_live2d.ivy: line 1306: assumption
+            ord_live2d.ivy: line 1109: assumption
+            ord_live2d.ivy: line 1118: assumption
+            ord_live2d.ivy: line 1552: assumption
+            ord_live2d.ivy: line 1055: assumption
+            ord_live2d.ivy: line 1131: assumption
+            ord_live2d.ivy: line 1037: assumption
+            ord_live2d.ivy: line 1110: assumption
+            ord_live2d.ivy: line 1425: assumption
+            ord_live2d.ivy: line 1259: assumption
+            ord_live2d.ivy: line 1113: assumption
+            ord_live2d.ivy: line 1293: assumption
+            ord_live2d.ivy: line 1525: assumption
+            ord_live2d.ivy: line 1332: assumption
+            ord_live2d.ivy: line 1006: assumption
+            ord_live2d.ivy: line 1204: assumption
+            ord_live2d.ivy: line 1443: assumption
+            ord_live2d.ivy: line 1019: assumption
+            ord_live2d.ivy: line 1092: assumption
+            ord_live2d.ivy: line 1059: assumption
+            ord_live2d.ivy: line 1311: assumption
+            ord_live2d.ivy: line 1153: assumption
+            ord_live2d.ivy: line 1345: assumption
+            ord_live2d.ivy: line 1242: assumption
+            ord_live2d.ivy: line 1363: assumption
+            ord_live2d.ivy: line 1261: assumption
+            ord_live2d.ivy: line 1331: assumption
+            ord_live2d.ivy: line 1180: assumption
+            ord_live2d.ivy: line 1380: assumption
+            ord_live2d.ivy: line 1008: assumption
+            ord_live2d.ivy: line 1026: assumption
+            ord_live2d.ivy: line 1277: assumption
+            ord_live2d.ivy: line 1504: assumption
+            ord_live2d.ivy: line 1003: assumption
+            ord_live2d.ivy: line 1072: assumption
+            ord_live2d.ivy: line 1487: assumption
+            ord_live2d.ivy: line 1025: assumption
+            ord_live2d.ivy: line 1315: assumption
+            ord_live2d.ivy: line 1344: assumption
+            ord_live2d.ivy: line 1023: assumption
+            ord_live2d.ivy: line 1313: assumption
+            ord_live2d.ivy: line 1454: assumption
+            ord_live2d.ivy: line 1048: assumption
+            ord_live2d.ivy: line 1258: assumption
+            ord_live2d.ivy: line 1374: assumption
+            ord_live2d.ivy: line 1329: assumption
+            ord_live2d.ivy: line 1342: assumption
+            ord_live2d.ivy: line 1174: assumption
+            ord_live2d.ivy: line 1415: assumption
+            ord_live2d.ivy: line 1250: assumption
+            ord_live2d.ivy: line 1300: assumption
+            ord_live2d.ivy: line 1105: assumption
+            ord_live2d.ivy: line 1080: assumption
+            ord_live2d.ivy: line 1408: assumption
+            ord_live2d.ivy: line 1334: assumption
+            ord_live2d.ivy: line 1514: assumption
+            ord_live2d.ivy: line 1062: assumption
+            ord_live2d.ivy: line 1383: assumption
+            ord_live2d.ivy: line 1101: assumption
+            ord_live2d.ivy: line 1104: assumption
+            ord_live2d.ivy: line 1263: assumption
+            ord_live2d.ivy: line 998: assumption
+            ord_live2d.ivy: line 1030: assumption
+            ord_live2d.ivy: line 1115: assumption
+            ord_live2d.ivy: line 1156: assumption
+            ord_live2d.ivy: line 1004: assumption
+            ord_live2d.ivy: line 1088: assumption
+            ord_live2d.ivy: line 1057: assumption
+            ord_live2d.ivy: line 1367: assumption
+            ord_live2d.ivy: line 1283: assumption
+            ord_live2d.ivy: line 1034: assumption
+            ord_live2d.ivy: line 1357: assumption
+            ord_live2d.ivy: line 1011: assumption
+
+    The following temporal property is being proved:
+
+        ord_live2d.ivy: line 1702: sys_live.live ... --- l2s_auto invariants ---
+invariant [invar246] ~arm.cpl_fair(P)
+invariant [invar247] ~cfabric.cpl_fair
+invariant [invar248] ~memc.cpl_fair(P,M,A,T)
+invariant [invar249] ~l2s_waiting -> (sys_live.pending(_T) & ref.evs.p(_T) = _P)
+invariant [invar250] (~l2s_waiting & T:lclock <= _T) -> l2s_a(T)
+invariant [invar251] l2s_saved -> _T <= ref.lt
+invariant [l2s_needed_when_start[0]] (($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & (~l2s_waiting | ~($l2s_w . ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))))) -> ((((((T:lclock <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> (l2s_d(T)))
+invariant [l2s_created[0]] T:lclock <= ref.lt -> (l2s_d(T))
+invariant [l2s_needed_are_frozen[0]] (($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & ~l2s_waiting) -> (~((((((T:lclock <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false) -> (l2s_a(T)))
+invariant [l2s_needed_were_frozen[0]] (($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & l2s_saved) -> (~$l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T) -> (l2s_a(T)))
+invariant [l2s_work_preserved[0]] (l2s_saved & $l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T)) -> ((((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false)
+invariant [l2s_progress_made[0]] (l2s_saved & ($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & (exists T. $l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T)) & ~(forall T. $l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T)) & (forall T. $l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T) -> ~$l2s_w T:lclock. sys_live.memc_cpl(T)(T))) -> (exists T. (~$l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T) & ((((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false)))
+invariant [l2s_progress_invar[0]] $l2s_init T:lclock. □ ⬦ sys_live.memc_cpl(T)(T) -> □ ⬦ sys_live.memc_cpl(T)
+invariant [l2s_sched_stable[0]] forall T. ($l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T) & l2s_saved & ($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & $l2s_w T:lclock. sys_live.memc_cpl(T)(T)) -> (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))
+invariant [l2s_needed_when_start[1]] true -> (((((T:lclock <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> (l2s_d(T)))
+invariant [l2s_created[1]] sys_live.pending(T) -> (l2s_d(T))
+invariant [l2s_needed_are_frozen[1]] (true & ~l2s_waiting) -> (~(((((T:lclock <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false) -> (l2s_a(T)))
+invariant [l2s_needed_were_frozen[1]] (true & l2s_saved) -> (~$l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T) -> (l2s_a(T)))
+invariant [l2s_work_preserved[1]] (l2s_saved & $l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T)) -> (((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false)
+invariant [l2s_progress_made[1]] (l2s_saved & true & (exists T. $l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T)) & ~(forall T. $l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T)) & (forall T. $l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T) -> ~$l2s_w T:lclock. sys_live.cf_cpl(T)(T))) -> (exists T. (~$l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T) & (((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false)))
+invariant [l2s_progress_invar[1]] $l2s_init T:lclock. □ ⬦ sys_live.cf_cpl(T)(T) -> □ ⬦ sys_live.cf_cpl(T)
+invariant [l2s_sched_stable[1]] forall T. ($l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T) & l2s_saved & true & $l2s_w T:lclock. sys_live.cf_cpl(T)(T)) -> ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))
+invariant [l2s_needed_when_start[7]] true -> (((((T:lclock <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> (l2s_d(T)))
+invariant [l2s_created[7]] sys_live.pending(T) -> (l2s_d(T))
+invariant [l2s_needed_are_frozen[7]] (true & ~l2s_waiting) -> (~(((((T:lclock <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false) -> (l2s_a(T)))
+invariant [l2s_needed_were_frozen[7]] (true & l2s_saved) -> (~$l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T) -> (l2s_a(T)))
+invariant [l2s_work_preserved[7]] (l2s_saved & $l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T)) -> (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false)
+invariant [l2s_progress_made[7]] (l2s_saved & true & (exists M,A,P,T. $l2s_s P:proc,M:mem_type,A:addr_type,T:lclock. (((((T <= _T & sys_live.memc_cpl(T)) & ~sys_live.is_io(T)) & P = ref.evs.p(T)) & M = ref.evs.m(T)) & A = ref.evs.a(T))(P,M,A,T)) & ~(forall T. $l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T)) & (forall M,A,P,T. $l2s_s P:proc,M:mem_type,A:addr_type,T:lclock. (((((T <= _T & sys_live.memc_cpl(T)) & ~sys_live.is_io(T)) & P = ref.evs.p(T)) & M = ref.evs.m(T)) & A = ref.evs.a(T))(P,M,A,T) -> ~$l2s_w P:proc,M:mem_type,A:addr_type,T:lclock. memc.cpl_fair(P,M,A,T)(P,M,A,T))) -> (exists T. (~$l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false(T) & (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false)))
+invariant [l2s_progress_invar[7]] $l2s_init P:proc,M:mem_type,A:addr_type,T:lclock. □ ⬦ memc.cpl_fair(P,M,A,T)(P,M,A,T) -> □ ⬦ memc.cpl_fair(P,M,A,T)
+invariant [l2s_sched_stable[7]] forall M,A,P,T. ($l2s_s P:proc,M:mem_type,A:addr_type,T:lclock. (((((T <= _T & sys_live.memc_cpl(T)) & ~sys_live.is_io(T)) & P = ref.evs.p(T)) & M = ref.evs.m(T)) & A = ref.evs.a(T))(P,M,A,T) & l2s_saved & true & $l2s_w P:proc,M:mem_type,A:addr_type,T:lclock. memc.cpl_fair(P,M,A,T)(P,M,A,T)) -> (((((T <= _T & sys_live.memc_cpl(T)) & ~sys_live.is_io(T)) & P = ref.evs.p(T)) & M = ref.evs.m(T)) & A = ref.evs.a(T))
+invariant [l2s_needed_when_start[8]] true -> (((T:lclock <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> (l2s_d(T)))
+invariant [l2s_created[8]] sys_live.pending(T) -> (l2s_d(T))
+invariant [l2s_needed_are_frozen[8]] (true & ~l2s_waiting) -> (~(((T:lclock <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false) -> (l2s_a(T)))
+invariant [l2s_needed_were_frozen[8]] (true & l2s_saved) -> (~$l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false(T) -> (l2s_a(T)))
+invariant [l2s_work_preserved[8]] (l2s_saved & $l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false(T)) -> (((T <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false)
+invariant [l2s_progress_made[8]] (l2s_saved & true & ($l2s_s . (exists T. (T:lclock <= _T & sys_live.cf_cpl(T)))) & ~(forall T. $l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false(T)) & (($l2s_s . (exists T. (T <= _T & sys_live.cf_cpl(T)))) -> ~($l2s_w . cfabric.cpl_fair))) -> (exists T. (~$l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false(T) & (((T <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false)))
+invariant [l2s_progress_invar[8]] ($l2s_init . □ ⬦ cfabric.cpl_fair) -> □ ⬦ cfabric.cpl_fair
+invariant [l2s_sched_stable[8]] (($l2s_s . (exists T. (T:lclock <= _T & sys_live.cf_cpl(T)))) & l2s_saved & true & ($l2s_w . cfabric.cpl_fair)) -> (exists T. (T <= _T & sys_live.cf_cpl(T)))
+invariant [l2s_needed_when_start[9]] true -> (((T:lclock <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> (l2s_d(T)))
+invariant [l2s_created[9]] sys_live.pending(T) -> (l2s_d(T))
+invariant [l2s_needed_are_frozen[9]] (true & ~l2s_waiting) -> (~(((T:lclock <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false) -> (l2s_a(T)))
+invariant [l2s_needed_were_frozen[9]] (true & l2s_saved) -> (~$l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false(T) -> (l2s_a(T)))
+invariant [l2s_work_preserved[9]] (l2s_saved & $l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false(T)) -> (((T <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false)
+invariant [l2s_progress_made[9]] (l2s_saved & true & ($l2s_s . (forall T. ~(((T:lclock <= _T & ref.evs.p(T) = _P) & sys_live.pending(T)) & ~sys_live.completed(T)))) & ~(forall T. $l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false(T)) & (($l2s_s . (forall T. ~(((T <= _T & ref.evs.p(T) = _P) & sys_live.pending(T)) & ~sys_live.completed(T)))) -> ~($l2s_w . arm.cpl_fair(_P)))) -> (exists T. (~$l2s_s T:lclock. ((T <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false(T) & (((T <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false)))
+invariant [l2s_progress_invar[9]] ($l2s_init . □ ⬦ arm.cpl_fair(_P)) -> □ ⬦ arm.cpl_fair(_P)
+invariant [l2s_sched_stable[9]] (($l2s_s . (forall T. ~(((T:lclock <= _T & ref.evs.p(T) = _P) & sys_live.pending(T)) & ~sys_live.completed(T)))) & l2s_saved & true & ($l2s_w . arm.cpl_fair(_P))) -> (forall T. ~(((T <= _T & ref.evs.p(T) = _P) & sys_live.pending(T)) & ~sys_live.completed(T)))
+invariant [l2s_not_all_done] (~(($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & (~l2s_waiting | ~($l2s_w . ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))))) | ~(forall T. (sys_live.pending(_T) & ref.evs.p(_T) = _P) -> ((((((T:lclock <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false))) | (~true | ~(forall T. (sys_live.pending(_T) & ref.evs.p(_T) = _P) -> (((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false))) | (~true | ~(forall T. (sys_live.pending(_T) & ref.evs.p(_T) = _P) -> (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T)) -> false))) | (~true | ~(forall T. (sys_live.pending(_T) & ref.evs.p(_T) = _P) -> (((T <= _T & sys_live.pending(T)) & ~sys_live.completed(T)) -> false))) | (~true | ~(forall T. (sys_live.pending(_T) & ref.evs.p(_T) = _P) -> (((T <= _T & sys_live.pending(T)) & ref.evs.p(T) = _P) -> false)))
+invariant [l2s_sched_exists] (l2s_saved & true) -> (exists T. $l2s_s T:lclock. (((((T <= _T & sys_live.pending(T)) & ~sys_live.is_io(T)) & ~sys_live.memc_cpl(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T)) | (exists T. $l2s_s T:lclock. ((((T <= _T & sys_live.pending(T)) & sys_live.is_io(T)) & ~sys_live.cf_cpl(T)) & ~sys_live.completed(T))(T)) | (exists M,A,P,T. $l2s_s P:proc,M:mem_type,A:addr_type,T:lclock. (((((T <= _T & sys_live.memc_cpl(T)) & ~sys_live.is_io(T)) & P = ref.evs.p(T)) & M = ref.evs.m(T)) & A = ref.evs.a(T))(P,M,A,T)) | ($l2s_s . (exists T. (T <= _T & sys_live.cf_cpl(T)))) | ($l2s_s . (forall T. ~(((T <= _T & ref.evs.p(T) = _P) & sys_live.pending(T)) & ~sys_live.completed(T))))
+invariant [l2s_globally_0] globally[](eventually[](arm.cpl_fair(_P)))
+invariant [l2s_globally_1] ~⬦ arm.cpl_fair(_P) -> ~l2s_waiting | ~($l2s_w . arm.cpl_fair(_P))
+invariant [l2s_globally_2] $l2s_init . ⬦ arm.cpl_fair(_P)
+invariant [l2s_globally_3] globally[]((sys_live.pending(T) & ~sys_live.is_io(T)) -> ⬦ sys_live.memc_cpl(T))
+invariant [l2s_globally_4] globally[]((sys_live.pending(T) & sys_live.is_io(T)) -> ⬦ sys_live.cf_cpl(T))
+invariant [l2s_globally_5] globally[](eventually[](cfabric.cpl_fair))
+invariant [l2s_globally_6] ~⬦ cfabric.cpl_fair -> ~l2s_waiting | ~($l2s_w . cfabric.cpl_fair)
+invariant [l2s_globally_7] $l2s_init . ⬦ cfabric.cpl_fair
+invariant [l2s_globally_8] globally[](eventually[](memc.cpl_fair(P,M,A,T)))
+invariant [l2s_globally_9] ~⬦ memc.cpl_fair(P,M,A,T) -> ~l2s_waiting | ~$l2s_w P:proc,M:mem_type,A:addr_type,T:lclock. memc.cpl_fair(P,M,A,T)(P,M,A,T)
+invariant [l2s_globally_10] $l2s_init P:proc,M:mem_type,A:addr_type,T:lclock. ⬦ memc.cpl_fair(P,M,A,T)(P,M,A,T)
+invariant [l2s_globally_11] □ (ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T) -> ~l2s_waiting | ~($l2s_w . ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T)))
+invariant [l2s_globally_12] $l2s_init . ~□ (ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T)
+invariant [l2s_globally_13] ($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) | ~⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))
+invariant [l2s_globally_14] (($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & ~⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) -> ~l2s_waiting | ~($l2s_w . ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T)))
+invariant [l2s_globally_15] (($l2s_init . ⬦ ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))) & (~l2s_waiting | ~($l2s_w . ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T))))) -> ~⬦ ~sys_live.pending(_T)
+invariant [l2s_status_0] l2s_waiting | l2s_frozen | l2s_saved
+invariant [l2s_status_1] ~l2s_waiting | ~l2s_frozen
+invariant [l2s_status_2] ~l2s_waiting | ~l2s_saved
+invariant [l2s_status_3] ~l2s_frozen | ~l2s_saved
+invariant [l2s_consts_d] (l2s_d(ref.lt) & l2s_d(cfabric.t_rd_min) & l2s_d(_T) & l2s_d(_P) & l2s_d(ref.lt_tar_cf) & l2s_d(cfabric.t_rd_arr_min))
+invariant [neg_prop_init] ~((($l2s_init . □ ⬦ arm.cpl_fair(_P)) & (forall T. $l2s_init T:lclock. □ (sys_live.pending(T) & ~sys_live.is_io(T)) -> ⬦ sys_live.memc_cpl(T)(T)) & (forall T. $l2s_init T:lclock. □ (sys_live.pending(T) & sys_live.is_io(T)) -> ⬦ sys_live.cf_cpl(T)(T)) & ($l2s_init . □ ⬦ cfabric.cpl_fair) & (forall M,A,P,T. $l2s_init P:proc,M:mem_type,A:addr_type,T:lclock. □ ⬦ memc.cpl_fair(P,M,A,T)(P,M,A,T))) -> ($l2s_init . □ (ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ⬦ ~sys_live.pending(_T)))
+---------------------------
+
+    The following properties are assumed as axioms:
+        ord_live2d.ivy: line 1675: sys_live.lemma4
+        ord_live2d.ivy: line 1679: sys_live.lemma3a
+        ord_live2d.ivy: line 1682: sys_live.lemma3b
+        ord_live2d.ivy: line 1685: sys_live.memc_cpl_fair
+        ord_live2d.ivy: line 1688: sys_live.cf_cpl_fair
+        ord_live2d.ivy: line 1691: sys_live.cpl_fair
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: index.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: index.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: index.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: index.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: index.spec.prop1
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: lclock.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: lclock.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: lclock.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: lclock.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: lclock.spec.prop1
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: tar_clock.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: tar_clock.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: tar_clock.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: tar_clock.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: tar_clock.spec.prop1
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 33: tar_cf_clock.spec.prop4
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 4: tar_cf_clock.spec.transitivity
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 5: tar_cf_clock.spec.antisymmetry
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 6: tar_cf_clock.spec.totality
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 11: tar_cf_clock.spec.prop1
+
+    The following definitions are used:
+        ord_live2d.ivy: line 168: ref.def80
+        ord_live2d.ivy: line 177: ref.def81
+        ord_live2d.ivy: line 188: ref.def84
+        ord_live2d.ivy: line 190: ref.def85
+        ord_live2d.ivy: line 191: ref.def86
+        ord_live2d.ivy: line 192: ref.def87
+        ord_live2d.ivy: line 193: ref.def88
+        ord_live2d.ivy: line 194: ref.def89
+        ord_live2d.ivy: line 196: ref.def90
+        ord_live2d.ivy: line 1655: sys_live.def216
+        ord_live2d.ivy: line 1659: sys_live.def217
+        ord_live2d.ivy: line 1663: sys_live.def218
+        ord_live2d.ivy: line 1667: sys_live.def219
+        ord_live2d.ivy: line 1672: sys_live.def220
+
+    The inductive invariant consists of the following conjectures:
+        ord_live2d.ivy: line 1749: invar246
+        ord_live2d.ivy: line 1750: invar247
+        ord_live2d.ivy: line 1751: invar248
+        ord_live2d.ivy: line 1753: invar249
+        ord_live2d.ivy: line 1754: invar250
+        ord_live2d.ivy: line 1755: invar251
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[0]
+        ord_live2d.ivy: line 1713: l2s_created[0]
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0]
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0]
+        ord_live2d.ivy: line 1713: l2s_work_preserved[0]
+        ord_live2d.ivy: line 1713: l2s_progress_made[0]
+        ord_live2d.ivy: line 1713: l2s_progress_invar[0]
+        ord_live2d.ivy: line 1713: l2s_sched_stable[0]
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[1]
+        ord_live2d.ivy: line 1713: l2s_created[1]
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1]
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1]
+        ord_live2d.ivy: line 1713: l2s_work_preserved[1]
+        ord_live2d.ivy: line 1713: l2s_progress_made[1]
+        ord_live2d.ivy: line 1713: l2s_progress_invar[1]
+        ord_live2d.ivy: line 1713: l2s_sched_stable[1]
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[7]
+        ord_live2d.ivy: line 1713: l2s_created[7]
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7]
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7]
+        ord_live2d.ivy: line 1713: l2s_work_preserved[7]
+        ord_live2d.ivy: line 1713: l2s_progress_made[7]
+        ord_live2d.ivy: line 1713: l2s_progress_invar[7]
+        ord_live2d.ivy: line 1713: l2s_sched_stable[7]
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[8]
+        ord_live2d.ivy: line 1713: l2s_created[8]
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8]
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8]
+        ord_live2d.ivy: line 1713: l2s_work_preserved[8]
+        ord_live2d.ivy: line 1713: l2s_progress_made[8]
+        ord_live2d.ivy: line 1713: l2s_progress_invar[8]
+        ord_live2d.ivy: line 1713: l2s_sched_stable[8]
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[9]
+        ord_live2d.ivy: line 1713: l2s_created[9]
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9]
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9]
+        ord_live2d.ivy: line 1713: l2s_work_preserved[9]
+        ord_live2d.ivy: line 1713: l2s_progress_made[9]
+        ord_live2d.ivy: line 1713: l2s_progress_invar[9]
+        ord_live2d.ivy: line 1713: l2s_sched_stable[9]
+        ord_live2d.ivy: line 1713: l2s_not_all_done
+        ord_live2d.ivy: line 1713: l2s_sched_exists
+        ord_live2d.ivy: line 1713: l2s_globally_0
+        ord_live2d.ivy: line 1713: l2s_globally_1
+        ord_live2d.ivy: line 1713: l2s_globally_2
+        ord_live2d.ivy: line 1713: l2s_globally_3
+        ord_live2d.ivy: line 1713: l2s_globally_4
+        ord_live2d.ivy: line 1713: l2s_globally_5
+        ord_live2d.ivy: line 1713: l2s_globally_6
+        ord_live2d.ivy: line 1713: l2s_globally_7
+        ord_live2d.ivy: line 1713: l2s_globally_8
+        ord_live2d.ivy: line 1713: l2s_globally_9
+        ord_live2d.ivy: line 1713: l2s_globally_10
+        ord_live2d.ivy: line 1713: l2s_globally_11
+        ord_live2d.ivy: line 1713: l2s_globally_12
+        ord_live2d.ivy: line 1713: l2s_globally_13
+        ord_live2d.ivy: line 1713: l2s_globally_14
+        ord_live2d.ivy: line 1713: l2s_globally_15
+        ord_live2d.ivy: line 1713: l2s_status_0
+        ord_live2d.ivy: line 1713: l2s_status_1
+        ord_live2d.ivy: line 1713: l2s_status_2
+        ord_live2d.ivy: line 1713: l2s_status_3
+        ord_live2d.ivy: line 1713: l2s_consts_d
+        ord_live2d.ivy: line 1713: neg_prop_init
+
+    The following action implementations are present:
+        ord_live2d.ivy: line 308: implementation of arm.retire_hook
+        ord_live2d.ivy: line 312: implementation of arm.step_north
+        ord_live2d.ivy: line 491: implementation of arm.step_south
+        ord_live2d.ivy: line 573: implementation of cfabric.complete_hook
+        ord_live2d.ivy: line 576: implementation of cfabric.step
+        ord_live2d.ivy: line 930: implementation of dramc.init[after105]
+        ord_live2d.ivy: line 938: implementation of dramc.step_rd
+        ord_live2d.ivy: line 963: implementation of dramc.step_wr
+        ord_live2d.ivy: line 718: implementation of ifabric.init[after100]
+        ord_live2d.ivy: line 726: implementation of ifabric.step
+        ord_live2d.ivy: line 807: implementation of memc.memc_arr_hook
+        ord_live2d.ivy: line 809: implementation of memc.memc_cpl_hook
+        ord_live2d.ivy: line 808: implementation of memc.memc_push_hook
+        ord_live2d.ivy: line 814: implementation of memc.step
+        ord_live2d.ivy: line 244: implementation of ref.perform
+        ord_live2d.ivy: line 264: implementation of ref.perform_grd
+
+    The following action monitors are present:
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 37: monitor of lclock.next
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 37: monitor of tar_cf_clock.next
+        /Users/kenmcm/ivy/ivy/include/1.8/order.ivy: line 37: monitor of tar_clock.next
+
+    The following initializers are present:
+        Noneinit
+
+    Initialization must establish the invariant
+        ord_live2d.ivy: line 1749: invar246 ... PASS
+        ord_live2d.ivy: line 1750: invar247 ... PASS
+        ord_live2d.ivy: line 1751: invar248 ... PASS
+        ord_live2d.ivy: line 1753: invar249 ... PASS
+        ord_live2d.ivy: line 1754: invar250 ... PASS
+        ord_live2d.ivy: line 1755: invar251 ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+        ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+        ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+        ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+        ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+        ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+        ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+        ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+        ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+        ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+
+    The following set of external actions must preserve the invariant:
+        (internal) ext:arm.step_north
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+            ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+        (internal) ext:arm.step_south
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+            ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+        (internal) ext:cfabric.step
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+            ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+        (internal) ext:dramc.step_rd
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+            ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+        (internal) ext:dramc.step_wr
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+            ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+        (internal) ext:ifabric.step
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+            ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+        (internal) ext:memc.step
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[8] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[9] ... PASS
+            ord_live2d.ivy: line 1713: l2s_not_all_done ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_exists ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_4 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_5 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_6 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_7 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_8 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_9 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_10 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_11 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_12 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_13 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_14 ... PASS
+            ord_live2d.ivy: line 1713: l2s_globally_15 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_0 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_1 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_2 ... PASS
+            ord_live2d.ivy: line 1713: l2s_status_3 ... PASS
+            ord_live2d.ivy: line 1713: l2s_consts_d ... PASS
+            ord_live2d.ivy: line 1713: neg_prop_init ... PASS
+        (internal) idle
+            ord_live2d.ivy: line 1749: invar246 ... PASS
+            ord_live2d.ivy: line 1750: invar247 ... PASS
+            ord_live2d.ivy: line 1751: invar248 ... PASS
+            ord_live2d.ivy: line 1753: invar249 ... PASS
+            ord_live2d.ivy: line 1754: invar250 ... PASS
+            ord_live2d.ivy: line 1755: invar251 ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[0] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_invar[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_sched_stable[1] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_when_start[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_created[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_are_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_needed_were_frozen[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_work_preserved[7] ... PASS
+            ord_live2d.ivy: line 1713: l2s_progress_made[7] ... FAIL
+searching for a small model... done
+
+
+Failed to prove that work_needed[7] decreases when a helpful transition occurs
+
+work_helpful(0,0,0,1) = false
+work_helpful(0,0,0,2) = false
+work_helpful(0,0,0,0) = false
+
+~happened work_progress(0,0,0,1) = false
+~happened work_progress(0,0,0,2) = false
+~happened work_progress(0,0,0,0) = false
+
+~happened work_progress(0,0,0,1) = false
+~happened work_progress(0,0,0,2) = false
+~happened work_progress(0,0,0,0) = false
+
+~eventually work_progress(0,0,0,1) = false
+~eventually work_progress(0,0,0,2) = false
+~eventually work_progress(0,0,0,0) = false
+[
+    _P = 0
+    _T = 1
+    arm.cpl_fair(0) = false
+    cfabric.cpl_fair = false
+    cfabric.t_rd_arr_min = 0
+    cfabric.t_rd_min = 2
+    dramc.t_min(0) = 1
+    isd.rd(0,0,0,0) = false
+    isd.rd(0,0,0,1) = false
+    isd.rd(0,0,0,2) = false
+    isd.rsp(0,0,0,0) = false
+    isd.rsp(0,0,0,1) = false
+    isd.rsp(0,0,0,2) = false
+    isd.wr(0,0,0,0) = false
+    isd.wr(0,0,0,1) = true
+    isd.wr(0,0,0,2) = false
+    lclock.succ(0,1) = false
+    lclock.succ(1,2) = false
+    memc.cpl_fair(0,0,0,0) = false
+    memc.cpl_fair(0,0,0,1) = false
+    memc.cpl_fair(0,0,0,2) = false
+    ref.both_nGR(0,0) = false
+    ref.both_nGR(0,1) = false
+    ref.both_nGR(0,2) = false
+    ref.both_nGR(1,0) = false
+    ref.both_nGR(1,1) = false
+    ref.both_nGR(1,2) = false
+    ref.both_nGR(2,0) = false
+    ref.both_nGR(2,1) = false
+    ref.both_nGR(2,2) = false
+    ref.both_nGnR(0,0) = true
+    ref.both_nGnR(0,1) = false
+    ref.both_nGnR(0,2) = false
+    ref.both_nGnR(1,0) = false
+    ref.both_nGnR(1,1) = false
+    ref.both_nGnR(1,2) = false
+    ref.both_nGnR(2,0) = false
+    ref.both_nGnR(2,1) = false
+    ref.both_nGnR(2,2) = false
+    ref.both_normal(0,0) = false
+    ref.both_normal(0,1) = false
+    ref.both_normal(0,2) = false
+    ref.both_normal(1,0) = false
+    ref.both_normal(1,1) = true
+    ref.both_normal(1,2) = true
+    ref.both_normal(2,0) = false
+    ref.both_normal(2,1) = true
+    ref.both_normal(2,2) = true
+    ref.dev(0) = true
+    ref.dev(1) = false
+    ref.dev(2) = false
+    ref.evs.a(0) = 0
+    ref.evs.a(1) = 0
+    ref.evs.a(2) = 0
+    ref.evs.cmp(0) = nop
+    ref.evs.cmp(1) = wr_cmp
+    ref.evs.cmp(2) = nop
+    ref.evs.l_cmp(0) = init_l
+    ref.evs.l_cmp(1) = memc_l
+    ref.evs.l_cmp(2) = init_l
+    ref.evs.l_req(0) = init_l
+    ref.evs.l_req(1) = init_l
+    ref.evs.l_req(2) = init_l
+    ref.evs.lt_arr(0) = 0
+    ref.evs.lt_arr(1) = 0
+    ref.evs.lt_arr(2) = 0
+    ref.evs.lt_arr_cf(0) = 0
+    ref.evs.lt_arr_cf(1) = 0
+    ref.evs.lt_arr_cf(2) = 0
+    ref.evs.lt_tar(0) = 0
+    ref.evs.lt_tar(1) = 1
+    ref.evs.lt_tar(2) = 0
+    ref.evs.m(0) = 0
+    ref.evs.m(1) = 0
+    ref.evs.m(2) = 0
+    ref.evs.mem_loc(0) = mem_loc_init
+    ref.evs.mem_loc(1) = mem_memc
+    ref.evs.mem_loc(2) = mem_loc_init
+    ref.evs.op_ack(0) = nGnRE
+    ref.evs.op_ack(1) = normal
+    ref.evs.op_ack(2) = normal
+    ref.evs.p(0) = 0
+    ref.evs.p(1) = 0
+    ref.evs.p(2) = 0
+    ref.evs.req(0) = nop
+    ref.evs.req(1) = nop
+    ref.evs.req(2) = nop
+    ref.evs.serialized(0) = true
+    ref.evs.serialized(1) = true
+    ref.evs.serialized(2) = true
+    ref.lt = 1
+    ref.lt_tar(0) = 1
+    ref.lt_tar_cf = 0
+    ref.mem_memc_exception(0,0) = false
+    ref.mem_memc_exception(0,1) = false
+    ref.mem_memc_exception(0,2) = false
+    ref.mem_memc_exception(1,0) = false
+    ref.mem_memc_exception(1,1) = false
+    ref.mem_memc_exception(1,2) = false
+    ref.mem_memc_exception(2,0) = false
+    ref.mem_memc_exception(2,1) = false
+    ref.mem_memc_exception(2,2) = false
+    ref.nGR(_GRE) = true
+    ref.nGR(nGRE) = true
+    ref.nGR(nGnRE) = false
+    ref.nGR(nGnRnE) = false
+    ref.nGR(normal) = false
+    ref.nGnR(_GRE) = false
+    ref.nGnR(nGRE) = false
+    ref.nGnR(nGnRE) = true
+    ref.nGnR(nGnRnE) = true
+    ref.nGnR(normal) = false
+    ref.pio(0) = false
+    ref.pio(1) = false
+    ref.pio(2) = false
+    ref.pnd_or_ser_rd(0,0,0,0) = false
+    ref.pnd_or_ser_rd(0,0,0,1) = false
+    ref.pnd_or_ser_rd(0,0,0,2) = false
+    ref.pnd_or_ser_wr(0,0,0,0) = false
+    ref.pnd_or_ser_wr(0,0,0,1) = false
+    ref.pnd_or_ser_wr(0,0,0,2) = false
+    ref.prevents(0,0) = false
+    ref.prevents(0,1) = false
+    ref.prevents(0,2) = false
+    ref.prevents(1,0) = false
+    ref.prevents(1,1) = false
+    ref.prevents(1,2) = true
+    ref.prevents(2,0) = false
+    ref.prevents(2,1) = false
+    ref.prevents(2,2) = false
+    ref.same_addr(0,0) = false
+    ref.same_addr(0,1) = false
+    ref.same_addr(0,2) = false
+    ref.same_addr(1,0) = false
+    ref.same_addr(1,1) = false
+    ref.same_addr(1,2) = false
+    ref.same_addr(2,0) = false
+    ref.same_addr(2,1) = false
+    ref.same_addr(2,2) = false
+    ref.same_attr(0,0) = true
+    ref.same_attr(0,1) = false
+    ref.same_attr(0,2) = false
+    ref.same_attr(1,0) = false
+    ref.same_attr(1,1) = true
+    ref.same_attr(1,2) = true
+    ref.same_attr(2,0) = false
+    ref.same_attr(2,1) = true
+    ref.same_attr(2,2) = true
+    sys_live.cf_cpl(0) = false
+    sys_live.cf_cpl(1) = false
+    sys_live.cf_cpl(2) = false
+    sys_live.completed(0) = false
+    sys_live.completed(1) = false
+    sys_live.completed(2) = false
+    sys_live.is_io(0) = false
+    sys_live.is_io(1) = false
+    sys_live.is_io(2) = false
+    sys_live.memc_cpl(0) = false
+    sys_live.memc_cpl(1) = true
+    sys_live.memc_cpl(2) = false
+    sys_live.pending(0) = false
+    sys_live.pending(1) = true
+    sys_live.pending(2) = false
+    tar_clock.succ(0,1) = false
+    □ (ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ~□ sys_live.pending(_T) = false
+    □ (sys_live.pending(0) & sys_live.is_io(0)) -> ⬦ sys_live.cf_cpl(0) = true
+    □ (sys_live.pending(0) & ~sys_live.is_io(0)) -> ⬦ sys_live.memc_cpl(0) = true
+    □ (sys_live.pending(1) & sys_live.is_io(1)) -> ⬦ sys_live.cf_cpl(1) = true
+    □ (sys_live.pending(1) & ~sys_live.is_io(1)) -> ⬦ sys_live.memc_cpl(1) = true
+    □ (sys_live.pending(2) & sys_live.is_io(2)) -> ⬦ sys_live.cf_cpl(2) = true
+    □ (sys_live.pending(2) & ~sys_live.is_io(2)) -> ⬦ sys_live.memc_cpl(2) = true
+    □ sys_live.pending(_T) = true
+    □ ⬦ arm.cpl_fair(_P) = true
+    □ ⬦ cfabric.cpl_fair = true
+    □ ⬦ memc.cpl_fair(0,0,0,0) = true
+    □ ⬦ memc.cpl_fair(0,0,0,1) = true
+    □ ⬦ memc.cpl_fair(0,0,0,2) = true
+    □ ⬦ sys_live.cf_cpl(0) = false
+    □ ⬦ sys_live.cf_cpl(1) = false
+    □ ⬦ sys_live.cf_cpl(2) = false
+    □ ⬦ sys_live.memc_cpl(0) = false
+    □ ⬦ sys_live.memc_cpl(1) = false
+    □ ⬦ sys_live.memc_cpl(2) = false
+    ⬦ arm.cpl_fair(_P) = true
+    ⬦ cfabric.cpl_fair = true
+    ⬦ memc.cpl_fair(0,0,0,0) = true
+    ⬦ memc.cpl_fair(0,0,0,1) = true
+    ⬦ memc.cpl_fair(0,0,0,2) = true
+    ⬦ sys_live.cf_cpl(0) = true
+    ⬦ sys_live.cf_cpl(1) = true
+    ⬦ sys_live.cf_cpl(2) = true
+    ⬦ sys_live.memc_cpl(0) = true
+    ⬦ sys_live.memc_cpl(1) = true
+    ⬦ sys_live.memc_cpl(2) = true
+]
+call idle
+
+{
+ord_live2d.ivy: line 1743: 
+    assert ~(l2s_saved & (forall V0,V1,V3,V2. ~($l2s_w . memc.cpl_fair(V0,V1,V2,V3))) & (forall V0. ~($l2s_w . sys_live.cf_cpl(V0))) & ~($l2s_w . cfabric.cpl_fair) & ~($l2s_w . ~((ref.evs.p(_T) = _P & sys_live.pending(_T)) -> ~($l2s_g . sys_live.pending(_T)))) & (forall V0. ~($l2s_w . sys_live.memc_cpl(V0))) & ~($l2s_w . arm.cpl_fair(_P)) & (forall V0. (l2s_a(V0)) -> (($l2s_s . ((((V0 <= _T & sys_live.pending(V0)) & sys_live.is_io(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0))) <-> ((((V0 <= _T & sys_live.pending(V0)) & sys_live.is_io(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)))) & (forall V0,V1,V3,V2. (l2s_a(V0) & l2s_a(V1) & l2s_a(V2) & l2s_a(V3)) -> (($l2s_s . (((((V3 <= _T & sys_live.memc_cpl(V3)) & ~sys_live.is_io(V3)) & V0 = ref.evs.p(V3)) & V1 = ref.evs.m(V3)) & V2 = ref.evs.a(V3))) <-> (((((V3 <= _T & sys_live.memc_cpl(V3)) & ~sys_live.is_io(V3)) & V0 = ref.evs.p(V3)) & V1 = ref.evs.m(V3)) & V2 = ref.evs.a(V3)))) & (forall V0. (l2s_a(V0)) -> (($l2s_s . (((((V0 <= _T & sys_live.pending(V0)) & ~sys_live.is_io(V0)) & ~sys_live.memc_cpl(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)) -> false) <-> ((((((V0 <= _T & sys_live.pending(V0)) & ~sys_live.is_io(V0)) & ~sys_live.memc_cpl(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)) -> false))) & (($l2s_s . (exists T. (T:lclock <= _T & sys_live.cf_cpl(T)))) <-> (exists T. (T <= _T & sys_live.cf_cpl(T)))) & (forall V0. (l2s_a(V0)) -> (($l2s_s . ((V0 <= _T & sys_live.pending(V0)) & ref.evs.p(V0) = _P) -> false) <-> (((V0 <= _T & sys_live.pending(V0)) & ref.evs.p(V0) = _P) -> false))) & (($l2s_s . (forall T. ~(((T <= _T & ref.evs.p(T) = _P) & sys_live.pending(T)) & ~sys_live.completed(T)))) <-> (forall T. ~(((T <= _T & ref.evs.p(T) = _P) & sys_live.pending(T)) & ~sys_live.completed(T)))) & (forall V0. (l2s_a(V0)) -> (($l2s_s . ((((V0 <= _T & sys_live.pending(V0)) & sys_live.is_io(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)) -> false) <-> (((((V0 <= _T & sys_live.pending(V0)) & sys_live.is_io(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)) -> false))) & (forall V0. (l2s_a(V0)) -> (($l2s_s . ((V0 <= _T & sys_live.pending(V0)) & ~sys_live.completed(V0)) -> false) <-> (((V0 <= _T & sys_live.pending(V0)) & ~sys_live.completed(V0)) -> false))) & (forall V0. (l2s_a(V0)) -> (($l2s_s . ((((V0 <= _T & sys_live.pending(V0)) & ~sys_live.is_io(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)) -> false) <-> (((((V0 <= _T & sys_live.pending(V0)) & ~sys_live.is_io(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)) -> false))) & (forall V0. (l2s_a(V0)) -> (($l2s_s . (((((V0 <= _T & sys_live.pending(V0)) & ~sys_live.is_io(V0)) & ~sys_live.memc_cpl(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0))) <-> (((((V0 <= _T & sys_live.pending(V0)) & ~sys_live.is_io(V0)) & ~sys_live.memc_cpl(V0)) & ~sys_live.cf_cpl(V0)) & ~sys_live.completed(V0)))))
+
+}
+
+
+
+Compilation finished at Fri Jan  5 15:49:03

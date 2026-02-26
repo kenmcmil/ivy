@@ -1,0 +1,122 @@
+#lang ivy1.7
+
+# This should be part of the standard library.
+# Provides array segments with various operations.
+
+include collections
+
+module array_segment(domain,range,arr) = {
+
+    # Requirements
+
+    # - Type `domain` must support arithmetic.
+    # - Type `arr` must be an array type over (`domain`,`range`).
+
+    # This is a type of segments over `arr`
+    
+    type this
+
+    # Extract a segment of an array, from a begin index to an end
+    # index
+
+    action make(data:arr, begin:domain, end:domain) returns (seg:this)
+
+    action empty returns (seg:this)
+
+    action set(seg:this, x:domain, y:range) returns (seg:this)
+
+    action resize(seg:this, x:domain, y:range) returns (seg:this)
+    
+    # Function to obtain the value of a segment at a given index.
+
+    function value(X:this,N:domain) : range
+
+    # The bounds of the segment:
+    function first(X:this) : domain
+    function upper(X:this) : domain
+
+    specification {
+
+        around make {
+            require begin <= end
+            ...
+            ensure begin < data.end & end <= data.end & begin <= N & N < end -> value(seg,N) = arr.value(data,N);
+            ensure first(seg) = begin;
+            ensure upper(seg) = end if end <= data.end else begin;
+        }
+
+        after empty {
+            ensure first(seg) = 0 & upper(seg) = 0
+        }
+
+        around set {
+	    require first(seg) <= x & x < upper(seg)
+	    ...
+            ensure first(seg) = first(old seg) & upper(seg) = upper(old seg);
+	    ensure ~(first(seg) <= X & X < upper(seg) & value(seg,X) ~= (y if X = x else value(old seg,X)))
+	}
+
+        around resize {
+            require first(seg) <= x;
+            ...
+	    ensure first(seg) = first(old seg) & upper(seg) = x;
+	    assert first(seg) <= X & X < upper(old seg) -> value(seg,X) = value(old seg,X);
+	    assert upper(old seg) <= X & X < x -> value(seg,X) = y
+        }
+    }
+        
+    implementation {
+
+        # The implementation represents a segment as a pair consisting
+        # of an offset into the original array and an array containin
+        # the segment values. It constructs segmens in the expected
+        # way, by copying array elements in a loop. 
+
+        # We have to use arithmetic to prove the implementation, but
+        # this is within the decidable array property fragment.
+        
+        # Notice we use domain.impl to prove this isolate, so we get
+        # the arithmetic theory.
+
+        destructor offset(X:this) : domain
+        destructor elems(X:this) : arr
+        
+        definition value(X,n:domain) = elems(X).value(n - offset(X))
+        
+        definition first(X) = offset(X)
+        
+        definition upper(x:this) = (elems(x).end) + offset(x)
+
+        implement make {
+            seg.offset := begin;
+            seg.elems := arr.empty;
+            if (begin < data.end & end <= data.end) {
+                var idx := begin;
+                while idx < end
+                invariant begin <= idx & idx <= end
+                invariant seg.offset = begin
+                invariant begin <= N & N < idx -> seg.value(N) = data.value(N)
+                invariant begin + seg.elems.end = idx
+                {
+                    seg.elems := seg.elems.append(data.value(idx));
+                    idx := idx.next;
+                }
+            }
+        }
+
+        implement empty {
+            seg.offset := 0;
+            seg.elems := arr.empty;
+        }
+
+        implement set {
+            seg.elems := seg.elems.set(x-seg.offset,y)
+        }
+
+        implement resize {
+            seg.elems := seg.elems.resize(x-seg.offset, y);
+        }
+    }
+
+    isolate iso = this with domain.impl,arr
+}

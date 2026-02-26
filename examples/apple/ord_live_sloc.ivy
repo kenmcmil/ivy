@@ -1,0 +1,994 @@
+#lang ivy1.8
+include mc_schemata
+isolate cf_live = {
+    function issued_memc(T) =
+    (ref.evs(T).req=read | ref.evs(T).req=write)
+    & ref.evs(T).l_req=cf_mem_l &
+    ref.evs(T).mem_loc=mem_memc
+    explicit temporal property [cf_liveness]
+    forall T.
+    (globally eventually cfabric.rd_fair) &
+    (globally eventually cfabric.wr_fair)
+    ->
+    (globally ~(issued_memc(T) & globally ~(ref.evs(T).l_req=memc_l)))
+    proof {
+        tactic skolemize
+        tactic l2s_auto2 with
+        definition work_start = issued_memc(_T) & globally ~(ref.evs(_T).l_req=memc_l)
+        definition work_created(T) = T <= ref.lt
+        definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
+        definition work_done(T)    = ~issued_memc(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=read
+        definition work_end(T) = T=_T & issued_memc(_T) & ref.evs(_T).req=read
+        definition work_progress   = cfabric.rd_fair
+        definition work_created[2](T) = T <= ref.lt
+        definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
+        definition work_done[2](T)    = ~issued_memc(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=write
+        definition work_end[2](T) = T=_T & issued_memc(_T) & ref.evs(_T).req=write
+        definition work_progress[2]   = cfabric.wr_fair
+        invariant ~cfabric.rd_fair
+        invariant ~cfabric.wr_fair
+        invariant
+        issued_memc(T1) & ref.evs(T1).req=read & issued_memc(T2) & ref.evs(T2).req=read &
+        T1 < T2 -> ref.evs(T1).lt_arr_cf < ref.evs(T2).lt_arr_cf 
+    }
+} with this, lclock, tar_clock, tar_cf_clock
+module isolate split_queue2(nat) with nat = {
+    instantiate equality_schemata
+    instantiate unbounded_sequence_schemata(nat)
+    action send(lt:nat,kind:bool)
+    action recv1
+    action recv2
+    specification {
+        var begun(X:nat) : bool
+        var done(X:nat) : bool
+        var queue(X:nat) : bool
+        after init {
+            begun(X) := false;
+            done(X) := false;
+        }
+        instance trying1 : signal0
+        instance trying2 : signal0
+        before send {
+            require begun(X) -> X < lt;
+        }
+        after send {
+            queue(lt) := kind;
+            begun(lt) := true;
+        }
+        before recv1 {
+            trying1.raise;
+            if some x:nat. ~done(x) & begun(x) minimizing x {
+                if queue(x) {
+                    done(x) := true;
+                }
+            }
+        }
+        before recv2 {
+            trying2.raise;
+            if some x:nat. ~done(x) & begun(x) minimizing x {
+                if ~queue(x) {
+                    done(x) := true;
+                }
+            }
+        }
+    }
+    implementation {
+        var lastq : nat
+        var predq(X:nat) : nat
+        after init {
+            lastq := 0;
+        }
+        implement send {
+            predq(lt) := lastq;
+            lastq := lt;
+        }
+        invariant begun(X) & predq(X) < Y & Y < X -> ~begun(Y)
+    }
+    invariant lastq < X & begun(X) -> false
+    invariant begun(X) -> begun(lastq)
+    invariant begun(X) & done(X) & Y < X & begun(Y) -> done(Y)
+    invariant done(X) -> begun(X)
+    invariant ~(X:nat < 0)
+    explicit temporal property [lemma1]
+    (globally eventually trying1.now) &
+    (globally eventually trying2.now) ->
+    forall X. (globally begun(X) -> eventually done(X))
+    proof {
+        tactic mc with Y = predq(X) # , V1 = queue(X), V2 = queue(Y)
+    }
+    attribute complete = fo
+}
+isolate rfn =
+{
+    instance abs(M:mem_type) : split_queue2(tar_clock)
+    function evqual(M,T) =
+    (ref.evs(T).req=read | ref.evs(T).req=write) & ref.evs(T).m=M &
+    ref.evs(T).l_req=dramc_l & ref.evs(T).mem_loc=mem_memc
+    function evcomplete(T) =
+    ref.evs(T).mem_loc=mem_memc &
+    (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp) &
+    ref.evs(T).l_cmp = memc_l
+    before dramc.step_rd(m:mem_type) {
+        abs.recv1(m);
+    }
+    before dramc.step_wr(m:mem_type) {
+        abs.recv2(m);
+    }
+    before memc.memc_arr_hook(lt:lclock) {
+        var m := ref.evs(lt).m;
+        if evqual(m,lt){
+            abs(m).send(ref.evs(lt).lt_arr,ref.evs(lt).req=read);
+        }
+    }
+    invariant
+    evqual(M,T) & Y = ref.evs(T).lt_arr
+    ->
+    abs(M).begun(Y) &
+    (abs(M).done(Y) -> evcomplete(T)) &
+    abs(M).queue(Y) = (ref.evs(T).req=read)
+    invariant
+    X > ref.lt_tar(M) -> ~abs(M).begun(X)
+    invariant ~dramc(M).rd_fair
+    invariant ~dramc(M).wr_fair
+} with this, lclock, tar_clock, tar_cf_clock
+private {
+    isolate tprops = {
+        explicit temporal property [gf1]
+        forall M.
+        (globally eventually dramc(M).rd_fair) ->
+        (globally eventually rfn.abs(M).trying1.now)
+        proof {
+            tactic skolemizenp;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_end = ~eventually rfn.abs(_M).trying1.now
+                definition work_start = ~eventually rfn.abs(_M).trying1.now
+                definition work_progress = dramc(_M).rd_fair
+            }
+        }
+        explicit temporal property [gf2]
+        forall M.
+        (globally eventually dramc(M).wr_fair) ->
+        (globally eventually rfn.abs(M).trying2.now)
+        proof {
+            tactic skolemizenp;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_end = ~eventually rfn.abs(_M).trying2.now
+                definition work_start = ~eventually rfn.abs(_M).trying2.now
+                definition work_progress = dramc(_M).wr_fair
+            }
+        }
+        explicit temporal property [lemma1]
+        forall M.
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) ->
+        forall T. (globally rfn.evqual(M,T) -> eventually rfn.evcomplete(T))
+        proof {
+            tactic tempcase with X = ref.evs(T).lt_arr
+            tactic skolemizenp;
+            instantiate gf1 with M = _M;
+            instantiate gf2 with M = _M;
+            instantiate rfn.abs.lemma1 with M = _M, X = _X;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_end = ~(_X = ref.evs(_T).lt_arr
+                -> (rfn.evqual(_M,_T) -> eventually rfn.evcomplete(_T)))
+                definition work_start = ~(_X = ref.evs(_T).lt_arr
+                -> (rfn.evqual(_M,_T) -> eventually rfn.evcomplete(_T)))
+                definition work_progress = rfn.abs.done(_M,_X)
+            }
+        }
+    } with this, rfn, rfn.abs, rfn.abs.trying1, rfn.abs.trying2, lclock, tar_clock, tar_cf_clock
+    isolate dramc_nb2 = {
+        instance memc_pushing : signal1(lclock)
+        instance memc_arriving : signal1(lclock)
+        before memc.memc_push_hook {
+            memc_pushing.raise(lt);
+        }
+        before memc.memc_arr_hook {
+            memc_arriving.raise(lt);
+        }
+        function evma(T,M,A) = ref.evs(T).m = M & ref.evs(T).a = A
+        function push_trying_rd(M,A) =
+        memc_pushing.now & evma(memc_pushing.value,M,A) &
+        ref.evs(memc_pushing.value).req=read
+        function push_success_rd(M,A) =
+        memc_arriving.now & evma(memc_arriving.value,M,A) &
+        ref.evs(memc_arriving.value).req=read
+        explicit temporal property [nb_rd]
+        forall M,A. 
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually push_trying_rd(M,A))
+        ->
+        globally eventually push_success_rd(M,A)
+        proof {
+            tactic skolemizenp;
+            instantiate tprops.lemma1 with M = _M
+            tactic l2s_auto4 with {
+                definition work_created(T) = T <= ref.lt
+                definition work_needed(T) =
+                ref.evs(T).req=read & rfn.evqual(_M,T) & ref.evs(T).a=_A
+                definition work_done(T:lclock) = false
+                definition work_start = ~eventually push_success_rd(_M,_A)
+                definition work_progress(T) = rfn.evcomplete(T)  
+                definition work_created[1] = true
+                definition work_needed[1] = true
+                definition work_done[1] = false
+                definition work_progress[1] = push_trying_rd(_M,_A)
+            }
+        }
+        function evqual_rd(T,M,A) =
+        ref.evs(T).req=read & ref.evs(T).l_req=memc_l &
+        ref.evs(T).mem_loc=mem_memc & evma(T,M,A)
+        explicit temporal property [tech1_rd]
+        forall T,M,A.
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.rd_fair(M,A))
+        ->
+        globally eventually evqual_rd(T,M,A) -> push_success_rd(M,A)
+        proof {
+            tactic skolemizenp;
+            instantiate nb_rd with M = _M, A = _A
+            tactic l2s_auto with {
+                definition work_start[1] = ~eventually evqual_rd(_T,_M,_A) -> push_success_rd(_M,_A)
+                definition work_created[1] = true
+                definition work_needed[1] = true
+                definition work_done[1] = false
+                definition work_progress[1] = push_success_rd(_M,_A)
+                definition work_start[2] = (globally ~push_trying_rd(_M,_A))
+                definition work_created[2] = true
+                definition work_needed[2] = true
+                definition work_done[2] = false
+                definition work_progress[2] = memc.rd_fair(_M,_A)
+                invariant ~memc.rd_fair(M,A)
+            }
+        }
+        function push_trying_wr(M,A) =
+        memc_pushing.now & evma(memc_pushing.value,M,A) &
+        ref.evs(memc_pushing.value).req=write
+        function push_success_wr(M,A) =
+        memc_arriving.now & evma(memc_arriving.value,M,A) &
+        ref.evs(memc_arriving.value).req=write
+        explicit temporal property [nb_wr]
+        forall M,A. 
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually push_trying_wr(M,A))
+        ->
+        globally eventually push_success_wr(M,A)
+        proof {
+            tactic skolemizenp;
+            instantiate tprops.lemma1 with M = _M
+            tactic l2s_auto4 with {
+                definition work_created(T) = T <= ref.lt
+                definition work_needed(T) =
+                ref.evs(T).req=write & rfn.evqual(_M,T) & ref.evs(T).a=_A
+                definition work_done(T:lclock) = false
+                definition work_start = ~eventually push_success_wr(_M,_A)
+                definition work_progress(T) = rfn.evcomplete(T)  
+                definition work_created[1] = true
+                definition work_needed[1] = true
+                definition work_done[1] = false
+                definition work_progress[1] = push_trying_wr(_M,_A)
+            }
+        }
+        function evqual_wr(T,M,A) =
+        ref.evs(T).req=write & ref.evs(T).l_req=memc_l &
+        ref.evs(T).mem_loc=mem_memc & evma(T,M,A)
+        explicit temporal property [tech1_wr]
+        forall T,M,A.
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.wr_fair(M,A))
+        ->
+        globally eventually evqual_wr(T,M,A) -> push_success_wr(M,A)
+        proof {
+            tactic skolemizenp;
+            instantiate nb_wr with M = _M, A = _A
+            tactic l2s_auto with {
+                definition work_start[1] = ~eventually evqual_wr(_T,_M,_A) -> push_success_wr(_M,_A)
+                definition work_created[1] = true
+                definition work_needed[1] = true
+                definition work_done[1] = false
+                definition work_progress[1] = push_success_wr(_M,_A)
+                definition work_start[2] = (globally ~push_trying_wr(_M,_A))
+                definition work_created[2] = true
+                definition work_needed[2] = true
+                definition work_done[2] = false
+                definition work_progress[2] = memc.wr_fair(_M,_A)
+                invariant ~memc.wr_fair(M,A)
+            }
+        }
+        temporal property [live_rd]
+        forall M,T,A.
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.rd_fair(M,A))
+        ->
+        globally evqual_rd(T,M,A) -> eventually rfn.evqual(M,T)
+        proof {
+            tactic skolemizenp;
+            instantiate tech1_rd with T=_T, M=_M, A=_A;
+            tactic l2s_auto2 with {
+                definition work_created(T) = T <= ref.lt
+                definition work_needed(T) = T <= _T
+                definition work_done(T) = T <= ref.lt & T <= _T & ~evqual_rd(T,_M,_A)
+                definition work_end(T) = T = _T 
+                definition work_start = ~(evqual_rd(_T,_M,_A) -> eventually rfn.evqual(_M,_T))
+                definition work_progress = evqual_rd(_T,_M,_A) -> push_success_rd(_M,_A)
+            }
+        }
+        temporal property [live_wr]
+        forall M,T,A.
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.wr_fair(M,A))
+        ->
+        globally evqual_wr(T,M,A) -> eventually rfn.evqual(M,T)
+        proof {
+            tactic skolemizenp;
+            instantiate tech1_wr with T=_T, M=_M, A=_A;
+            tactic l2s_auto2 with {
+                definition work_created(T) = T <= ref.lt
+                definition work_needed(T) = T <= _T
+                definition work_done(T) = T <= ref.lt & T <= _T & ~evqual_wr(T,_M,_A) & ~ref.evs(T).l_req=cf_mem_l
+                definition work_end(T) = T = _T &  ~ref.evs(T).l_req=cf_mem_l
+                definition work_start = ~(evqual_wr(_T,_M,_A) -> eventually rfn.evqual(_M,_T))
+                definition work_progress = evqual_wr(_T,_M,_A) -> push_success_wr(_M,_A)
+            }
+        }
+        explicit temporal property [live]
+        forall M,T,A.
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.rd_fair(M,A)) &
+        (globally eventually memc.wr_fair(M,A))
+        ->
+        globally (evqual_rd(T,M,A) | evqual_wr(T,M,A)) -> eventually rfn.evqual(M,T)
+        proof {
+            # tactic sorry;
+            tactic skolemizenp;
+            instantiate live_rd with T=_T, M=_M, A=_A;
+            instantiate live_wr with T=_T, M=_M, A=_A;
+            tactic l2s_auto2 with {
+                definition work_start = ~((evqual_rd(_T,_M,_A) | evqual_wr(_T,_M,_A)) -> eventually rfn.evqual(_M,_T))
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_end = eventually rfn.evqual(_M,_T)
+                definition work_progress = rfn.evqual(_M,_T)
+            }
+        }
+    } with this, lclock, tar_clock, tar_cf_clock, tprops
+    isolate cmpl_live = {
+        function cf_cpl(T) =
+        (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
+        & ref.evs(T).l_cmp = cf_cmp_l
+        explicit temporal property [memc2cf_live]        
+        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T))
+        -> 
+        forall T. (globally rfn.evcomplete(T) -> eventually cf_cpl(T))
+        proof {
+            tactic tempcase with P=ref.evs(T).p, M=ref.evs(T).m, A=ref.evs(T).a;
+            tactic skolemizenp;
+            instantiate with P=_P, M=_M, A=_A, T=_T
+            showgoals;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start = ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
+                ->(rfn.evcomplete(_T) -> eventually cf_cpl(_T)))
+                definition work_end = ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
+                ->(rfn.evcomplete(_T) -> eventually cf_cpl(_T)))
+                definition work_progress = memc.cpl_fair(_P,_M,_A,_T)
+                invariant ~memc.cpl_fair(_P,_M,_A,_T)
+            }
+        }
+        function arm_cpl(T) =
+        (ref.evs(T).cmp = rrsp | ref.evs(T).cmp = wr_cmp)
+        & ref.evs(T).l_cmp = arm_l
+        function retired(T) =
+        ~isd.rd(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T) &
+        ~isd.wr(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T)
+        explicit temporal property [cf2arm_live]        
+        (globally eventually cfabric.cpl_fair)
+        -> 
+        forall T. (globally cf_cpl(T) -> eventually arm_cpl(T))
+        proof {
+            tactic skolemizenp;
+            tactic l2s_auto2 with {
+                definition work_created(T) = T <= ref.lt
+                definition work_needed(T) = T <= _T
+                definition work_done(T) =
+                T <= ref.lt
+                & T <= _T & (arm_cpl(T) | ~isd.rd(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T) &
+                ~isd.wr(ref.evs(T).p,ref.evs(T).m,ref.evs(T).a,T))
+                definition work_end(T) = (T = _T) & cf_cpl(T)
+                definition work_start = ~(cf_cpl(_T) -> eventually arm_cpl(_T))
+                definition work_progress = cfabric.cpl_fair
+                invariant ~cfabric.cpl_fair
+            }
+        }
+    } with this, lclock, tar_clock, tar_cf_clock
+    isolate cf_pio_live = {
+        function issued_pio(T) =
+        (ref.evs(T).req=read | ref.evs(T).req=write) & ref.evs(T).l_req=cf_pio_l &
+        ref.evs(T).mem_loc=pio_memc
+        explicit temporal axiom [cfabric_pio_fair_ax]
+        (globally eventually cfabric.rd_pio_fair) &
+        (globally eventually cfabric.wr_pio_fair)
+        explicit temporal property [cf_liveness]
+        forall T.
+        (globally ~(issued_pio(T) & globally ~(ref.evs(T).l_req=if_l)))
+        proof {
+            tactic skolemize;
+            instantiate cfabric_pio_fair_ax;
+            tactic l2s_auto2 with
+            definition work_start = issued_pio(_T) & globally ~(ref.evs(_T).l_req=if_l)
+            definition work_created(T) = T <= ref.lt
+            definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
+            definition work_done(T) =
+            ~issued_pio(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=read
+            definition work_end(T) = T=_T & issued_pio(_T) & ref.evs(_T).req=read
+            definition work_progress   = cfabric.rd_pio_fair
+            definition work_created[2](T) = T <= ref.lt
+            definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
+            definition work_done[2](T)    = ~issued_pio(T) & T <= _T & T <= ref.lt & ref.evs(_T).req=write
+            definition work_end[2](T) = T=_T & issued_pio(_T) & ref.evs(_T).req=write
+            definition work_progress[2]   = cfabric.wr_pio_fair
+            invariant ~cfabric.rd_pio_fair
+            invariant ~cfabric.wr_pio_fair
+        }
+        function issued_pio_if(T) =
+        (ref.evs(T).req=read | ref.evs(T).req=write)
+        & ref.evs(T).l_req = if_l &
+        ref.evs(T).mem_loc=pio_memc
+        explicit temporal axiom [ifabric_rw_fair_ax]
+        forall P.
+        (globally eventually ifabric.rd_fair(P)) &
+        (globally eventually ifabric.wr_fair(P))
+        explicit temporal property [if_liveness]
+        forall T.
+        (globally ~(issued_pio_if(T) & globally ~(ref.evs(T).l_req=memc_l)))
+        proof {
+            tactic tempcase with P=ref.evs(T).p
+            tactic skolemizenp
+            instantiate ifabric_rw_fair_ax with P=_P
+            tactic l2s_auto2 with
+            definition work_start
+            = ~(_P=ref.evs(_T).p->~(issued_pio_if(_T)
+            & globally ~(ref.evs(_T).l_req=memc_l)))
+            definition work_created(T) = T <= ref.lt
+            definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
+            definition work_done(T)    =
+            ~issued_pio_if(T) & T <= _T
+            & T <= ref.lt
+            & _P=ref.evs(T).p
+            & ref.evs(_T).req=read
+            & ref.evs(T).l_req ~= cf_pio_l
+            definition work_end(T) =
+            T=_T & _P=ref.evs(_T).p & issued_pio_if(_T) & ref.evs(_T).req=read
+            definition work_progress   = ifabric.rd_fair(_P)
+            definition work_created[2](T) = T <= ref.lt
+            definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
+            definition work_done[2](T)    =
+            ~issued_pio_if(T)
+            & T <= _T
+            & T <= ref.lt
+            & _P=ref.evs(T).p
+            & ref.evs(_T).req=write
+            & ref.evs(T).l_req ~= cf_pio_l
+            definition work_end[2](T) =
+            T=_T & _P=ref.evs(_T).p & issued_pio_if(_T) & ref.evs(_T).req=write
+            definition work_progress[2]   = ifabric.wr_fair(_P)
+            invariant ~ifabric.rd_fair(P)
+            invariant ~ifabric.wr_fair(P)
+        }
+        function issued_pio_memc(T) =
+        (ref.evs(T).req=read | ref.evs(T).req=write)
+        & ref.evs(T).l_req = memc_l &
+        ref.evs(T).mem_loc=pio_memc
+        explicit temporal axiom [memc_rw_fair_ax]
+        forall M,A.
+        (globally eventually memc.rd_fair(M,A)) &
+        (globally eventually memc.wr_fair(M,A))
+        explicit temporal property [memc_liveness]
+        forall T.
+        (globally ~(issued_pio_memc(T) & globally ~(ref.evs(T).l_cmp=memc_l)))
+        proof {
+            tactic tempcase with M=ref.evs(T).m, A=ref.evs(T).a
+            tactic skolemizenp
+            instantiate memc_rw_fair_ax with M=_M, A=_A
+            tactic l2s_auto2 with
+            definition work_start      =
+            ~((_M=ref.evs(_T).m & _A=ref.evs(_T).a)
+            ->~(issued_pio_memc(_T) & globally ~(ref.evs(_T).l_cmp=memc_l)))
+            definition work_created(T) = T <= ref.lt
+            definition work_needed(T)  = T <= _T & ref.evs(_T).req=read
+            definition work_done(T)    =
+            ~issued_pio_memc(T)
+            & T <= _T
+            & T <= ref.lt
+            & ref.evs(_T).req=read
+            & ref.evs(T).l_req ~= cf_pio_l
+            & ref.evs(T).l_req ~= if_l
+            definition work_end(T) =
+            T=_T
+            & (_M=ref.evs(_T).m & _A=ref.evs(_T).a)
+            & issued_pio_memc(_T)
+            & ref.evs(_T).req=read
+            definition work_progress   = memc.rd_fair(_M,_A)
+            definition work_created[2](T) = T <= ref.lt
+            definition work_needed[2](T)  = T <= _T & ref.evs(_T).req=write
+            definition work_done[2](T)    =
+            ~issued_pio_memc(T)
+            & T <= _T
+            & T <= ref.lt
+            & ref.evs(_T).req=write
+            & ref.evs(T).l_req ~= cf_pio_l
+            & ref.evs(T).l_req ~= if_l
+            definition work_end[2](T) =
+            T=_T
+            & (_M=ref.evs(_T).m
+            & _A=ref.evs(_T).a)
+            & issued_pio_memc(_T)
+            & ref.evs(_T).req=write
+            definition work_progress[2]   =
+            memc.wr_fair(_M,_A)
+            invariant ~memc.rd_fair(M,A)
+            invariant ~memc.wr_fair(M,A)
+        }
+        function issued_pio_cpl_memc(T) =
+        ref.evs(T).l_cmp = memc_l &
+        ref.evs(T).mem_loc=pio_memc
+        explicit temporal axiom [memc_cpl_fair_ax]
+        forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)
+        explicit temporal property [memc_cpl_liveness]
+        forall T.
+        (globally issued_pio_cpl_memc(T) -> eventually ref.evs(T).l_cmp=if_l)
+        proof {
+            tactic tempcase with P=ref.evs(T).p, M=ref.evs(T).m, A=ref.evs(T).a;
+            tactic skolemizenp;
+            instantiate memc_cpl_fair_ax with P=_P, M=_M, A=_A, T=_T
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start =
+                ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
+                ->(issued_pio_cpl_memc(_T) -> eventually ref.evs(_T).l_cmp=if_l))
+                definition work_end =
+                ~(_P=ref.evs(_T).p & _M=ref.evs(_T).m & _A=ref.evs(_T).a
+                ->(issued_pio_cpl_memc(_T) -> eventually ref.evs(_T).l_cmp=if_l))
+                definition work_progress = memc.cpl_fair(_P,_M,_A,_T)
+                invariant ~memc.cpl_fair(_P,_M,_A,_T)
+            }
+        }
+        function issued_pio_cpl_if(T) =
+        ref.evs(T).l_cmp = if_l &
+        ref.evs(T).mem_loc=pio_memc
+        explicit temporal axiom [ifabric_cpl_fair_ax]
+        (forall T. globally eventually ref.evs(T).l_cmp = if_l
+        -> ifabric.cpl_fair(T))
+        explicit temporal property [if_cpl_liveness]        
+        forall T. (globally issued_pio_cpl_if(T)
+        -> eventually ref.evs(T).l_cmp=cf_cmp_l)
+        proof {
+            tactic skolemizenp;
+            instantiate ifabric_cpl_fair_ax with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false 
+                definition work_end = issued_pio_cpl_if(_T)
+                definition work_start =
+                ~(issued_pio_cpl_if(_T) -> eventually ref.evs(_T).l_cmp=cf_cmp_l)
+                definition work_progress
+                = ref.evs(_T).l_cmp = if_l -> ifabric.cpl_fair(_T)
+                invariant ~ifabric.cpl_fair(T)
+            }
+        }
+        explicit temporal property [lemma1] 
+        forall T.
+        globally issued_pio(T) -> eventually ref.evs(T).l_req=memc_l
+        proof {
+            # tactic sorry;
+            tactic skolemizenp;
+            instantiate cf_liveness with T=_T;
+            instantiate if_liveness with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start = ~(issued_pio(_T) -> eventually ref.evs(_T).l_req=memc_l)
+                definition work_end = issued_pio(_T) & eventually ref.evs(_T).l_req=if_l
+                definition work_progress = ref.evs(_T).l_req=if_l
+            }
+        }
+        explicit temporal property [lemma2] 
+        forall T.
+        globally issued_pio(T) -> eventually ref.evs(T).l_cmp=memc_l
+        proof {
+            tactic skolemizenp;
+            instantiate lemma1 with T=_T;
+            instantiate memc_liveness with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start = ~(issued_pio(_T) -> eventually ref.evs(_T).l_cmp=memc_l)
+                definition work_end = ref.evs(_T).mem_loc=pio_memc & eventually ref.evs(_T).l_req=memc_l
+                definition work_progress = ref.evs(_T).l_req=memc_l
+            }
+        }
+        explicit temporal property [lemma3] 
+        forall T.
+        globally issued_pio(T) -> eventually ref.evs(T).l_cmp=if_l
+        proof {
+            tactic skolemizenp;
+            instantiate lemma2 with T=_T;
+            instantiate memc_cpl_liveness with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start = ~(issued_pio(_T) -> eventually ref.evs(_T).l_cmp=if_l)
+                definition work_end = ref.evs(_T).mem_loc=pio_memc & ~(eventually ref.evs(_T).l_cmp=if_l) & eventually ref.evs(_T).l_cmp=memc_l
+                definition work_progress = ref.evs(_T).l_cmp=memc_l
+            }
+        }
+        explicit temporal property [lemma4] 
+        forall T.
+        globally issued_pio(T) -> eventually ref.evs(T).l_cmp=cf_cmp_l
+        proof {
+            tactic skolemizenp;
+            instantiate lemma3 with T=_T;
+            instantiate if_cpl_liveness with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start =
+                ~(issued_pio(_T) -> eventually ref.evs(_T).l_cmp=cf_cmp_l)
+                definition work_end =
+                ref.evs(_T).mem_loc=pio_memc
+                & ~(eventually ref.evs(_T).l_cmp=cf_cmp_l)
+                & eventually ref.evs(_T).l_cmp=if_l
+                definition work_progress = ref.evs(_T).l_cmp=if_l
+            }
+        }
+    } with this, lclock, tar_clock, tar_cf_clock
+    isolate e2e = {
+        function issued(T,M,A) =
+        cf_live.issued_memc(T) & ref.evs(T).m = M & ref.evs(T).a = A
+        explicit temporal property [lemma1] 
+        forall M,T,A.
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.rd_fair(M,A)) &
+        (globally eventually memc.wr_fair(M,A))
+        ->
+        globally issued(T,M,A) -> eventually rfn.evqual(M,T)
+        proof {
+            tactic skolemizenp;
+            instantiate dramc_nb2.live with M=_M, T=_T, A=_A;
+            instantiate cf_live.cf_liveness with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start =
+                ~(issued(_T,_M,_A) -> eventually rfn.evqual(_M,_T))
+                definition work_end =
+                ref.evs(_T).mem_loc=mem_memc
+                & dramc_nb2.evma(_T,_M,_A)
+                & eventually ref.evs(_T).l_req=memc_l
+                definition work_progress = ref.evs(_T).l_req=memc_l
+            }
+        }
+        explicit temporal property [lemma2] 
+        forall M,T,A.
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.rd_fair(M,A)) &
+        (globally eventually memc.wr_fair(M,A))
+        ->
+        globally issued(T,M,A) -> eventually rfn.evcomplete(T)
+        proof {
+            tactic skolemizenp;
+            instantiate lemma1 with M=_M, T=_T, A=_A;
+            instantiate tprops.lemma1 with M=_M, T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start =
+                ~(issued(_T,_M,_A) -> eventually rfn.evcomplete(_T))
+                definition work_end = eventually rfn.evqual(_M,_T)
+                definition work_progress = rfn.evqual(_M,_T)
+            }
+        }
+        explicit temporal property [lemma3] 
+        forall M,T,A.
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.rd_fair(M,A)) &
+        (globally eventually memc.wr_fair(M,A)) &
+        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T))
+        ->
+        globally issued(T,M,A) -> eventually cmpl_live.cf_cpl(T)
+        proof {
+            tactic skolemizenp;
+            instantiate lemma2 with M=_M, T=_T, A=_A;
+            instantiate cmpl_live.memc2cf_live with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start =
+                ~(issued(_T,_M,_A) -> eventually cmpl_live.cf_cpl(_T))
+                definition work_end = eventually rfn.evcomplete(_T)
+                definition work_progress = rfn.evcomplete(_T)
+            }
+        }
+        function issued_to_cf(P,T) =
+        (ref.evs(T).l_req=cf_mem_l | ref.evs(T).l_req=cf_pio_l)
+        & ref.evs(T).p = P
+        explicit temporal property [lemma3a] 
+        forall P,T.
+        (forall M,A.
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (globally eventually dramc(M).rd_fair) &
+        (globally eventually dramc(M).wr_fair) &
+        (globally eventually memc.rd_fair(M,A)) &
+        (globally eventually memc.wr_fair(M,A))) &
+        (forall P,M1,A1,T. globally eventually memc.cpl_fair(P,M1,A1,T))
+        ->
+        globally issued_to_cf(P,T) -> eventually cmpl_live.cf_cpl(T)
+        proof {
+            tactic tempcase with M=ref.evs(T).m, A=ref.evs(T).a;
+            tactic skolemizenp;
+            instantiate lemma3 with M=_M, T=_T, A=_A;
+            instantiate cf_pio_live.lemma4 with T=_T;
+            instantiate with M=_M,A=_A;
+            tactic l2s_auto2 with {
+                definition work_start = ~(_M=ref.evs(_T).m
+                & _A=ref.evs(_T).a->(issued_to_cf(_P,_T)
+                -> eventually cmpl_live.cf_cpl(_T)))
+                definition work_created = true
+                definition work_needed = ref.evs(_T).mem_loc=mem_memc
+                definition work_done = false
+                definition work_end = eventually cmpl_live.cf_cpl(_T)
+                definition work_progress = cmpl_live.cf_cpl(_T)
+                definition work_created[2] = true
+                definition work_needed[2] = ref.evs(_T).mem_loc=pio_memc
+                definition work_done[2] = false
+                definition work_end[2] = eventually ref.evs(_T).l_cmp=cf_cmp_l
+                definition work_progress[2] = ref.evs(_T).l_cmp=cf_cmp_l
+            }
+        }
+        explicit temporal property [lemma4] 
+        forall P,T.
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (forall M. globally eventually dramc(M).rd_fair) &
+        (forall M. globally eventually dramc(M).wr_fair) &
+        (forall M,A. globally eventually memc.rd_fair(M,A)) &
+        (forall M,A. globally eventually memc.wr_fair(M,A)) &
+        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
+        (globally eventually cfabric.cpl_fair)
+        ->
+        globally issued_to_cf(P,T) -> eventually cmpl_live.arm_cpl(T)
+        proof {
+            tactic skolemizenp;
+            instantiate lemma3a with P=_P, T=_T;
+            instantiate cmpl_live.cf2arm_live with T=_T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start = ~(issued_to_cf(_P,_T) -> eventually cmpl_live.arm_cpl(_T))
+                definition work_end = eventually cmpl_live.cf_cpl(_T)
+                definition work_progress = cmpl_live.cf_cpl(_T)
+            }
+        }
+    } with this, lclock, tar_clock, tar_cf_clock, cf_live, dramc_nb2.live, dramc_nb2.evqual_rd, dramc_nb2.evqual_wr, dramc_nb2.evma, cmpl_live.cf_cpl, cmpl_live.memc2cf_live, cmpl_live.arm_cpl, cmpl_live.cf2arm_live, rfn.evcomplete, tprops, cf_pio_live
+    module isolate in_order_retire(nat) with nat = {
+        instantiate equality_schemata
+        instantiate unbounded_sequence_schemata(nat)
+        action send(lt:nat)
+        action complete(lt:nat)
+        action recv
+        specification {
+            var begun(X:nat) : bool
+            var completed(X:nat) : bool
+            var done(X:nat) : bool
+            after init {
+                begun(X) := false;
+                completed(X) := false;
+                done(X) := false;
+            }
+            instance trying : signal0
+            before send {
+                require begun(X) -> X < lt;
+            }
+            after send {
+                begun(lt) := true;
+            }
+            before complete {
+                require begun(lt) & ~completed(lt);
+                completed(lt) := true;
+            }
+            before recv {
+                trying.raise;
+                if some x:nat. ~done(x) & begun(x) minimizing x {
+                    if completed(x) {
+                        done(x) := true;
+                    }
+                }
+            }
+        }
+        implementation {
+            var lastq : nat
+            var predq(X:nat) : nat
+            after init {
+                lastq := 0;
+            }
+            implement send {
+                predq(lt) := lastq;
+                lastq := lt;
+            }
+            invariant begun(X) & predq(X) < Y & Y < X -> ~begun(Y)
+            invariant lastq < X & begun(X) -> false
+            invariant begun(X) -> begun(lastq)
+        }
+        invariant begun(X) & done(X) & Y < X & begun(Y) -> done(Y)
+        invariant completed(X) -> begun(X)
+        invariant done(X) -> begun(X) & completed(X)
+        invariant ~(X:nat < 0)
+        explicit temporal property [lemma1]
+        (globally eventually trying.now) &
+        (forall X. globally begun(X) -> eventually completed(X))
+        ->
+        forall X. (globally begun(X) -> eventually done(X))
+        proof {
+            tactic mc with Y = predq(X)
+        }
+        attribute complete = fo
+    }
+    isolate rfn2 =
+    {
+        instance abs(P:proc) : in_order_retire(lclock)
+        before arm.retire_hook(p:proc,lt:lclock) {
+            abs(p).recv
+        }
+        before arm.issue_hook(p:proc,lt:lclock) {
+            abs(p).send(lt)
+        }
+        before cfabric.complete_hook(lt:lclock) {
+            abs(ref.evs(lt).p).complete(lt)
+        }
+        invariant
+        (isd.rd(P,M,A,T) | isd.wr(P,M,A,T))
+        ->
+        abs(P).begun(T) & ~abs(P).done(T) &
+        (abs(P).completed(T) -> ref.evs(T).l_cmp=arm_l)
+        invariant X > ref.lt -> ~abs(P).begun(X)
+        invariant ~arm.cpl_fair(P)
+    } with this, lclock, tar_clock, tar_cf_clock
+    isolate sys_live = {
+        explicit temporal property [gf]
+        forall P.
+        (globally eventually arm.cpl_fair(P)) ->
+        (globally eventually rfn2.abs(P).trying.now)
+        proof {
+            tactic skolemizenp;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_end = ~eventually rfn2.abs(_P).trying.now
+                definition work_start = ~eventually rfn2.abs(_P).trying.now
+                definition work_progress = arm.cpl_fair(_P)
+            }
+        }
+        explicit temporal property [evc]
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (forall M. globally eventually dramc(M).rd_fair) &
+        (forall M. globally eventually dramc(M).wr_fair) &
+        (forall M,A. globally eventually memc.rd_fair(M,A)) &
+        (forall M,A. globally eventually memc.wr_fair(M,A)) &
+        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
+        (globally eventually cfabric.cpl_fair)
+        ->
+        (forall P,X. globally rfn2.abs.begun(P,X) -> eventually rfn2.abs.completed(P,X))
+        proof {
+            tactic skolemizenp;
+            instantiate e2e.lemma4 with P = _P, T = _X;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start =
+                ~(rfn2.abs.begun(_P,_X) -> eventually rfn2.abs.completed(_P,_X))
+                definition work_end =
+                ~(rfn2.abs.begun(_P,_X) -> eventually rfn2.abs.completed(_P,_X))
+                & ~cmpl_live.arm_cpl(_X)
+                & ref.evs(_X).p = _P
+                & eventually cmpl_live.arm_cpl(_X)
+                definition work_progress = cmpl_live.arm_cpl(_X)
+            }
+        }
+        explicit temporal property [evc2]
+        forall P,T.
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (forall M. globally eventually dramc(M).rd_fair) &
+        (forall M. globally eventually dramc(M).wr_fair) &
+        (forall M,A. globally eventually memc.rd_fair(M,A)) &
+        (forall M,A. globally eventually memc.wr_fair(M,A)) &
+        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
+        (globally eventually cfabric.cpl_fair) &
+        (globally eventually arm.cpl_fair(P))
+        ->
+        globally rfn2.abs.begun(P,T) -> eventually rfn2.abs.done(P,T)
+        proof {
+            tactic skolemizenp;
+            instantiate gf with P = _P;
+            instantiate evc with P = _P;
+            instantiate rfn2.abs.lemma1 with P = _P, X = _T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_start = false
+                definition work_progress = false
+                invariant false
+            }
+        }
+        explicit temporal property [live]
+        forall P,T. 
+        (globally eventually cfabric.rd_fair) &
+        (globally eventually cfabric.wr_fair) &
+        (forall M. globally eventually dramc(M).rd_fair) &
+        (forall M. globally eventually dramc(M).wr_fair) &
+        (forall M,A. globally eventually memc.rd_fair(M,A)) &
+        (forall M,A. globally eventually memc.wr_fair(M,A)) &
+        (forall P,M,A,T. globally eventually memc.cpl_fair(P,M,A,T)) &
+        (globally eventually cfabric.cpl_fair) &
+        (globally eventually arm.cpl_fair(P))
+        ->
+        globally e2e.issued_to_cf(P,T) -> eventually cmpl_live.retired(T)
+        proof {
+            tactic skolemizenp;
+            instantiate gf with P = _P;
+            instantiate evc2 with P = _P, T = _T;
+            tactic l2s_auto2 with {
+                definition work_created = true
+                definition work_needed = true
+                definition work_done = false
+                definition work_end = (isd.rd(_P,ref.evs(_T).m,ref.evs(_T).a,_T) | isd.wr(_P,ref.evs(_T).m,ref.evs(_T).a,_T))
+                definition work_start = ~(e2e.issued_to_cf(_P,_T) -> eventually cmpl_live.retired(_T))
+                definition work_progress = rfn2.abs.done(_P,_T)
+            }
+        }
+    } with this, lclock, tar_clock, tar_cf_clock, rfn2, e2e.issued_to_cf, cmpl_live.retired, e2e.lemma4, cmpl_live.arm_cpl
+}

@@ -1,0 +1,120 @@
+#lang ivy1.7
+
+# This file contains the specification and proof of a high-level, abstract version of the Multi-Paxos protocol.
+# The abstract protocol is used as a lemma in the verification of the Multi-Paxos implementation (in multi_paxos_system.ivy).
+
+# from standard library:
+include order
+include collections
+
+include nodes
+include common
+include votemap_segment
+
+isolate protocol = {
+
+    relation left_round(N:node, R:round)
+    relation joined_round(N:node, R:round)
+    relation proposal(I:inst, R:round, V:value)
+    relation vote(N:node, I:inst, R:round, V:value)
+    relation decision(I:inst, V:value)
+    relation active(R:round)
+    relation available(R:round, I:inst)
+
+    specification {
+
+        after init {
+            left_round(N,R) := R <= none;
+            joined_round(N,R) := false;
+            proposal(I,R,V) := false;
+            vote(N,I,R,V) := false;
+            decision(I,V) := false;
+            active(R) := false;
+            available(R,I) := false;
+        }
+
+        invariant [agreement] decision(I,V1) & decision(I,V2) -> V1 = V2
+
+        # propose only in active rounds
+        invariant proposal(I,R,V) -> active(R)
+        
+        # proposals are unique per round
+        invariant proposal(I,R,V1) & proposal(I,R,V2) -> V1 = V2
+
+        # only vote for proposed values
+        invariant vote(N,I,R,V) -> proposal(I,R,V)
+
+        # none is a reserved round
+        invariant ~((proposal(I,R,V) | vote(N,I,R,V)) & R = none)
+
+        # properties of joined_round, left_round
+        invariant joined_round(N,R2) & R1 < R2 -> left_round(N,R1)
+
+        # the following invariants are private because they have quantifier alternation which we do not want to expose outside the protocol isolate
+        private {
+            # decisions come from quorums of votes:
+            invariant decision(I,V) -> exists Q, R . nset.majority(Q) & forall N:node. nset.member(N, Q) -> vote(N,I,R,V)
+
+            
+            # property of choosable and active: if either V2 is proposed in R2>R1 and V1~=V2 or I is available in R2 and V1 is not proposed in R2 at I, then V1 is not choosable in R1
+            invariant nset.majority(Q) & R1 < R2 & ((proposal(I,R2,V2) & V1 ~= V2) | (available(R2,I) & ~proposal(I,R2,V1))) -> (
+                exists N:node. nset.member(N,Q) & left_round(N,R1) & ~vote(N,I,R1,V1)
+            )
+        }
+        
+        action join_round(n:node, r:round) = {
+            require r ~= none;
+            require ~left_round(n,r);
+            left_round(n,R) := left_round(n,R) | R < r;
+            joined_round(n,r) := true
+        }
+
+        action receive_join_acks(r:round, q:nset, m:votemap_seg) = {
+            require m.first <= m.upper;
+            require nset.majority(q);
+            require r ~= none;
+            require ~active(r);
+            require forall N:node. nset.member(N, q) -> joined_round(N,r);
+
+            # m must contain, for each instance I, a value proposed at maxr(I)<r and such that no member of the quorum q voted in between maxr(I) and r. Such values are said safe.
+            require forall I:inst. m.first <= I -> (
+              ( maxr(votemap_seg_ops.maxvote(m,I)) = none &
+                 forall N,R,V. ~(nset.member(N, q) & R < r & vote(N,I,R,V)) ) |
+              (
+                proposal(I, votemap_seg_ops.maxvote(m,I).maxr, votemap_seg_ops.maxvote(m,I).maxv) &
+                (forall N,R,V.  ~(nset.member(N, q) & R < r & vote(N,I,R,V) & R > maxr(votemap_seg_ops.maxvote(m,I))) ) ) );
+
+            # activate round:
+            active(r) := true;
+            available(R,I) := available(R,I) | (R = r & m.upper <= I);
+            
+            # make proposals when a single safe value is known, and propose no-op when all values are safe (to fill holes), up to m.upper
+            proposal(I, r, V) := proposal(I, r, V)
+              | ((m.first <= I & I < m.upper) & ((maxr(votemap_seg_ops.maxvote(m,I)) ~= none & V = maxv(votemap_seg_ops.maxvote(m,I))) | (maxr(votemap_seg_ops.maxvote(m,I)) = none & V = no_op)))
+        }
+        
+        action propose(r:round, i:inst, v:value) = {
+            require r ~= none;
+            require active(r);
+            require available(r,i);
+            require ~proposal(i, r, V);
+            available(r,i) := false;
+            proposal(i, r, v) := true
+        }
+
+        action cast_vote(n:node, i:inst, r:round, v:value) = {
+            require r ~= none;
+            require ~left_round(n,r);
+            require proposal(i, r, v);
+            vote(n, i, r, v) := true
+        }
+
+        action decide(n:node, i:inst, r:round, v:value, q:nset) = {
+            require nset.majority(q);
+            require r ~= none;
+            require nset.member(N, q) -> vote(N, i, r, v);
+            decision(i, v) := true;
+        }
+    }
+}
+with nset, nset.majorities_intersect, round, inst, votemap_seg, votemap_seg_ops, not_a_vote_def

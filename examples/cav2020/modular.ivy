@@ -1,0 +1,93 @@
+#lang ivy1.7
+
+# This file shows a simple example of module in Ivy, which is caleld
+# an 'isolate'. The interface of the isolate includes an exported type `t`
+# and an exported action `ub`. The function of `ub` is to output a value
+# that is an upper bound on all input values seen thus far.
+#
+# The specification part of the isolate includes a state predicate
+# `seen` that record the input values seen thus far. It is initialized so
+# that `seen(X)` is false for all `X`. The specification has a precondition,
+# requiring that input values are non-negative, and postcondition ensuring
+# that the output is greater than or equal to all seen values.
+#
+# The implementation has a state variable storing the maximum of all
+# values seen to date, initially zero. It updates `max` and returns
+# it.
+
+# Ivy will use its default tactic to verify this isolate, which is
+# VC-checking using Z3.  To verify the postcondition of `ub`, we need
+# the auxiliary invariant `seen(X) -> X <= max`. The implementation
+# interprets type `t` as the integers. This causes Z3 to use its
+# built-in integer theory when verifying the isolate. It also causes
+# the compiler to use the integer type for `t`.  Other modules,
+# however, do not see the integer theory. Instead they only see the
+# properties of `t` stated in the specification part, in particular
+# that the `<` relation over `t` is anti-symmetric. Properties stated
+# in the specification are guarantees for the isolate and are verified
+# by Z3.
+#
+
+isolate foo = {
+    type t
+    action ub(x:t) returns (y:t)
+
+    specification {
+	relation seen(X:t)
+	property forall X:t. ~(X<X)
+	after init {
+	    seen(X) := false;
+	}
+	before ub {
+	    require x >= 0;
+	}
+	after ub {
+	    seen(x) := true;
+ 	    ensure seen(X) -> X <= y;
+	}
+    }
+
+    implementation {
+	var max : t
+	after init {
+	    max := 0;
+	}
+	implement ub {
+	    max := x if x > max else max;
+	    y := max;
+	}
+	interpret t -> int
+	invariant seen(X) -> X <= max
+    }
+}
+
+# Ivy is a synchronous reactive langauge. This means that an Ivy
+# program executes only in response to input from its environment, and
+# execution of actions is atomic. For an action to be called from the
+# environment, we have to export it. Here, we export `foo.ub`.
+
+export foo.ub
+
+# We can verify this program using the following command:
+#
+# $ ivy_check modular.ivy
+#
+# To compile and run it:
+#
+# $ ivyc modular.ivy
+# $ ./modular
+# > foo.ub(42)
+# = 42
+# > foo.ub(7)
+# = 42
+# ^C
+# $
+#
+# By default, the compiler produces a REPL, which allows you to enter
+# action calls to be executes, as seen above.
+
+
+
+
+	    
+

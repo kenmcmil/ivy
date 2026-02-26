@@ -1,0 +1,178 @@
+Specification-based testing of QUIC
+-----------------------------------
+
+This directory contains work on a formal specification of the QUIC
+protocol in the Ivy language, described in this paper:
+
+Kenneth L. McMillan, Lenore D. Zuck: Formal specification and testing
+of QUIC. SIGCOMM 2019: 227-240
+
+This specification can be used to test implementations of QUIC using
+compositional specification-based testing methods.  The currently
+targeted version is IETF draft 23, as described in
+[this document](https://tools.ietf.org/html/draft-ietf-quic-transport-23).
+
+The specification is written in a way that allows monitoring of
+packets on the wire, as well as modular testing of implementations.
+That is, from the specification we can produce an automated tester
+that takes one role in the protocol. The tester uses symbolic execution
+and an SMT solver to randomly generate protocol traffic that
+complies with the specification. For example, if the tester is taking
+the client role, it generates packets that are legal for the client to
+send, and these are transmitted to the server being tested. The
+responses sent by the server are then checked for compliance with the
+specification.
+
+This approach has certain advantages when compared to interoperability
+testing. First, the specification-based tester can generate stimulus
+that can't be produced by any current implementation and perhaps would
+only be produced by attackers. Because it is randomized, it tends to
+generate the unusual cases that specifiers may not have
+considered. Second, it checks for actual specification compliance and
+not just for correct interopation. Ensuring compliance to the
+specification can be helpful for future protocol developers who have
+deal with compatibility with legacy implementations.
+
+In addition, the formal specification can be seen as
+documentation, since it gives an unambiguous interpretation of
+statements made in natural language in the IETF specification
+documents.
+
+A guide to the specification
+============================
+
+The specification is given in terms of a set of protocol events or
+"actions" in the Ivy language. These events abstractly represent
+occurrences at various layers of the protocol stack, for example, the
+transmission of a QUIC packet, or the transfer of data to or from an
+application. To each of these events are attached *monitors*. The
+monitors assert requirements on the events that determine protocol
+compliance and also record history information by updating shared
+variables. This information makes it possible to specify legal
+sequences of events, and also to specify the required relationships
+between events occurring at different protocol layers.
+
+The protocol can be though of as composed of multiple layers. From top
+to bottom: Application, Security, Frame, Packet, Protection and
+Datagram (UDP).  The specification: is divided into files correspoding
+to these layers:
+
+- Application: quic_application.ivy
+- Security: quic_security.ivy
+- Frame: quic_frame.ivy
+- Packet: quic_packet.ivy
+- Protection: quic_protection.ivy
+
+At each layer, we define necessary data types, state variables, and
+actions. Each action has a specification in terms of a *before* clause
+(its guard or precondition) and an *after* (its state update). The
+exception is the protection layer which simply provides procedures for
+encrypting and decrypting packets.
+
+The Ivy language used to express the specification is described
+[here](http://microsoft.github.io/ivy/language.html). An example of
+using Ivy for specification-based tesing can be found
+[here](http://microsoft.github.io/ivy/examples/testing/intro.html).
+
+The specification is intended to be a "literate" document, containing
+a natural language description of the protocol, interleaved with the
+formal description. This is somewhat a work in progress, however, with
+some aspects more clearly documented than others.
+
+The specification as it stands has a number of limitations. First, it
+covers only a subset of features of QUIC. Currently, enough features
+are covered for the test client to have a successful dialog with
+server implementations, but much work remains to be done in specifying
+all of the protocol features. Second, the specification does not deal
+with quantitative time, meaning certain aspects of the QUIC
+specification relating to transmission rates and timeouts can't be
+stated. 
+
+Running the tester
+==================
+
+For purposes of this demo, we need to install one implementation of the
+QUIC protocol called `picoquic` (found in the directory ~/picoquic).
+
+To test the picoquioc server, first compiler a tester. There are several
+tester configurations in this directory that present a different mix of
+operations to the server:
+
+- quic_server_test_stream:  simple transfer of data streams
+- quic_server_test_connection_close:  exercises CONNECTION_CLOSE frequently
+- quic_server_test_max: exercises flow control and other features.
+
+For example, to compile `quic_server_test_max`, do this:
+
+    $ ivyc target=test quic_server_test_max.ivy
+    
+The binary for the tester will be created in the `build` subdirectory of
+this directory.
+
+The easiest way to run a test is to use the provided Python script.
+Do this to test the server implementation of picoquic:
+
+    $ cd test
+    $ python test.py iters=100 server=picoquic test=quic_server_test_max
+    
+This will perform 100 test runs (each with 100 generted events). You
+may run as may (or as few) as you like by changing the iters
+parameter. You may get output that looks something like this:
+
+    output directory: temp/175
+    ../quic_server_test_max (0) ...
+    server pid: 9410
+    timeout 20 ./build/quic_server_test_max seed=0 the_cid=0 server_cid=1 client_port=4987 client_port_alt=4988
+    quic_server_test.ivy: line 518: error: assumption failed
+    client return code: 1
+    FAIL
+    error: 1 tests(s) failed
+
+You can see here the output directory that was created and the command
+that was run. In this case the test reported a failure. You can look
+at the given source code line to see where the failure was. Looking in
+the output directory, we have the following:
+
+    $ ls temp/175
+    quic_server_test_max0.err  quic_server_test_max0.iev  quic_server_test_max0.out
+
+For each test run (there was only one in our case), we have the log of
+ivy events (extension `.iev`) the standard output from the server
+(extension `.out`) and the standard error from the server (extension
+`.err`). You can use the ivy event viewer to look at the ivy event log:
+
+    $ ivy_ev_viewer temp/175/quic_server_test_max0.iev
+    
+You may see this error, which is a protocol compliance error that was
+previously reported in picoquic, but is not fixed in the version used
+here:
+
+    quic_frame.ivy: line 1110: error: assumption failed
+    
+This is cause by picoquic erroneously resendin a PATH_CHALLENGE frame
+(see https://github.com/private-octopus/picoquic/issues/703).
+
+You probably will also see this error:
+
+    quic_server_test.ivy: line 460: error: assumption failed
+
+This happens when the test terminates without transferring any data. This
+can happen, for example, because the server closes the connection after
+failing to to get a PATH_RESPONSE matching a PATH_CHALLENGE, for example
+because the tester responded too slowly. It can also be a result of this
+issue: https://github.com/private-octopus/picoquic/issues/696.
+
+You may also see this error:
+
+    quic_packet.ivy: line 343: error: assumption failed
+
+This is a case of picoquic violating the rule that the server may only
+respond to an IP address if it has sent the highest sequence number
+thus far in the connection (this seems to be a reappearance of an earlier
+reported issue).
+
+
+
+ 
+
+

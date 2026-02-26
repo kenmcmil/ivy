@@ -1,0 +1,431 @@
+#lang ivy1.7
+
+# This file contains the implementation of the "toy consensus"
+# protocol from this paper:
+#
+# Marcelo Taube, Giuliano Losa, Kenneth L. McMillan, Oded Padon, Mooly
+# Sagiv, Sharon Shoham, James R. Wilcox, Doug Woos: Modularity for
+# decidability of deductive verification with applications to
+# distributed systems. PLDI 2018: 662-677
+#
+# The toy consensus protocol has only a leader election phase.
+# Each node sends out `request_vote` messages. A node receiving
+# a request may send out a `vote` message in favor of the requester
+# but may only do this for one node. Any note that receives votes
+# from a majority of nodes (including itself) declares itself
+# leader by sending a `leader` message.
+#
+# We must prove that there is at most one leader.
+
+
+include order
+include udp
+include indexset
+
+# Node identifiers are natural numbers, but we use them only up to a
+# fixed inclusive bound `max`.
+
+instance node : unbounded_sequence
+
+object node = { ...
+    parameter max : node
+}
+
+# We instantiale the `indexset` template (see indexset.ivy) for the
+# `node` type to get operators on node sets and the
+# `majorities_intersect` property.  This says that any two sets than
+# contain a majority of nodes (up to `max`) must have a node in
+# common. This is needed for the one leader property
+#
+# When we verify this example, the following instance of `indexset` is
+# also be verified. See the file `indexset.ivy` for examples of using
+# logical tactics in Ivy, for example to prove properties of recursive
+# funcitons by induction over the natural numbers.
+
+instance nset : indexset(node)
+
+# This is an abstract model of the protocol
+
+isolate toy_protocol = {
+
+    # State variables:
+    # - `voted(N,M)`: node N has voted for node M
+    # - `isleader(N)`: node N has declared itself leader
+    # - `quorum`: the majority that voted for the leader
+
+    relation voted(N:node,M:node)
+    relation isleader(N:node)
+    var quorum : nset
+
+    # Because this is an abstract model, it has only a specification,
+    # not an implementation.
+
+    specification {
+
+	# Initially, no one has voted and no one is leader
+
+	after init {
+            voted(N,M) := false;
+            isleader(N) := false;
+        }
+
+	# Invariant: at most one leader
+
+        invariant [one_leader]
+            isleader(N) & isleader(M) -> N = M
+
+	# Invariant: nodes vote at most once
+
+        invariant [one_vote_per_node] 
+            voted(L, N ) & voted(L, M ) -> N = M
+
+	# Invariant: if there is a leader, the quorum voted for it
+
+        invariant [leader_has_majority] 
+            isleader(N) ->
+                nset.majority(quorum) &
+                forall M. nset.member(M , quorum) -> voted(M,N)
+
+	# Action representing a node voting
+
+        action vote(v : node, n : node) = {
+            require ~voted(v,N);
+            voted(v, n) := true
+        }
+
+	# Action representing a node becoming leader
+
+        action become_leader(n : node, s : nset) = {
+            require nset.majority(s) & (nset.member(N,s) -> voted(N, n));
+            isleader(n) := true;
+            quorum := s
+        }
+    }
+}
+
+# We need the specifiction of node sets, plus the
+# `majorities_intersect` property to prove the invariants
+
+with nset, nset.majorities_intersect
+
+# The following describes the format of messages sent by the
+# implementation.
+
+object msg_kind = {
+    type this = {request_vote, vote, leader}
+}
+
+object msg = {
+    type this = struct {
+        kind : msg_kind,
+        src : node,
+        vote : node
+    }
+}
+
+# To communicate, we need to instantiate a network. Here we use
+# `udp_simple` which uses unreliable datagrams.
+
+instance net : udp_simple(node,msg)
+
+# The network `shim` implements broadcast on top of UDP. 
+
+isolate shim = {
+
+    # This template describes a handler action to be called on
+    # receiving a message of kind `p_kind`.
+
+    module handler(p_kind) = {
+        action handle(dst:node,m:msg)
+        specification {
+            before handle {
+                require sent(m,dst) & m.kind = p_kind
+            }
+        }
+    }    
+
+    # The abstract state of the shim records which messages have been
+    # broadcast, by whom.
+
+    relation sent(M:msg,N:node)
+
+    # Declare a handler (or callback) for each message kind.
+
+    instance request_vote : handler(msg_kind.request_vote)
+    instance vote : handler(msg_kind.vote)
+    instance leader : handler(msg_kind.leader)
+
+    # We provide one action: broadcast a message. Notice the first
+    # parameter is the sender ID, which is the 'location' of the
+    # event. The first parameter is always the location in actions of
+    # a distributed system.
+
+    action bcast(src:node,m:msg)
+
+    # The specification records which messages have been broadcast.
+    # In addition, each handler has a precondition described in the
+    # `handler` template above.
+
+    specification {
+        after init {
+            sent(M,D) := false;
+        }
+
+        before bcast {
+            sent(m,D) := true;
+        }
+    }
+
+    # The shim implememtation
+
+    implementation {
+
+	# These are callbacks to the environment for debugging
+	# purpsoses.
+
+        action debug_sending(src:node,dst:node,m:msg)
+        action debug_recving(dst:node,m:msg)
+
+	# Implement reception of a message from the network. We just
+	# call the appropriate handler.
+
+        implement net.recv(dst:node,m:msg) {
+            call debug_recving(dst,m);
+            if m.kind = msg_kind.request_vote {
+                call request_vote.handle(dst,m)
+            }
+            else if m.kind = msg_kind.vote {
+                call vote.handle(dst,m)
+            }
+            else if m.kind = msg_kind.leader {
+                call leader.handle(dst,m)
+            }
+        }
+
+	# Implement the broadcast action. Just loop over all the nodes
+	# up to `max` and send the message to each.
+
+        implement bcast {
+            var n : node := 0;
+            while n <= node.max
+            invariant net.spec.sent(M,D) -> sent(M,D)
+            {
+                call debug_sending(src,n,m);
+                call net.send(src,n,m);
+                n := n.next;
+            }
+        }
+
+    }
+
+    # To prove the handler preconditions, we need this invariant,
+    # relating the shim state to the network state.
+
+    private {
+        invariant net.spec.sent(M,D) -> sent(M,D)
+    }
+
+} with net, node
+
+# Now that we have broadcast communication, here is the toy
+# consensus implementation. We prove its correctenss using the
+# abstract model as a lemma.
+
+isolate toy_system = {
+
+    # Each node has a flag indicating it has already voted and a set
+    # of votes it has reveived. Note again, the first parameter of
+    # each is the location. Also, notice that we have a map from nodes
+    # to sets. This means if we needed the `majorities_intersect`
+    # property we'd have a function cycle, since it is of the form
+    # 'for all pair of sets, there is a node...'  which creates a
+    # Skolem function from sets to nodes. Fortunately, we dont' use
+    # the `majorities_intersect` property here because we rely instead
+    # on the `one_leader` invariant of the abstract model.  The
+    # abstract model hides the property that creates a function cycle
+    # with the implementation, keeping us in the decidable fragment.
+
+    relation alreadyvoted(N:node)
+    function voters(N:node) : nset
+
+    # The safety specification of the implementation says that
+    # no two disctinct nodes may send a `leader` message.
+
+    specification {
+        invariant [safe] forall M1:msg, M2:msg. 
+                       shim.sent(M1,N1) & M1.kind = msg_kind.leader
+                       & shim.sent(M2,N2) & M2.kind = msg_kind.leader
+                         -> M1.src = M2.src
+    }
+
+    # Initially, there are no votes
+
+    after init (self : node) {
+        alreadyvoted(self) := false;
+        voters(self) := nset.empty()
+    }
+
+    # When the environment calls our `request_vote` action, we send
+    # out a vote request (in a reactive language, we can't do anything
+    # spontaneously). This action could be connected to a timer. If
+    # the node hasn't already voted, it records a vote for itself.  In
+    # this case it calls the `vote` action of the abstract model.  It
+    # must therefore satisfy the precondition of `vote', which is that
+    # it hasn't voted before.  This is a 'ghost' call, since the
+    # abstract model contains only ghost code. Thus, in the executed
+    # code it does nothing.
+    
+    action request_vote(self : node) = {
+        var msg : msg;
+        msg.kind := msg_kind.request_vote;
+        msg.src := self;
+        call shim.bcast(self,msg);
+        if ~alreadyvoted(self) {
+            alreadyvoted(self) := true;
+            voters(self) := voters(self).add(self);
+            call toy_protocol.vote(self,self) # ghost
+        }
+    }
+
+    # Here, we handle incoming `request_vote` messages. If the node
+    # hasn't votes, it builds a vote message and broadcasts it by
+    # calling the shim. It also calls the abstract `vote` action to
+    # indicate it has voted, and is required to satisfy the
+    # precondition.
+
+    implement shim.request_vote.handle(self : node, req : msg) {
+        if ~alreadyvoted(self) {
+            alreadyvoted(self) := true;
+            var reply : msg;
+            reply.kind := msg_kind.vote;
+            reply.src := self;
+            reply.vote := req.src;
+            call shim.bcast(self,reply);
+            call toy_protocol.vote(self,req.src)
+        }
+    }
+
+    # On receiving a vote messages, the node checks if it is a vote
+    # for itself. If so it recoreds the vote. If it now has a majority
+    # of votes, it builds and broadcasts a `leader' message. It also
+    # calls the abstract `become_leader' action, giving its majority
+    # as evidence. It must satisfy the precondition, which is that
+    # every member of the majority has indeed voted for the
+    # node. Given this, it can use the `one_leader' invariant of the
+    # abstract model to prove that it maintains the `safe' invariant
+    # above. This is where the abstract model helps us in the proof.
+
+    implement shim.vote.handle(self : node, req : msg) {
+        if req.vote = self {
+            voters(self) := voters(self).add(req.src);
+            if nset.majority(voters(self)) {
+                var reply : msg;
+                reply.kind := msg_kind.leader;
+                reply.src := self;
+                call shim.bcast(self,reply);
+                call toy_protocol.become_leader(self, voters(self)) # ghost
+            }
+        }
+    }
+
+    # Finally, we have the auxiliary invariants needed in the
+    # proof. These invariants relate the state of this isolate with
+    # the shim and the abstract model. They can also be thought of as
+    # a refinement relation between the implemenation and the abstract
+    # model.
+
+    private {
+
+        invariant forall M:msg. shim.sent(M,N) & M.kind = msg_kind.vote -> toy_protocol.voted(M.src, M.vote)
+        invariant nset.member(N1 ,voters(N2)) -> toy_protocol.voted(N1,N2)
+        invariant forall M:msg. shim.sent(M,N) & M.kind = msg_kind.leader -> toy_protocol.isleader(M.src)
+        invariant toy_protocol.voted(N1,N2) -> alreadyvoted(N1)
+
+    }
+}
+
+# We have to say here that we rely on the specifiations of `nset',
+# `toy_protocol' and `shim'.
+
+with nset, toy_protocol, shim
+
+# Our program taks one input from the environment:
+
+export toy_system.request_vote
+
+# It also sends some debugging output to the environment
+
+import shim.debug_sending
+import shim.debug_recving
+
+# Finally, once we have proved the program, we can extract it to
+# a distributed system. For each location `self' we have corresponcing
+# locations in `toy_system', `shim' and `net'. On the other hand,
+# the `nset' and `node' isolates are not parameterized because they are
+# stateless.
+
+extract iso_impl(self:node) = toy_system(self),shim(self),net(self),nset,node
+
+# So, here's what we do to get verified code. First, we verify all the isolates of
+# our program, like this:
+#
+#     $ ivy_check toy_consensus.ivy
+#     ...
+#     OK
+#
+# Since `ivy_check' says OK, we now extract code, like this:
+#
+#     $ ivyc toy_consensus.ivy
+# 
+# We now have a binary that we can run to try out the protocol. We need one process
+# for each node, so let's create terminal A and terminal B and do the following:
+#
+#     A: $ ./toy_consensus 2 0
+#     A: >
+#
+#     B: $ ./toy_consensus 2 1
+#     B: >
+#
+# This creates node 0 and node one in a network where `max` is 2 (so there are three
+# possible nodes altogether. Now let's ask node A to request votes by typing a command
+# to call the `toy_system.request_vote' action:
+#
+#     A: > toy_system.request_vote
+#     A: < shim.debug_sending(0,{kind:request_vote,src:0,vote:0})
+#     A: < shim.debug_sending(1,{kind:request_vote,src:0,vote:0})
+#     A: < shim.debug_sending(2,{kind:request_vote,src:0,vote:0})
+#     A: < shim.debug_recving({kind:request_vote,src:0,vote:0})
+#     A: < shim.debug_recving({kind:vote,src:1,vote:0})
+#     A: < shim.debug_sending(0,{kind:leader,src:0,vote:0})
+#     A: < shim.debug_sending(1,{kind:leader,src:0,vote:0})
+#     A: < shim.debug_sending(2,{kind:leader,src:0,vote:0})
+#     A: < shim.debug_recving({kind:leader,src:0,vote:0})
+#     A: >
+#
+# We got a sequence of debugging messages showing node 0 sending requests to all
+# three nodes, receiving (and ignoring) its own vote request, receiving a vote
+# from node 1, then sending all nodes a leader message, and finally receiving
+# its own leader message. Here's what we see in terminal B:
+#
+#     B: < shim.debug_recving({kind:request_vote,src:0,vote:0})
+#     B: < shim.debug_sending(0,{kind:vote,src:1,vote:0})
+#     B: < shim.debug_sending(1,{kind:vote,src:1,vote:0})
+#     B: < shim.debug_sending(2,{kind:vote,src:1,vote:0})
+#     B: < shim.debug_recving({kind:vote,src:1,vote:0})
+#     B: < shim.debug_recving({kind:leader,src:0,vote:0})
+#
+# It shows that node 1 received a request, the broadcast a vote,
+# recevied its own vote message in favor of 0, and then received
+# the leader message from 0.
+#
+# Notice that this worked even though we didn't start node 2, since
+# only 2/3 nodes are needed to elect a leader (in other words, we
+# tolerated a failure). You might also wonder what would happen if we
+# started a node number 4. We haven't specified that there are no
+# nodes with id's greater than `max`. In fact, the protocol still
+# works, but because of the way the cardinality of a set is defined,
+# the votes from nodes above `max` don't contribute to a majority. So
+# it's still a leader election, but not a democracy!
+
+
+

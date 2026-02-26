@@ -1,0 +1,58 @@
+#lang ivy1.7
+
+# This file contains a simple liveness proof, also shown in figure 3
+# in the tool paper submission.
+#
+# To verify this file, run:
+#
+#     $ ivy_check liveness.ivy
+#     ...
+#     OK
+#
+
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+isolate bar = {
+    finite type t
+    action step(x:t)
+
+    specification {
+        relation pending(X:t)
+        after init {
+            pending(X) := true;
+        }
+        instance enter : signal
+
+        before step {
+            require pending(x);
+            call enter.raise;
+            pending(x) := false;
+        }
+
+        temporal property
+            (globally eventually enter.now) ->
+            eventually forall X.~pending(X)
+        proof {
+            tactic l2s with
+            invariant globally eventually enter.now
+            invariant ($was$ ~pending(X)) -> ~pending(X)
+            invariant ($happened$ enter.now)
+                -> exists X. ($was$ pending(X)) & ~pending(X)
+        }
+    }
+}
+
+export bar.step

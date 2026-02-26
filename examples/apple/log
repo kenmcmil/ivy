@@ -1,0 +1,11 @@
+commit 395c199079f0f6e1c080090a496f9c72f2003948
+Author: Ken McMillan <kenmcm@a44831-kenmcm.lan>
+Date:   Sat Jan 13 13:16:53 2024 -0600
+
+    ord_live2 proved from dramc to retirement using tactic ranking
+
+commit 026b7b755f57a3068029541ee093010c9219cfe9
+Author: Ken McMillan <kenmcm@a44831-kenmcm.lan>
+Date:   Mon Dec 4 18:45:12 2023 -0600
+
+    ord_live.ivy

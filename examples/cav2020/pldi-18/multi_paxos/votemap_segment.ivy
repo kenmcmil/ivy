@@ -1,0 +1,52 @@
+#lang ivy1.7
+
+include array_segment
+
+instance votemap_seg : array_segment(inst, vote_struct, votemap)
+
+isolate votemap_seg_ops = {
+
+    function maxvote(M:votemap_seg,I:inst) : vote_struct
+
+    definition none = 0
+    
+    definition maxvote(M,I) = votemap_seg.value(M,I) if votemap_seg.first(M) <= I & I < votemap_seg.upper(M) else not_a_vote
+    
+    action zip_max(seg1:votemap_seg, seg2:votemap_seg) returns (res:votemap_seg)
+
+    specification {
+        around zip_max {
+            require seg1.first = seg2.first & seg1.first <= seg1.upper & seg2.first <= seg2.upper
+            ...
+            ensure (seg2.upper <= seg1.upper -> res.upper = seg1.upper) & (seg2.upper > seg1.upper -> res.upper = seg2.upper);
+            ensure res.first = seg1.first;
+            ensure ~(res.first <= I & I < res.upper & maxvote(seg1,I).maxr < maxvote(seg2,I).maxr & maxvote(res,I) ~= maxvote(seg2,I));
+            ensure ~(res.first <= I & I < res.upper & maxvote(seg2,I).maxr <= maxvote(seg1,I).maxr & maxvote(res,I) ~= maxvote(seg1,I));
+        }
+    }
+
+    implementation {
+        implement zip_max(m1:votemap_seg, m2:votemap_seg) returns (res:votemap_seg) {
+            res := m1;
+            if (res.upper < m2.upper) {
+                res := res.resize(m2.upper, not_a_vote);
+            };
+            var upper := res.upper;
+            var first := res.first;
+            
+            var i:inst := res.first;
+            while i ~= m2.upper
+            invariant first <= i & i <= m2.upper
+            invariant res.first = first & res.upper = upper
+            invariant ~(first <= I & I < i & maxvote(m1,I).maxr < maxvote(m2,I).maxr & maxvote(res,I) ~= maxvote(m2,I))
+            invariant ~(first <= I & I < i & maxvote(m2,I).maxr <= maxvote(m1,I).maxr & maxvote(res,I) ~= maxvote(m1,I))
+            invariant ~(i <= I & maxvote(res,I) ~= maxvote(m1,I))
+            {
+                if maxvote(res,i).maxr < maxvote(m2,i).maxr {
+                    res := res.set(i, maxvote(m2,i));
+                };
+                i := i.next;
+            }
+        }
+    }
+} with votemap_seg, round, inst, not_a_vote_def

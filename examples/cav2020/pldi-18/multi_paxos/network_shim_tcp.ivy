@@ -1,0 +1,127 @@
+#lang ivy1.7
+
+# This file contains the specification and implementation of the network shim is by the Multi-Paxos implementation.
+# The network shim just routes the different packet types to their designated handler.
+
+include tcp
+
+object msg_kind = {
+    type this = {one_a, one_b, two_a, two_b, keep_alive, missing_two_a, missing_decision, decide}
+}
+
+object msg = {
+    type this = struct {
+        m_kind : msg_kind,
+        m_round : round,
+        m_inst : inst,
+        m_node : node,
+        m_value : value,
+        m_votemap : votemap_seg
+    }
+}
+
+instance net : simple_tcp(node,msg)
+
+isolate shim = {
+
+    module handler(p_kind) = {
+        action handle(dst:node,m:msg)
+        object spec = {
+            before handle {
+                assert sent(m,dst) & m.m_kind = p_kind
+            }
+        }
+    }
+
+    relation sent(M:msg,N:node)
+
+    instance one_a_handler : handler(msg_kind.one_a)
+    instance one_b_handler : handler(msg_kind.one_b)
+    instance two_a_handler : handler(msg_kind.two_a)
+    instance two_b_handler : handler(msg_kind.two_b)
+    instance keep_alive_handler : handler(msg_kind.keep_alive)
+    instance missing_two_a_handler : handler(msg_kind.missing_two_a)
+    instance missing_decision_handler : handler(msg_kind.missing_decision)
+    instance decide_handler : handler(msg_kind.decide)
+
+    action bcast(src:node,m:msg)
+    action unicast(src:node,dst:node,m:msg)
+
+    specification {
+        after init {
+            sent(M,D) := false;
+        }
+
+        before bcast {
+            sent(m,D) := true
+        }
+        
+        before unicast {
+            sent(m,dst) := true;
+        }
+    }
+
+    implementation {
+
+        # Do not change, key-value store shim depends on those:
+        action debug_sending(src:node,dst:node,m:msg)
+        action debug_receiving(dst:node,m:msg)
+
+        implement net.recv(dst:node,m:msg) {
+            
+            if (m.m_kind ~= msg_kind.keep_alive) { # keep-alive message obfuscate the debug output; uncomment if needed
+                call debug_receiving(dst,m);
+            };
+            if m.m_kind = msg_kind.one_a {
+                call one_a_handler.handle(dst,m)
+            }
+            else if m.m_kind = msg_kind.one_b {
+                call one_b_handler.handle(dst,m)
+            }
+            else if m.m_kind = msg_kind.two_a {
+                call two_a_handler.handle(dst,m)
+            }
+            else if m.m_kind = msg_kind.two_b {
+                call two_b_handler.handle(dst,m)
+            }
+            else if m.m_kind = msg_kind.keep_alive {
+                call keep_alive_handler.handle(dst,m)
+            }
+            else if m.m_kind = msg_kind.missing_two_a {
+                call missing_two_a_handler.handle(dst,m)
+            }
+            else if m.m_kind = msg_kind.missing_decision {
+                call missing_decision_handler.handle(dst,m)
+            }
+            else if m.m_kind = msg_kind.decide {
+                call decide_handler.handle(dst,m)
+            }
+        }
+        implement bcast { # broadcast sends to all nodes, including the sender.
+            var iter := node.iter.create(0);
+            while ~iter.is_end
+            invariant net.sent(M,D) -> sent(M,D)
+            {
+                var n := iter.val;
+		if m.m_kind ~= msg_kind.keep_alive {
+                    call debug_sending(src,n,m);
+		};
+                call net.send(src,n,m);
+                iter := iter.next;
+            }
+        }
+        implement unicast {
+            call debug_sending(src,dst,m);
+            call net.send(src,dst,m);
+        }
+
+        private {
+            invariant net.sent(M,D) -> sent(M,D)
+        }
+    }
+
+} with net, node
+
+# Do not change, key-value store links to those:
+import shim.debug_sending
+import shim.debug_receiving

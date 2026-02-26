@@ -1,0 +1,167 @@
+#lang ivy1.8
+
+type client
+
+
+var reqShared(C:client) : bool
+var reqExclusive(C:client) : bool
+var invalidate(C:client) : bool
+var grantShared(C:client) : bool
+var grantExclusive(C:client) : bool
+var invalidateAck(C:client) : bool
+var cacheShared(C:client) : bool
+var cacheExclusive(C:client) : bool
+var homeSharerList(C:client) : bool
+var homeInvalidateList(C:client) : bool
+var homeExclusiveGranted : bool
+var homeCurrentReqShared : bool
+var homeCurrentReqExclusive : bool
+var homeCurrentclient : client
+
+var owner : client
+
+after init {
+    reqShared(C:client) := false;
+    reqExclusive(C:client) := false;
+    invalidate(C:client) := false;
+    grantShared(C:client) := false;
+    grantExclusive(C:client) := false;
+    invalidateAck(C:client) := false;
+    cacheShared(C:client) := false;
+    cacheExclusive(C:client) := false;
+    homeSharerList(C:client) := false;
+    homeInvalidateList(C:client) := false;
+    homeExclusiveGranted := false;
+    homeCurrentReqShared := false;
+    homeCurrentReqExclusive := false;
+}
+
+action reqSharedRule(cl:client) = {
+    require (~cacheShared(cl) & ~cacheExclusive(cl)) & (~reqShared(cl) & ~reqExclusive(cl));
+    reqShared(cl) := true;
+}
+
+action reqExclusiveRule(cl:client) = {
+    require (~cacheShared(cl) & ~cacheExclusive(cl)) & (~reqShared(cl) & ~reqExclusive(cl));
+    reqExclusive(cl) := true
+}
+
+action pickNewSharedRequestRule(cl:client) = {
+    require (~homeCurrentReqShared & ~homeCurrentReqExclusive) & reqShared(cl);
+    homeCurrentReqShared := true;
+    reqShared(cl) := false;
+    homeCurrentclient := cl;
+    homeInvalidateList(C) := homeSharerList(C);
+}
+
+action pickNewExclusiveRequestRule(cl:client) = {
+    require (~homeCurrentReqShared & ~homeCurrentReqExclusive) & reqExclusive(cl);
+    homeCurrentReqExclusive := true;
+    reqExclusive(cl) := false;
+    homeCurrentclient := cl;
+    homeInvalidateList(C) := homeSharerList(C);
+}
+
+action grantSharedRule = {
+    require
+        homeCurrentReqShared
+      & ~homeExclusiveGranted
+      & ~invalidate(homeCurrentclient)
+      & ~grantShared(homeCurrentclient)
+      & ~grantExclusive(homeCurrentclient);
+    homeSharerList(homeCurrentclient) := true;
+    homeCurrentReqShared := false;
+    grantShared(homeCurrentclient) := true;
+}
+
+action grantExclusiveRule = {
+    require
+        homeCurrentReqExclusive
+      & ~invalidate(homeCurrentclient)
+      & ~grantShared(homeCurrentclient)
+      & ~grantExclusive(homeCurrentclient)
+      & forall I. ~homeSharerList(I);
+    homeSharerList(homeCurrentclient) := true;
+    homeCurrentReqExclusive := false;
+    homeExclusiveGranted := true;
+    grantExclusive(homeCurrentclient) := true;
+    owner := homeCurrentclient; 
+}
+
+action sendInvalidateRule(cl:client) = {
+    require (~invalidate(cl) & ~grantShared(cl) & ~grantExclusive(cl)) & homeInvalidateList(cl)
+    & (homeCurrentReqExclusive | (homeCurrentReqShared & homeExclusiveGranted));
+    invalidate(cl) := true;
+    homeInvalidateList(cl) := false;
+}
+
+action receiveInvalidateAckRule(cl:client) = {
+    require (homeCurrentReqShared | homeCurrentReqExclusive) & invalidateAck(cl);
+    homeSharerList(cl) := false;
+    homeExclusiveGranted := false;
+    invalidateAck(cl) := false;
+}
+
+action sharerInvalidatesCacheRule(cl:client) = {
+    require invalidate(cl) & ~invalidateAck(cl);
+    invalidate(cl) := false;
+    invalidateAck(cl) := true;
+    cacheShared(cl) := false;
+    cacheExclusive(cl) := false;
+}
+
+action receiveSharedGrantRule(cl:client) = {
+    require grantShared(cl);
+    cacheShared(cl) := true;
+    grantShared(cl) := false;
+}
+
+action receiveExclusiveGrantRule(cl:client) = {
+    require grantExclusive(cl);
+    cacheExclusive(cl) := true;
+    grantExclusive(cl) := false;
+}
+
+invariant ~ (C ~= D & cacheExclusive(C) & (cacheExclusive(D) | cacheShared(D)))
+
+# invariant forall C1. ~(reqShared(C1) & reqExclusive(C1))
+
+# invariant forall C1. ~(invalidate(C1) & grantShared(C1))
+
+# invariant forall C1. ~(invalidate(C1) & grantExclusive(C1))
+
+# invariant forall C1. ~(grantShared(C1) & grantExclusive(C1))
+
+# invariant forall C1. ~(cacheShared(C1) & cacheExclusive(C1))
+
+# invariant homeexclusiveGranted & (homeCurrentReqShared | homeCurrentReqExclusive) & invalidateAck(C1) -> C1 = owner
+
+# invariant (cacheShared(C) | grantShared(C)) -> homeSharerList(C) & ~homeExclusiveGranted
+
+# invariant (cache(C) = exclusive | channel2_4(C) = grantexclusive) -> homeSharerList(C) & homeexclusiveGranted & C = owner
+
+# invariant homeexclusiveGranted & homeSharerList(C) -> C = owner
+
+# invariant channel2_4(C) = invalidate ->  (homeCurrentCommand = reqexclusive
+#        | (homeCurrentCommand = reqshared & homeexclusiveGranted)) & homeSharerList(C) & ~homeinvalidateList(C)
+
+# invariant channel3(C) = invalidateAck -> cache(C) = invalid & (homeCurrentCommand = reqexclusive
+#        | (homeCurrentCommand = reqshared & homeexclusiveGranted)) & homeSharerList(C) & ~homeinvalidateList(C)
+
+# invariant channel2_4(C) ~= empty2_4 -> channel3(C) ~= invalidateAck
+
+# invariant  homeinvalidateList(C) -> homeSharerList(C)
+
+
+export reqSharedRule
+export reqExclusiveRule
+export pickNewSharedRequestRule
+export pickNewExclusiveRequestRule
+export grantExclusiveRule
+export grantSharedRule
+export receiveSharedGrantRule
+export receiveExclusiveGrantRule
+export sendInvalidateRule
+export sharerInvalidatesCacheRule
+export receiveInvalidateAckRule
+

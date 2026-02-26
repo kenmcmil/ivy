@@ -1,0 +1,111 @@
+#lang ivy1.8
+
+# This is the example of Fig. 1 in the paper, using a numeric ranking.
+# It causes Z3 to return an 'unknown' status because the VC's are not in EPR.
+# To try this, we have to switch off the EPR check.
+
+# Note, rather that prove liveness, we have tried to verify the
+# simpler property that receiving reduces that count of the queue.
+# Even this property cannot be verified.
+
+include order
+
+instance time : unbounded_sequence
+
+# A signal with zero parameters
+
+module signal = {
+    action raise
+
+    specification {
+        relation now
+        after init { now := false; }
+        before raise {
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# A signal with one parameter
+
+module signal1(data) = {
+    action raise(val:data)
+
+    specification {
+        relation now
+        var value : data
+        after init { now := false; }
+        before raise {
+            value := val;
+            now := true;
+            now := false;
+        }
+        invariant ~now
+    }
+}
+
+# An unbounded queue module, with liveness property. Notice this module is an isolate and
+# depends on the theory of the index type 'nat'.
+
+module isolate unbounded_queue with time, time.impl = {
+
+    # This action sends a message. Since the queue is unbounded, this
+    # action always succeeds.
+
+    action send(x:time)
+
+    # This action receives a message. It returns a success code 'ok'
+    # and a value 'x' if 'ok' is true. If the queue is empty, 'ok is
+    # false.
+
+    action recv
+
+    specification {
+        var pending(X:time) : bool
+        var t : time
+        
+        function count(X:time) : time
+        definition count(X) = (0 if X=0 else count(X-1)) + (1 if pending(X) else 0)
+        proof {
+            tactic sorry  # admit this inductive definition without proof
+        }
+
+        after init {
+            pending(X) := false;
+        }
+
+        instance sending : signal1(time)
+        instance trying : signal
+        instance receiving : signal1(time)
+
+        before send {
+            require pending(T) -> T < x;
+            pending(x) := true;
+            sending.raise(x);   # ghost action to signal a send
+        }
+
+        before recv {
+            trying.raise;      # ghost action signalling polling of queue
+            if some (y:time) pending(y) minimizing y {
+                pending(y) := false;
+                receiving.raise(y);
+            }
+            ensure pending(t) -> count(t) < old count(t)
+        }
+
+
+    }
+
+    # Switch off the check that we are in EPR.
+
+    attribute complete=fo
+
+}
+
+instance q : unbounded_queue
+
+export q.send
+export q.recv
+

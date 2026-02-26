@@ -1,0 +1,232 @@
+#lang ivy1.8
+
+finite type client
+
+
+var reqShared(C:client) : bool
+var reqExclusive(C:client) : bool
+var invalidate(C:client) : bool
+var grantShared(C:client) : bool
+var grantExclusive(C:client) : bool
+var invalidateAck(C:client) : bool
+var cacheShared(C:client) : bool
+var cacheExclusive(C:client) : bool
+var homeSharerList(C:client) : bool
+var homeInvalidateList(C:client) : bool
+var homeExclusiveGranted : bool
+var homeCurrentReqShared : bool
+var homeCurrentReqExclusive : bool
+var homeCurrentclient : client
+
+
+var signal_sendInvalidateRule : bool
+var signal_sharerInvalidatesCacheRule : bool
+var signal_receiveInvalidateAckRule : bool
+var signal_grantExclusiveRule : bool
+
+var owner : client
+
+after init {
+    reqShared(C:client) := false;
+    reqExclusive(C:client) := false;
+    invalidate(C:client) := false;
+    grantShared(C:client) := false;
+    grantExclusive(C:client) := false;
+    invalidateAck(C:client) := false;
+    cacheShared(C:client) := false;
+    cacheExclusive(C:client) := false;
+    homeSharerList(C:client) := false;
+    homeInvalidateList(C:client) := false;
+    homeExclusiveGranted := false;
+    homeCurrentReqShared := false;
+    homeCurrentReqExclusive := false;
+
+    signal_sendInvalidateRule := false;
+    signal_sharerInvalidatesCacheRule := false;
+    signal_receiveInvalidateAckRule := false;
+    signal_grantExclusiveRule := false;
+}
+
+action reqSharedRule(cl:client) = {
+    require (~cacheShared(cl) & ~cacheExclusive(cl)) & (~reqShared(cl) & ~reqExclusive(cl));
+    reqShared(cl) := true;
+}
+
+action reqExclusiveRule(cl:client) = {
+    require (~cacheShared(cl) & ~cacheExclusive(cl)) & (~reqShared(cl) & ~reqExclusive(cl));
+    reqExclusive(cl) := true
+}
+
+action pickNewSharedRequestRule(cl:client) = {
+    require (~homeCurrentReqShared & ~homeCurrentReqExclusive) & reqShared(cl);
+    homeCurrentReqShared := true;
+    reqShared(cl) := false;
+    homeCurrentclient := cl;
+    homeInvalidateList(C) := homeSharerList(C);
+}
+
+action pickNewExclusiveRequestRule(cl:client) = {
+    require (~homeCurrentReqShared & ~homeCurrentReqExclusive) & reqExclusive(cl);
+    homeCurrentReqExclusive := true;
+    reqExclusive(cl) := false;
+    homeCurrentclient := cl;
+    homeInvalidateList(C) := homeSharerList(C);
+}
+
+action grantSharedRule = {
+    require
+        homeCurrentReqShared
+      & ~homeExclusiveGranted
+      & ~invalidate(homeCurrentclient)
+      & ~grantShared(homeCurrentclient)
+      & ~grantExclusive(homeCurrentclient);
+    homeSharerList(homeCurrentclient) := true;
+    homeCurrentReqShared := false;
+    grantShared(homeCurrentclient) := true;
+}
+
+action grantExclusiveRule = {
+    require
+        homeCurrentReqExclusive
+      & ~invalidate(homeCurrentclient)
+      & ~grantShared(homeCurrentclient)
+      & ~grantExclusive(homeCurrentclient)
+      & forall I. ~homeSharerList(I);
+    signal_grantExclusiveRule := true;
+    signal_grantExclusiveRule := false;
+    homeSharerList(homeCurrentclient) := true;
+    homeCurrentReqExclusive := false;
+    homeExclusiveGranted := true;
+    grantExclusive(homeCurrentclient) := true;
+    owner := homeCurrentclient; 
+}
+
+action sendInvalidateRule(cl:client) = {
+    require (~invalidate(cl) & ~grantShared(cl) & ~grantExclusive(cl)) & homeInvalidateList(cl)
+    & (homeCurrentReqExclusive | (homeCurrentReqShared & homeExclusiveGranted));
+    signal_sendInvalidateRule := true;
+    signal_sendInvalidateRule := false;
+    invalidate(cl) := true;
+    homeInvalidateList(cl) := false;
+}
+
+action receiveInvalidateAckRule(cl:client) = {
+    require (homeCurrentReqShared | homeCurrentReqExclusive) & invalidateAck(cl);
+    signal_receiveInvalidateAckRule := true;
+    signal_receiveInvalidateAckRule := false;
+    homeSharerList(cl) := false;
+    homeExclusiveGranted := false;
+    invalidateAck(cl) := false;
+}
+
+action sharerInvalidatesCacheRule(cl:client) = {
+    require invalidate(cl) & ~invalidateAck(cl);
+    signal_sharerInvalidatesCacheRule := true;
+    signal_sharerInvalidatesCacheRule := false;
+    invalidate(cl) := false;
+    invalidateAck(cl) := true;
+    cacheShared(cl) := false;
+    cacheExclusive(cl) := false;
+}
+
+action receiveSharedGrantRule(cl:client) = {
+    require grantShared(cl);
+    cacheShared(cl) := true;
+    grantShared(cl) := false;
+}
+
+action receiveExclusiveGrantRule(cl:client) = {
+    require grantExclusive(cl);
+    cacheExclusive(cl) := true;
+    grantExclusive(cl) := false;
+}
+
+invariant ~ (C ~= D & cacheExclusive(C) & (cacheExclusive(D) | cacheShared(D)))
+
+invariant ~(exists C. (~homeSharerList(C) & cacheShared(C)))
+invariant ~(exists C. (~homeSharerList(C) & grantShared(C)))
+invariant ~(exists C. (~cacheShared(C) & ~cacheExclusive(C) & invalidate(C)))
+invariant ~(exists C. (~grantExclusive(C) & homeInvalidateList(C) & ~cacheExclusive(C) & homeExclusiveGranted))
+invariant ~(exists C. (grantExclusive(C) & ~homeExclusiveGranted))
+invariant ~(exists C. (reqShared(C) & reqExclusive(C)))
+invariant ~(exists C. (invalidateAck(C) & cacheShared(C)))
+invariant ~(exists C. (~grantExclusive(C) & homeSharerList(C) & ~cacheExclusive(C) & homeExclusiveGranted & ~homeCurrentReqExclusive & ~homeCurrentReqShared))
+invariant ~(exists C. (invalidateAck(C) & grantShared(C)))
+invariant ~(exists C. (grantExclusive(C) & homeInvalidateList(C) & ~homeCurrentReqExclusive & ~homeCurrentReqShared))
+invariant ~(exists C. (~homeSharerList(C) & grantExclusive(C)))
+invariant ~(exists C. (cacheExclusive(C) & ~homeExclusiveGranted))
+invariant ~(exists C,C1. (~(C1 = C) & homeSharerList(C) & homeSharerList(C1) & homeExclusiveGranted))
+invariant ~(exists C. (~grantShared(C) & homeInvalidateList(C) & ~cacheShared(C) & ~homeExclusiveGranted))
+invariant ~(exists C,C1. (grantExclusive(C) & cacheExclusive(C1)))
+invariant ~(exists C. (~homeSharerList(C) & invalidateAck(C)))
+invariant ~(exists C. (invalidate(C) & grantShared(C)))
+invariant ~(exists C,C1. (invalidateAck(C) & cacheExclusive(C1)))
+invariant ~(exists C. (~grantShared(C) & homeSharerList(C) & ~cacheShared(C) & ~homeExclusiveGranted & ~homeCurrentReqExclusive))
+invariant ~(exists C. (invalidateAck(C) & grantExclusive(C)))
+invariant ~(exists C. (invalidate(C) & ~homeExclusiveGranted & ~homeCurrentReqExclusive))
+invariant ~(homeCurrentReqExclusive & homeCurrentReqShared)
+invariant ~(exists C. (~homeSharerList(C) & cacheExclusive(C)))
+invariant ~~(forall C,C1. ((~(C = C1) & cacheExclusive(C)) -> (~cacheExclusive(C1) & ~cacheShared(C1))))
+invariant ~(exists C. (cacheShared(C) & homeExclusiveGranted))
+invariant ~(exists C. (invalidate(C) & homeInvalidateList(C)))
+invariant ~(exists C. (grantShared(C) & homeExclusiveGranted))
+invariant ~(exists C. (invalidate(C) & ~homeCurrentReqExclusive & ~homeCurrentReqShared))
+
+
+export reqSharedRule
+export reqExclusiveRule
+export pickNewSharedRequestRule
+export pickNewExclusiveRequestRule
+export grantExclusiveRule
+export grantSharedRule
+export receiveSharedGrantRule
+export receiveExclusiveGrantRule
+export sendInvalidateRule
+export sharerInvalidatesCacheRule
+export receiveInvalidateAckRule
+
+explicit temporal axiom [fair_sendInvalidateRule] globally eventually signal_sendInvalidateRule
+explicit temporal axiom [fair_sharerInvalidatesCacheRule] globally eventually signal_sharerInvalidatesCacheRule
+explicit temporal axiom [fair_receiveInvalidateAckRule] globally eventually signal_receiveInvalidateAckRule
+explicit temporal axiom [fair_grantExclusiveRule] globally eventually signal_grantExclusiveRule
+
+invariant ~signal_sendInvalidateRule
+invariant ~signal_sharerInvalidatesCacheRule
+invariant ~signal_receiveInvalidateAckRule
+invariant ~signal_grantExclusiveRule
+
+temporal property [live] globally homeCurrentReqExclusive -> eventually ~homeCurrentReqExclusive
+
+proof [live] {
+    tactic skolemizenp
+    instantiate fair_sendInvalidateRule
+    instantiate fair_sharerInvalidatesCacheRule
+    instantiate fair_receiveInvalidateAckRule
+    instantiate fair_grantExclusiveRule
+    tactic ranking with {
+        definition work_created[0](X) = homeSharerList(X)
+        definition work_needed[0](X) = homeInvalidateList(X) & ~invalidate(X) & ~invalidateAck(X)
+        definition work_invar[0] = homeCurrentReqExclusive
+        definition work_progress[0] = signal_sendInvalidateRule
+        definition work_helpful[0] = exists X. homeInvalidateList(X) & ~invalidate(X) & ~invalidateAck(X)
+
+        definition work_created[1](X) = homeSharerList(X)
+        definition work_needed[1](X) = homeInvalidateList(X) & invalidate(X) & ~invalidateAck(X)
+        definition work_invar[1] = homeCurrentReqExclusive
+        definition work_progress[1] = signal_sharerInvalidatesCacheRule
+        definition work_helpful[1] = exists X. homeInvalidateList(X) & invalidate(X) & ~invalidateAck(X)
+        
+        definition work_created[2](X) = homeSharerList(X)
+        definition work_needed[2](X) = homeInvalidateList(X) & invalidateAck(X)
+        definition work_invar[2] = homeCurrentReqExclusive
+        definition work_progress[2] = signal_receiveInvalidateAckRule
+        definition work_helpful[2] = exists X. homeInvalidateList(X) & invalidateAck(X)
+        
+        definition work_created[3] = true
+        definition work_needed[3] = forall X. ~homeInvalidateList(X)
+        definition work_invar[3] = homeCurrentReqExclusive
+        definition work_progress[3] = signal_grantExclusiveRule
+        definition work_helpful[3] = forall X. ~homeInvalidateList(X)
+    }
+}
+

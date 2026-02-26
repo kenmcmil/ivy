@@ -1,0 +1,10 @@
+This paper contains two liveness proofs of the Apple generic memory model:
+
+- ord_live.ivy: With lemmas and no lexicographic ranking
+- ord_live2.ivy: With lexicographic ranking and no lemmas
+
+To save time, disable the fragment checker like this:
+
+```
+$ ivy_check complete=fo <file>.ivy
+```

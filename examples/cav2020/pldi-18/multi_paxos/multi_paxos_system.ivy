@@ -1,0 +1,718 @@
+#lang ivy1.7
+
+# This file contains an implementation of the Multi-Paxos protocol (without log truncation).
+# The specification of the client interface appears in the specification block of the server object.
+
+include timeout # from standard library
+
+include multi_paxos_protocol
+include network_shim_tcp
+
+# Every round has a leader. We represent this with the inverse
+# functional relation `leader_of`. If we use the spec of this
+# isolate, we get just the injectivity property, whereas the
+# impl also gives us totality.
+relation leader_of(N:node, E:round)
+
+isolate round_leader = {
+    specification {
+        property [injectivity] leader_of(Y,X) & leader_of(Z,X) -> Y = Z
+    }
+    implementation {
+        function leader_fun(R:round) : node
+        definition leader_of(N,R) = (R ~= 0 & N = leader_fun(R))
+    }
+}
+
+# Multi-Paxos implementation
+isolate system = {
+    
+    type ballot_status = struct {
+        active : bool,
+        voters : nset,
+        proposal : value,
+        decided : bool
+    }
+    instance ballot_status_array : array(inst, ballot_status)
+    individual init_status : ballot_status
+    # default status for initialization
+    object status_obj = {
+        invariant ~init_status.decided & ~nset.member(N,init_status.voters) & ~init_status.active
+        after init {
+            init_status.active := false;
+            init_status.decided := false;
+            init_status.voters := nset.emptyset
+        }
+    }
+
+    # for timeouts:
+    instance time : unbounded_sequence
+    instance timearray : array(inst, time)
+
+    type decision_struct = struct {
+        decision: value,
+        present: bool
+    }
+    
+    instance log : array(inst, decision_struct)
+    
+    object server(self:node) = {
+
+        # API for client code:
+        # returns false and does nothing if called on a node where leader_of(self,current_round)=false or current_round is not yet active.
+        action propose(v:value) returns (r:bool)
+        individual no_decision : decision_struct
+        object no_decision_initialization = {
+            after init {
+                no_decision.present := false
+            }
+            invariant ~no_decision.present
+        }
+        # called by the client to query the log
+        action query(i:inst) returns (d:decision_struct)
+
+        # called by server to report a decision
+        action decide(i:inst,v:value)
+
+        # the service specification:
+        # do not change; the key-value store shim depends on this interface
+        specification {
+            
+            relation decided(S:inst,V:value)
+
+            object spec_init = {
+                after init {
+                    decided(I,V) := false;
+                }
+            }
+
+            # agreement:
+            after decide {
+                decided(i,v) := true;
+                ensure server.decided(N,i,V) -> V = v;
+            }
+
+            after query {
+                ensure d.present -> decided(i,d.decision)
+            }
+        }
+        
+        individual current_round : round
+        individual next_inst : inst # next free consensus instance 
+        individual inst_status : ballot_status_array # votes received in the current round, per instance
+        individual my_log : log # the decision log
+        individual first_undecided : inst # the first "hole" in the log
+
+        # data structures used upon leadership change:
+        relation round_active # true when successfully acquired leadership
+        individual my_votes : votemap # max votes by self.
+        individual joined: nset # the set of nodes that joined the current round so far
+        individual joined_votes: votemap_seg # the max vote seen so far, per instance
+
+        # for tracking the leader without creating quantifier alternation:
+        instance current_leader:witness(node)
+
+        function is_decided(J:inst):bool
+        definition is_decided(J:inst) = (J < my_log.end & my_log.value(J).present)
+
+        after init {
+            current_round := 0;
+            next_inst := 0;
+            my_votes := votemap.empty;
+            joined := nset.emptyset;
+            joined_votes := votemap_seg.empty;
+            round_active := false;
+            inst_status := ballot_status_array.empty;
+            my_log := log.empty;
+            first_undecided := 0;
+        }
+        
+        implement query(i:inst) {
+            if is_decided(i) {
+                d.decision := my_log.value(i).decision;
+                d.present := true;
+            }
+            else d.present := false;
+        }
+
+        implement propose(v:value) returns (ret:bool) {
+            if leader_of(self, current_round) & round_active {
+                call protocol.propose(current_round, next_inst, v); # ghost
+                var m:msg := build_proposal(next_inst,v);
+                call shim.bcast(self,m);
+                
+                call vote(self, next_inst,v);
+                call two_a_retransmitter.notify_two_a(m.m_inst);
+
+                if (inst_status.end <= next_inst) {
+                    inst_status := inst_status.resize(next_inst.next, init_status);
+                };
+                var status:ballot_status := inst_status.get(next_inst);
+                status.active := true;
+                status.proposal := v;
+                
+                next_inst := inst.next(next_inst);
+                ret := true;
+            }
+            else {
+                ret := false;
+            }
+        }
+
+        implement shim.one_a_handler.handle(m:msg) {
+            if current_round < m.m_round {
+                call change_round(m.m_round);
+                call current_leader.set(m.m_node);
+                var m2:msg;
+                m2.m_kind := msg_kind.one_b;
+                var end:inst;
+                if (m.m_inst <= my_votes.end) {
+                    end := my_votes.end }
+                else {
+                    end := m.m_inst };
+                m2.m_votemap := votemap_seg.make(my_votes,m.m_inst,end);
+                m2.m_round := m.m_round;
+                m2.m_node := self;
+                m2.m_inst := m.m_inst;
+
+                var leader:node := m.m_node;
+                call shim.unicast(self,leader,m2);
+            };
+        }
+
+        implement shim.one_b_handler.handle(m:msg) {
+            if current_round = m.m_round & ~round_active {
+
+                joined := joined.add(m.m_node);
+
+                joined_votes := votemap_seg_ops.zip_max(joined_votes, m.m_votemap);
+                
+                # activate round:
+                if joined.majority {
+                    round_active := true;
+                    next_inst := joined_votes.upper;
+                    if (inst_status.end <= joined_votes.upper) {
+                        inst_status := inst_status.resize(joined_votes.upper,init_status);
+                    };
+                    
+                    var j:inst := joined_votes.first;
+                    while j ~= joined_votes.upper
+                    invariant joined_votes.first <= j
+                    invariant j <= joined_votes.upper 
+                    invariant ~(shim.sent(M,D) ~= (old shim.sent(M,D)) & ~(msg.m_round(M) = current_round & msg.m_kind(M) = msg_kind.two_a & msg.m_node(M) = self & joined_votes.first <= msg.m_inst(M) & msg.m_inst(M) < next_inst & (votemap_seg_ops.maxvote(joined_votes,msg.m_inst(M)).maxr ~= none -> msg.m_value(M) = votemap_seg_ops.maxvote(joined_votes,msg.m_inst(M)).maxv) & (votemap_seg_ops.maxvote(joined_votes,msg.m_inst(M)).maxr = none -> msg.m_value(M) = no_op)))
+                    {
+                        if (~is_decided(j)) { # propose for undecided instances only.
+                            var prop : value;
+                            if votemap_seg_ops.maxvote(joined_votes,j).maxr ~= none {
+                                prop := votemap_seg_ops.maxvote(joined_votes,j).maxv;
+                            }
+                            else { # we propose no_ops in the holes up to new_size:
+                                prop := no_op;
+                            };
+                            var status:ballot_status := inst_status.get(j);
+                            status.active := true;
+                            status.proposal := prop;
+                            var m2:msg := build_proposal(j, prop);
+                            call shim.bcast(self, m2);
+                            # note that the abstract proposal are made in the call to protocol.receive_join_acks. Moreover, the leader will vote when receiving its own broadcast.
+                        };
+                        j := j.next;
+                    };
+
+                    call protocol.receive_join_acks(current_round, joined, joined_votes); # ghost
+                }
+            }
+        }
+        
+        # receiving a proposal:
+        implement shim.two_a_handler.handle(m:msg) {
+            if (current_round <= m.m_round) {
+                if (current_round < m.m_round) {
+                    call change_round(m.m_round);
+                    call current_leader.set(m.m_node);
+                };
+
+                if (~is_decided(m.m_inst)) { # Note here the leader may be receiving its own proposal. It must vote for liveness of recovery.
+                    call vote(m.m_node, m.m_inst, m.m_value);
+                    call catch_up.notify_two_a(m.m_inst);
+                }
+                else if (m.m_node ~= self) {
+                    # send decide message
+                    var m2:msg := build_decide_msg(m.m_inst);
+                    call shim.unicast(self, m.m_node, m2);
+                };
+
+                if (first_undecided < m.m_inst) {
+                    call ask_for_retransmission(m.m_inst);
+                }
+            }
+        }
+        
+        action ask_for_retransmission(i:inst) = {
+            var m:msg;
+            m.m_node := self;
+            m.m_round := current_round;
+            if ~inst_status.value(i).active {
+                m.m_kind := msg_kind.missing_two_a
+            }
+            else {
+                m.m_kind := msg_kind.missing_decision
+            };
+            m.m_inst := i;
+            call shim.unicast(self, current_leader.get, m);
+        }
+
+        implement shim.missing_two_a_handler.handle(m:msg) { # a node is missing instance m.m_inst
+            if (m.m_round > 0 & m.m_round = current_round & leader_of(self,current_round)) {
+                if (is_decided(m.m_inst)) { # send decide message
+                    var m2:msg := build_decide_msg(m.m_inst);
+                    call shim.unicast(self, m.m_node, m2);
+                }
+                else if (m.m_inst < inst_status.end) {
+                    if (inst_status.get(m.m_inst).active) { # resend two_a
+                        var m2:msg := build_proposal(m.m_inst, inst_status.get(m.m_inst).proposal);
+                        call shim.unicast(self, m.m_node, m2);
+                        call two_a_retransmitter.notify_two_a(m2.m_inst);
+                    }
+                }
+            }
+        }
+        
+        implement shim.missing_decision_handler.handle(m:msg) { # a node is missing instance m.m_inst
+            if (m.m_round > 0 & m.m_round = current_round & leader_of(self,current_round)) {
+                if (is_decided(m.m_inst)) { # send decide message
+                    var m2:msg := build_decide_msg(m.m_inst);
+                    call shim.unicast(self, m.m_node, m2);
+                }
+            }
+        }
+
+        implement shim.decide_handler.handle(m:msg) {
+            if (~is_decided(m.m_inst)) {
+                if (inst_status.size <= m.m_inst.next) {
+                    inst_status := inst_status.resize(m.m_inst.next,init_status);
+                };
+                if (my_log.size <= m.m_inst.next) {
+                    my_log := my_log.resize(m.m_inst.next,no_decision);
+                };
+                var d: decision_struct;
+                d.present := true;
+                d.decision := m.m_value;
+                my_log := my_log.set(m.m_inst,d);
+                
+                call update_first_undecided(m.m_inst);
+                
+                var status := inst_status.get(m.m_inst);
+                status.decided := true;
+                inst_status := inst_status.set(m.m_inst,status);
+                
+                call decide(m.m_inst,m.m_value);
+            }
+        }
+        
+        # receiving a vote:
+        implement shim.two_b_handler.handle(m:msg) {
+            # first make sure that inst_status is big enough.
+            if (inst_status.size <= m.m_inst.next) {
+                inst_status := inst_status.resize(m.m_inst.next,init_status);
+            };
+            
+            var status := inst_status.get(m.m_inst);
+            if status.active & ~status.decided & m.m_round = current_round {
+                status.voters := status.voters.add(m.m_node);
+                status.active := true;
+                status.proposal := m.m_value;
+                if status.voters.majority {
+                    status.decided := true;
+                    
+                    # update local log:
+                    if (my_log.size <= m.m_inst.next) {
+                        my_log := my_log.resize(m.m_inst.next,no_decision);
+                    };
+                    var d: decision_struct;
+                    d.present := true;
+                    d.decision := m.m_value;
+                    my_log := my_log.set(m.m_inst,d);
+
+                    call update_first_undecided(m.m_inst);
+
+                    var m2:msg := build_decide_msg(m.m_inst);
+                    call shim.bcast(self,m2);
+
+                    call protocol.decide(self, m.m_inst, m.m_round, m.m_value, status.voters); # ghost
+                    call decide(m.m_inst, m.m_value);
+                };
+                inst_status := inst_status.set(m.m_inst,status)
+            }
+        }
+        
+        action next_self_leader_round(r:round) returns (s:round) = {
+            # find the next round in which self is leader
+            var iter := current_round.next;
+            while ~leader_of(self,iter)
+            invariant current_round < iter
+            {
+                iter := iter.next
+            };
+            s := iter;
+        }
+        
+        action change_round(r:round) = {
+            current_round := r;
+            call protocol.join_round(self, r); # ghost
+            call leader_election.notify_join_round(current_round);
+            
+            round_active := false;
+            # reset round data for new round.
+            inst_status := ballot_status_array.empty;
+            joined := nset.emptyset;
+        }
+
+        # called when timing out on the current leader:
+        action start_round = {
+            call change_round(next_self_leader_round(current_round));
+            call current_leader.set(self);
+            # self joins the current round:
+            joined := joined.add(self);
+
+            var end:inst;
+            if (first_undecided <= my_votes.end) {
+                end := my_votes.end }
+            else {
+                end := first_undecided };
+            joined_votes := votemap_seg.make(my_votes, first_undecided, end);
+
+            # broacast one_a
+            var m:msg;
+            m.m_kind := msg_kind.one_a;
+            m.m_round := current_round;
+            m.m_node := self;
+            m.m_inst := first_undecided; # here we request only instances after the first undecided instance.
+            call shim.bcast(self,m);
+        }
+        
+        action build_proposal(j:inst, v:value) returns (m:msg) = {
+            m.m_kind := msg_kind.two_a;
+            m.m_round := current_round;
+            m.m_node := self;
+            m.m_inst := j;
+            m.m_value := v;
+        }
+
+        action vote(leader:node, i:inst, v:value) = {
+            # resize if needed:
+            if my_votes.end <= i {
+                my_votes := my_votes.resize(i.next, not_a_vote)
+            };
+            if inst_status.end <= i {
+                inst_status := inst_status.resize(i.next, init_status)
+            };
+            
+            var new_vote:vote_struct;
+            new_vote.maxr := current_round;
+            new_vote.maxv := v;
+            my_votes := my_votes.set(i,new_vote);
+            
+            var status := inst_status.get(i);
+            status.voters := status.voters.add(self);
+            status.proposal := v;
+            status.active := true;
+            inst_status := inst_status.set(i,status);
+            
+            call protocol.cast_vote(self, i, current_round, v); # ghost
+            
+            # broadcast votes if broadcast_votes is true
+            var m2:msg := build_vote_msg(i, v);
+            call shim.unicast(self, leader, m2);
+        }
+
+        action build_vote_msg(i:inst, v:value) returns (m:msg) = {
+            m.m_kind := msg_kind.two_b;
+            m.m_round := current_round;
+            m.m_node := self;
+            m.m_inst := i;
+            m.m_value := v;
+        }
+
+        action build_decide_msg(i:inst) returns (m:msg) = {
+            m.m_kind := msg_kind.decide;
+            m.m_inst := i;
+            m.m_round := current_round;
+            m.m_value := my_log.get(i).decision;
+            m.m_node := self;
+        }
+
+        # update first_undecided to the the next hole in the log.
+        action update_first_undecided(i:inst) = {
+            if (i = first_undecided) {
+                var continue:bool := true;
+                while i <= my_log.end & continue
+                invariant i <= my_log.end
+                {
+                    if ~is_decided(i) {
+                        continue := false;
+                    } else {
+                        i := i.next;
+                    }
+                };
+                first_undecided := i
+            }
+        }
+
+        object timer = {
+            # timeout_sec is a standard module that calls timeout every second:
+            instance sec : timeout_sec
+            implement sec.timeout { # every second
+                call leader_election.tick;
+                call catch_up.tick;
+                call two_a_retransmitter.tick;
+            }
+        }
+
+        # object that starts new rounds when timing out on the leader and sends heartbeat messages when self is a leader.
+        object leader_election = {
+            
+            individual my_time : time
+            individual last_heard_from_leader : time
+            individual last_start_round : time
+            individual timeout : time
+
+            action notify_join_round(r:round)
+            action increase_time
+            action is_leader_too_quiet returns (res: bool)
+            action start_round_timed_out returns (res: bool)
+            
+            after init {
+                last_heard_from_leader := my_time;
+                last_start_round := my_time;
+                timeout := 3;
+            }
+
+            implement notify_join_round(r:round) {
+                if (leader_of(self,r)) {
+                    last_start_round := my_time
+                };
+                last_heard_from_leader := my_time
+            }
+            
+            implement start_round_timed_out {
+                res := my_time - last_start_round >= timeout
+            }
+            implement is_leader_too_quiet {
+                res := my_time - last_heard_from_leader >= timeout
+            }
+            
+            action tick = {
+                my_time := my_time.next;
+                if (current_round = 0) {
+                    call start_round
+                }
+                else if (~leader_of(self,current_round)) {
+                    if is_leader_too_quiet {
+                        call start_round
+                    }
+                }
+                else {
+                    if ~round_active {
+                        if start_round_timed_out {
+                            call start_round
+                        }
+                    } else {
+                        var m : msg;
+                        m.m_kind := msg_kind.keep_alive;
+                        m.m_round := current_round;
+                        m.m_node := self;
+                        call shim.bcast(self,m);
+                    }
+                }
+            }
+
+            implement shim.keep_alive_handler.handle(m:msg) {
+                var r := m.m_round;
+                if current_round < r {
+                    call change_round(r);
+                    call current_leader.set(m.m_node);
+                };
+                last_heard_from_leader := my_time;
+            }
+        }
+
+        # periodically, the leader retransmits two_a messages for pending instances that were started more than 1 second ago:
+        object two_a_retransmitter = {
+            individual two_a_times:timearray
+            individual current_time:time
+            after init {
+                current_time := 0;
+                two_a_times := timearray.empty;
+            }
+            
+            action notify_two_a(i:inst) = {
+                if (two_a_times.end <= i) {
+                    two_a_times := two_a_times.resize(i.next,0)
+                };
+                two_a_times := two_a_times.set(i,current_time)
+            }
+            
+            action tick = {
+                if (leader_of(self, current_round) & round_active) {
+                    var m2:msg;
+                    m2.m_kind := msg_kind.two_a;
+                    m2.m_node := self;
+                    m2.m_round := current_round;
+                    var i:inst := first_undecided;
+                    if (i < inst_status.end) {
+                        while (i < inst_status.end)
+                        invariant i <= inst_status.end
+                        invariant m2.m_kind = msg_kind.two_a & m2.m_node = self & m2.m_round = current_round
+                        invariant ~(shim.sent(M,D) ~= old shim.sent(M,D) & ~(msg.m_kind(M) = msg_kind.two_a & msg.m_round(M) = current_round & msg.m_value(M) = inst_status.value(msg.m_inst(M)).proposal & msg.m_inst(M) < inst_status.end & inst_status.value(msg.m_inst(M)).active & msg.m_node(M) = self))
+                        {
+                            if (~is_decided(i) & i < inst_status.end & inst_status.value(i).active & i < two_a_times.end & two_a_times.value(i) < current_time) {
+                                m2.m_inst := i;
+                                m2.m_value := inst_status.value(i).proposal;
+                                call shim.bcast(self, m2);
+                                call notify_two_a(i);
+                            };
+                            i := i.next;
+                        }
+                    }
+                };
+                current_time := current_time.next
+            }
+        }
+
+        # periodically, a non-leader node asks for all missing instances up to the largest instance it has seen:
+        object catch_up = {
+            individual two_a_times:timearray
+            individual current_time:time
+            
+            after init {
+                current_time := 0;
+                two_a_times := timearray.empty;
+            }
+            
+            action tick = {
+                
+                if (~leader_of(self, current_round) & current_round ~= 0) {
+                    call ask_missing(my_votes.end)
+                };
+                current_time := current_time.next;
+            }
+            
+            action notify_two_a(i:inst) = {
+                if (two_a_times.end <= i) {
+                    two_a_times := two_a_times.resize(i.next,0)
+                };
+                two_a_times := two_a_times.set(i,current_time)
+            }
+
+            action ask_missing(j:inst) = { # ask for any missing (undecided) instances above first_undecided up to j.
+                if (first_undecided <= j) {
+                    var i:inst := first_undecided;
+                    while (i < j)
+                    invariant i <= j
+                    invariant ~(shim.sent(M,D) ~= old shim.sent(M,D) & ~(msg.m_kind(M) = msg_kind.missing_two_a | msg.m_kind(M) = msg_kind.missing_decision))
+                    {
+                        if (~is_decided(i) & i < two_a_times.end & two_a_times.value(i) < current_time) {
+                            call ask_for_retransmission(i);
+                        };
+                        i := i.next;
+                    }
+                }
+            }
+        }
+
+        # Invariants:
+
+        # round 0:
+        invariant ~(protocol.vote(N,I,R,V) & R = 0)
+        invariant ~(next_inst ~= 0 & current_round = 0)
+
+        # decide messages        
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.decide & ~protocol.decision(msg.m_inst(M),msg.m_value(M)))
+
+        # keep-alive messages
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.keep_alive & current_round < msg.m_round(M) & leader_of(self, msg.m_round(M)))
+        
+        # round of a message:
+        invariant ~(shim.sent(M,D) & (msg.m_kind(M) = msg_kind.one_a | msg.m_kind(M) = msg_kind.two_a | msg.m_kind(M) = msg_kind.one_b | msg.m_kind(M) = msg_kind.two_b) & (msg.m_round(M) > server.current_round(msg.m_node(M)) | msg.m_round(M) = 0))
+        
+        # current_round and active:
+        invariant ~(round_active & current_round = 0)
+        invariant leader_of(self, current_round) -> (round_active <-> protocol.active(current_round))
+        invariant ~(leader_of(self, R) & protocol.active(R) & R > current_round)
+        invariant ~(leader_of(self, current_round) & round_active & ~protocol.active(current_round))
+
+        # one_as are sent by leaders
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_a & ~leader_of(msg.m_node(M),msg.m_round(M)))
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_b & ~leader_of(D,msg.m_round(M)))
+
+        # next_inst bounds proposals
+        invariant ~(leader_of(self, current_round) & next_inst <= I & protocol.proposal(I, current_round,V))
+        invariant round_active & leader_of(self, current_round) & next_inst <= I -> protocol.available(current_round,I)
+        
+        # current_round bounds proposals and votes
+        invariant ~(leader_of(self,R) & (current_round < R | (R = current_round & ~round_active)) & protocol.proposal(I,R,V))
+        invariant ~(protocol.vote(self,I,R,V) & current_round < R)
+
+        # left_round, joined_round
+        invariant (R < current_round | R = 0) <-> protocol.left_round(self,R)
+        
+        # invariant ~(protocol.joined_round(self,R) & R > current_round)
+        invariant ~(current_round ~= 0 & ~protocol.joined_round(self,current_round))
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_b & ~protocol.joined_round(msg.m_node(M),msg.m_round(M)))
+        
+        # two_a messages
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.two_a & ~protocol.proposal(msg.m_inst(M),msg.m_round(M),msg.m_value(M)))
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.two_a  & ~leader_of(msg.m_node(M),msg.m_round(M)))
+
+        # two_b message
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.two_b & ~protocol.vote(msg.m_node(M), msg.m_inst(M), msg.m_round(M), msg.m_value(M)))
+
+        # inst_status
+        invariant ~(I < inst_status.end & inst_status.value(I).active & ~protocol.proposal(I, current_round, inst_status.value(I).proposal))
+        invariant ~(I < inst_status.end & nset.member(N,inst_status.value(I).voters) & ~protocol.vote(N,I,current_round,inst_status.value(I).proposal))
+
+        # one_a messages
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_a & server.current_round(msg.m_node(M)) = msg.m_round(M) & ~server.round_active(msg.m_node(M)) & msg.m_inst(M) ~= server.joined_votes(msg.m_node(M)).first)
+        
+        # one_b messages
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_b & server.current_round(D) < msg.m_round(M))
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_b & msg.m_votemap(M).upper < msg.m_votemap(M).first)
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_b & server.current_round(D) = msg.m_round(M) & ~server.round_active(D) & msg.m_votemap(M).first ~= server.joined_votes(D).first)
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_b & msg.m_votemap(M).first <= I & votemap_seg_ops.maxvote(msg.m_votemap(M),I).maxr = none & R < msg.m_round(M) & protocol.vote(msg.m_node(M), I, R, V))
+        invariant ~(shim.sent(M,D) & msg.m_kind(M) = msg_kind.one_b & msg.m_votemap(M).first <= I & MAXR = votemap_seg_ops.maxvote(msg.m_votemap(M),I).maxr & MAXR ~= 0 & (~protocol.vote(msg.m_node(M), I, MAXR, votemap_seg_ops.maxvote(msg.m_votemap(M),I).maxv) | (R > MAXR & R < msg.m_round(M) & protocol.vote(msg.m_node(M), I, R, V))))
+
+        #  the joined_votes and joined data-structures
+        invariant ~(leader_of(self, current_round) & ~round_active & joined_votes.upper < joined_votes.first)
+        invariant ~(leader_of(self, current_round) & ~round_active & joined_votes.first <= I & votemap_seg_ops.maxvote(joined_votes,I).maxr = none & nset.member(N,joined) & R < current_round & protocol.vote(N,I,R,V))
+        invariant ~(leader_of(self, current_round) & ~round_active & joined_votes.first <= I & votemap_seg_ops.maxvote(joined_votes,I).maxr ~= none & nset.member(N,joined) & (votemap_seg_ops.maxvote(joined_votes,I).maxr < R & R < current_round & protocol.vote(N,I,R,V)))
+        invariant ~(current_round ~= 0 & leader_of(self, current_round) & joined_votes.first <= I & votemap_seg_ops.maxvote(joined_votes,I).maxr ~= 0 & ~protocol.proposal(I,votemap_seg_ops.maxvote(joined_votes,I).maxr,votemap_seg_ops.maxvote(joined_votes,I).maxv))
+        invariant ~(leader_of(self, current_round) & nset.member(N,joined) & ~protocol.joined_round(N,current_round))
+
+        # the votes array (which represent the node's own votes)
+        invariant maxvote(my_votes,I).maxr <= current_round
+        invariant ~(MAXR ~= 0 & MAXR = maxvote(my_votes,I).maxr & (~protocol.vote(self, I, MAXR, maxvote(my_votes,I).maxv) | (MAXR < R & protocol.vote(self,I,R,V))))
+        invariant ~(maxvote(my_votes,I).maxr = 0 & protocol.vote(self, I, R, V))
+        
+        # decisions:
+        invariant decided(I,V) -> protocol.decision(I,V)
+        invariant ~(I < my_log.end & my_log.value(I).present & ~decided(I,my_log.value(I).decision))
+        
+    }
+} with nset, votemap, protocol, round_leader, round, shim, inst, votemap_seg, votemap_seg_ops, not_a_vote_def, maxvote_def
+
+export system.server.propose
+export system.server.query
+import system.server.decide
+
+object impl_defs = {
+    interpret value -> strlit
+    definition no_op = "" 
+    definition round_leader.leader_fun(r:round) = <<< r % `node.size` >>>
+}
+
+extract iso_impl(self:node) = nset, node, system, system.server(self), shim(self), net(self), inst, round, votemap, round_leader, impl_defs, votemap_seg_ops, votemap_seg, maxvote_def, not_a_vote_def
+
+# to check: run "ivy_check multi_paxos_system.ivy"
+# to check only the system isolate: run "ivy_check isolate=system multi_paxos_system.ivy"
+# to check only the protocol isolate: run "ivy_check isolate=protocol multi_paxos_system.ivy"
