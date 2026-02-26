@@ -15,11 +15,6 @@ There are two ways to install ivy:
 3. [Install from source on Mac](#macnotes)
 
 
-<a name="source"></a> Installing a binary release
---------------------------------------------
-
-1. [Install from source on Linux](#linuxbinary)
-
 
 <a name="linuxnotes"></a> Installation from source on Linux
 ===========================================================
@@ -140,7 +135,7 @@ Ivy is released as a Python package in the PyPI repository.
 ### <a name="linuxbinary"> Install binary release on Linux
 
     $ sudo apt-get install python3 python3-pip g++ cmake python3-ply python3-pygraphviz git python3-tk tix pkg-config libssl-dev libreadline-dev
-    $ sudo pip3 install z3-solver ms-ivy
+    $ sudo pip3 install ms-ivy
 
 Note, if you omit `sudo` in the second command, Ivy will be installed
 into `~\.local\bin`, which is probably not what you want, so be
