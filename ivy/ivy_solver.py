@@ -228,11 +228,12 @@ def is_solver_op(name):
 
 
 def clear():
-    global z3_sorts, z3_predicates, z3_constants, z3_functions
+    global z3_sorts, z3_predicates, z3_constants, z3_functions, z3_enums
     z3_sorts = dict()
     z3_predicates = {ivy_logic.equals : my_eq}
     z3_constants = dict()
     z3_functions = dict()
+    z3_enums = dict()
 
 clear()    
 
@@ -256,10 +257,13 @@ def functionsort(fs):
     return [s.to_z3() for s in fs.dom] + [fs.rng.to_z3()]
 
 def enumeratedsort(es):
+    if es.name in z3_enums:
+        return z3_enums[es.name]
     res,consts = z3.EnumSort(es.name,es.extension)
     for c in consts:
         z3_constants[str(c)] = c
-#    print "enum {} : {}".format(res,type(res))
+    # print ("enum {} : {}".format(res,type(res)))
+    z3_enums[es.name] = res
     return res
 
 def symbol_to_z3(s):
