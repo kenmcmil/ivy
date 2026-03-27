@@ -884,7 +884,7 @@ def add_extern_precond(mod,subaction,preconds):
     preconds.append(ivy_logic.And(*conjs))
 
 
-def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_inits=None):
+def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_inits=None,extra_asts=[]):
 
     global implementation_map
     implementation_map = {}
@@ -1176,7 +1176,7 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
 
     # filter definitions and native definitions
 
-    asts = []
+    asts = list(extra_asts)
     for x in [mod.labeled_axioms,mod.labeled_props,mod.labeled_inits,mod.labeled_conjs]:
         asts += [y.formula for y in x if not isinstance(y.formula,ivy_ast.SchemaBody)]
 #    asts += [action for action in new_actions.values()]
@@ -1573,8 +1573,13 @@ def create_isolate(iso,mod = None,**kwargs):
             check_with_parameters(mod,iso)
 
         # Apply the present conjectures
+        bracket_asts = []
         if iso and iso in mod.isolates and iu.version_le("1.7",iu.get_string_version()):
             brackets = apply_present_conjectures(mod.isolates[iso],mod)
+            for x in brackets:
+                bracket_asts.extend(x[1])
+                bracket_asts.extend(x[2])
+                    
 
         # treat initializers as exports
         after_inits = mod.mixins["init"]
@@ -1687,7 +1692,8 @@ def create_isolate(iso,mod = None,**kwargs):
 
         if iso:
             isolate_component(mod,iso,extra_with=extra_with,extra_strip=extra_strip,
-                              after_inits=set(a.mixer() for a in after_inits))
+                              after_inits=set(a.mixer() for a in after_inits),
+                              extra_asts=bracket_asts)
         else:
             if mod.isolates and cone_of_influence.get():
                 raise iu.IvyError(None,'no isolate specified on command line')
