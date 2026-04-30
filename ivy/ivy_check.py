@@ -33,8 +33,6 @@ from . import ivy_bmc
 from . import ivy_tactics
 from . import ivy_mypyvy
 
-print ('starting ivy_check...')
-
 import sys
 from collections import defaultdict
 
@@ -46,6 +44,7 @@ opt_mc = iu.BooleanParameter("mc",False)
 opt_trace = iu.BooleanParameter("trace",False)
 opt_separate = iu.BooleanParameter("separate",None)
 opt_method = iu.Parameter("method","")
+opt_out = iu.Parameter("out",check = lambda x: x.endswith('a2g'))
 
 def display_cex(msg,ag):
     if diagnose.get():
@@ -134,15 +133,18 @@ def check_temporals():
                 print('\n    The following temporal property is being proved:\n')
                 print(pretty_lf(prop) + ' ...', end=' ')
                 sys.stdout.flush()
-                if prop.temporal:
-                    proof = pmap.get(prop.id,None)
-                    propn = ivy_proof.normalize_goal(prop)
-                    model = itmp.normal_program_from_module(im.module)
-                    subgoal = prop.clone([prop.args[0],ivy_ast.TemporalModels(model,propn.args[1])])
-                    subgoals = [subgoal]
-                    subgoals = pc.admit_proposition(prop,proof,subgoals)
-                    check_subgoals(subgoals)
-            
+                try:
+                    if prop.temporal:
+                        proof = pmap.get(prop.id,None)
+                        propn = ivy_proof.normalize_goal(prop)
+                        model = itmp.normal_program_from_module(im.module)
+                        subgoal = prop.clone([prop.args[0],ivy_ast.TemporalModels(model,propn.args[1])])
+                        subgoals = [subgoal]
+                        subgoals = pc.admit_proposition(prop,proof,subgoals)
+                        check_subgoals(subgoals)
+                except Exception as e:
+                    print('\n')
+                    raise e
         # else:
         #     # Non-temporal properties have already been proved, so just
         #     # admit them here without proof (in other words, ignore the
@@ -247,9 +249,11 @@ def pretty_lf(lf,indent=8):
     return indent*' ' + "{}{}".format(pretty_lineno(lf),pretty_label(lf.label))
     
 class ConjChecker(Checker):
-    def __init__(self,lf,indent=8):
+    def __init__(self,lf,indent=8,action=None):
         self.lf = lf
         self.indent = indent
+        if action:
+            self.action = action
         Checker.__init__(self,lf.formula)
     def start(self):
         print(pretty_lf(self.lf,self.indent), end=' ')
@@ -395,7 +399,16 @@ def check_fcs_in_state(mod,ag,post,fcs):
             if not opt_trace.get():
                 gui_art(handler)
             else:
-                print(str(handler))
+                outfn = opt_out.get()
+                if outfn is not None:
+                    try:
+                        with open(outfn,'wb') as f:
+                            handler.pickle(f)
+                            print (f'Wrote trace to file. Use "ivy replay {outfn}" to view it')
+                    except IOError:
+                        raise iu.IvyError(None,"Cannot write to outfn")
+                else:
+                    print(str(handler))
             exit(0)
     else:
         res = history.satisfy(axioms,gmc,filter_fcs(fcs))
@@ -413,7 +426,7 @@ def convert_postconds(state,postconds):
     return [x.clone([x.args[0],lut.rename_ast(x.formula,renaming)])
             for x in postconds]
 
-def check_conjs_in_state(mod,ag,post,indent=8,pcs=[]):
+def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None):
     conjs = mod.conj_subgoals if mod.conj_subgoals is not None else mod.labeled_conjs
     conjs = [x for x in conjs if is_check_mod_unprovable(x)]
     conjs += convert_postconds(post,pcs)
@@ -424,7 +437,7 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[]):
         lcs = [sub for sub in conjs if sub.lineno == check_lineno]
     else:
         lcs = conjs
-    return check_fcs_in_state(mod,ag,post,[ConjChecker(c,indent) for c in lcs])
+    return check_fcs_in_state(mod,ag,post,[ConjChecker(c,indent,action) for c in lcs])
 
 def check_safety_in_state(mod,ag,post,report_pass=True):
     return check_fcs_in_state(mod,ag,post,[Checker(lg.Or(),report_pass=report_pass)])
@@ -592,7 +605,7 @@ def check_isolate(trace_hook = None):
                     with itp.EvalContext(check=False): # don't check safety
     #                    post = ag.execute(action, pre, None, actname)
                         post = ag.execute(action, pre)
-                    check_conjs_in_state(mod,ag,post,indent=12,pcs=mod.postconds.get(actname,[]))
+                    check_conjs_in_state(mod,ag,post,indent=12,pcs=mod.postconds.get(actname,[]),action=actname)
                 else:
                     print('')
 
@@ -685,9 +698,10 @@ def check_subgoals(goals,method=None,use_context=True):
             model = conc.model
             fmla = conc.fmla
             if not lg.is_true(fmla):
-                raise IvyError(goal,
+                print ('\n')
+                raise iu.IvyError(goal,
                   """The temporal subgoal {} has not been reduced to an invariance property. 
-                     Try using a tactic such as l2s.""")
+Try using a tactic such as l2s.""".format(goal.label))
             mod = im.module.copy()
             mod.isolate_proof = None
             # mod.labeled_axioms.extend(proved)
@@ -953,8 +967,6 @@ def check_module():
 
 
 def main():
-    import signal
-    signal.signal(signal.SIGINT,signal.SIG_DFL)
     from . import ivy_alpha
     ivy_alpha.test_bottom = False # this prevents a useless SAT check
     ivy_init.read_params()
@@ -979,5 +991,7 @@ def main():
 
 
 if __name__ == "__main__":
+    import signal
+    signal.signal(signal.SIGINT,signal.SIG_DFL)
     main()
 

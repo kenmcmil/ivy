@@ -442,6 +442,14 @@ class AnalysisGraph(object):
     def as_cy_elements(self,dot_layout):
         return dot_layout(render_rg(self),edge_labels=True)
 
+    def pickle(self,f):
+        if hasattr(self,'pre_pickle'):
+            self.pre_pickle()
+        # from .ivy_check_pickle import find_unpicklable
+        # print (find_unpicklable(self))
+        pickle.dump(self,f,protocol=2)
+
+
 def label_from_action(action):
     if hasattr(action,'label'):
         return action.label

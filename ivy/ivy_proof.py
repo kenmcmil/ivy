@@ -371,6 +371,7 @@ class ProofChecker(object):
                 prem = rename_prem_no_clash(prem,decl)
             else:
                 raise ProofError(proof,'instance name {} clashes with context'.format(prem.name))
+        prem = normalize_goal(prem)
         return [goal_add_prem(decl,prem,proof.lineno)] + decls[1:]
 
     def unfold_tactic(self,decls,proof):

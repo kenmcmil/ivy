@@ -1291,7 +1291,7 @@ def get_small_model(clauses, sorts_to_minimize, relations_to_minimize, final_con
         return None
 
     if shrink and opt_shrink.get():
-        print("searching for a small model...", end=' ')
+        print("searching for a small model (to avoid use shrink=false)...", end=' ')
         sys.stdout.flush()
         for x in chain(sorts_to_minimize, relations_to_minimize):
             for n in itertools.count(1):
@@ -1423,7 +1423,7 @@ def clauses_model_to_clauses(clauses1,ignore = None, implied = None,model = None
                  for s in h.sorts() for c in h.sort_universe(s))
     res = substitute_constants_clauses(res,m)
 #    print "core after rename: {} ".format(unsat_core(res,true_clauses()))
-#    print "clauses_model_to_clauses res = {}".format(res)
+#    print ("clauses_model_to_clauses res = {}".format(res))
     return res
 
 def bound_quantifiers_clauses(h,clauses,reps):

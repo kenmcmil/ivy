@@ -37,6 +37,7 @@ class AnalysisGraphUI(ivy_ui.AnalysisGraphUI):
         return [("menu","File",
                  [
                   ("button","Remove tab",lambda self=self: self.ui_parent.remove(self)),
+                  ("button","Save",self.save),
                   ("button","Save invariant",self.save_conjectures),
                   ("button","Exit", lambda self=self: self.ui_parent.exit()),]),
                 ("menu","Invariant",

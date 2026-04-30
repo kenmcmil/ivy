@@ -28,12 +28,21 @@ def usage():
     sys.exit(1)
 
 def open_read(fn):
+    mode = 'rb' if fn.endswith('a2g') else 'r'
     try:
-        f = open(fn,'r')
+        f = open(fn,mode)
         return f
     except:
         print("not found: %s" % fn)
         sys.exit(1)
+
+def get_verb():
+    if len(sys.argv) > 1:
+        verb = sys.argv[1]
+        if not ('.' in verb) and not('=' in verb):
+            sys.argv = sys.argv[0:1] + sys.argv[2:]
+            return verb
+    return 'interact'
 
 def read_params():
     ps = dict()
@@ -91,8 +100,8 @@ def ivy_init(**kwargs):
     if files[0][0].endswith('.a2g'):
         fn,f = files.pop(0)
         ag = pickle.load(f)
-        im.module = ag.domain
-        il.sig = ag.domain.sig
+        ivy_module.module = ag.domain
+        ivy_logic.sig = ag.domain.sig
         f.close()
     else:
         ag = None

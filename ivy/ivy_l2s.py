@@ -145,7 +145,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
     # compiled definitions into goal
 
     for defn in tactic_defns:
-        goal = ipr.compile_definition_goal_vocab(defn,goal) 
+        with ivy_compiler.TopContext({}):
+            goal = ipr.compile_definition_goal_vocab(defn,goal) 
 
     # compile definition dependcies
 
@@ -178,7 +179,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
     l2s_a = lambda sort: lg.Const('l2s_a',lg.FunctionSort(sort,lg.Boolean))
     l2s_w = lambda vs, t: lg.NamedBinder('l2s_w', vs, proof_label, t)
     l2s_s = lambda vs, t: lg.NamedBinder('l2s_s', vs, proof_label, t)
-    l2s_g = lambda vs, t, environ: lg.NamedBinder('l2s_g', vs, environ, t)
+    l2s_g = lambda vs, t, environ: lg.NamedBinder(ilu.globally_binder, vs, environ, t)
     old_l2s_g = lambda vs, t, environ: lg.NamedBinder('_old_l2s_g', vs, environ, t)
     l2s_init = lambda vs, t: lg.NamedBinder('l2s_init', tuple(vs), proof_label, t)
     l2s_when = lambda name, vs, t: lg.NamedBinder('l2s_when'+name, vs, proof_label, t)
@@ -602,7 +603,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
             ninvs.append(lg.Or(initf,lg.Not(evf)))
             ninvs.append(lg.Implies(lg.And(initf,lg.Not(evf)),
                                    lg.Or(lg.Not(l2s_waiting),lg.Not(l2s_w(vs,arg)(*vs)))))
-#            if isinstance(arg,lg.Globally) or isinstance(arg,lg.Not) and isinstance(arg.args[0],lg.Eventually) or isinstance(arg,lg.NamedBinder) and arg.name == 'l2s_g':
+#            if isinstance(arg,lg.Globally) or isinstance(arg,lg.Not) and isinstance(arg.args[0],lg.Eventually) or isinstance(arg,lg.NamedBinder) and arg.name == ilu.globally_binder:
 #                ninvs.append(lg.Implies(lg.And(initf,lg.Or(lg.Not(l2s_waiting),lg.Not(l2s_w(vs,arg)(*vs)))),
 #                                      arg))
             tinvs = []
@@ -826,7 +827,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
                         named_binders_conjs['l2s_s'].append((vs, expr))
         seen = set(t for (vs,t) in named_binders_conjs['l2s_w'])
         for b in ilu.named_binders_asts([ilu.normalize_named_binders(not_lf)]):
-            if b.name == 'l2s_g':
+            if b.name == ilu.globally_binder:
                 vs,t = b.variables,ilu.negate(b.body)
                 if t not in seen:
                     named_binders_conjs['l2s_w'].append((vs,t))
@@ -1260,10 +1261,10 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         named_binders[b.name].append(b)
     named_binders = defaultdict(list, ((k,list(sorted(set(v),key=str))) for k,v in named_binders.items()))
     # make sure old_l2s_g is consistent with l2s_g
-#    assert len(named_binders['l2s_g']) == len(named_binders['_old_l2s_g'])
+#    assert len(named_binders[ilu.globally_binder]) == len(named_binders['_old_l2s_g'])
     named_binders['_old_l2s_g'] = [
          lg.NamedBinder('_old_l2s_g', b.variables, b.environ, b.body)
-         for b in named_binders['l2s_g']
+         for b in named_binders[ilu.globally_binder]
     ]
 
     subs = dict(
@@ -1319,12 +1320,12 @@ def renaming_hook(subs,tr,fcs):
     return tr.rename(dict((x,y) for (y,x) in subs.items()))
 
 def temporal_and_l2s(sym):
-    return (sym.name.startswith('l2s') and not sym.name.startswith('l2s_g')
+    return (sym.name.startswith('l2s') and not sym.name.startswith(ilu.globally_binder)
             or sym.name.startswith('_old_l2s'))
 
 def ls2_g_to_globally(ast):
     def g2g(ast):
-        if isinstance(ast,lg.NamedBinder) and ast.name == 'l2s_g':
+        if isinstance(ast,lg.NamedBinder) and ast.name == ilu.globally_binder:
             return lg.Globally(ast.environ,ast.body)
         return None
     res = ilu.expand_named_binders_ast(ast,g2g)
@@ -1332,7 +1333,7 @@ def ls2_g_to_globally(ast):
 
 def auto_hook(tasks,triggers,subs,tr,fcs):
     tr = renaming_hook(subs,tr,fcs)
-    tr.pp = ls2_g_to_globally
+    # tr.pp = ls2_g_to_globally
     rsubs = dict((x,y) for (y,x) in subs.items())
     # Figure out which property failed
     failed_fc = None

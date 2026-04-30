@@ -177,8 +177,9 @@ class TkUI(object):
     # Create a "save as" dialog with given message and file types. Parameter
     # filetypes is a list of pairs (extension, description).
 
-    def saveas_dialog(self,msg,filetypes):
-        return tkinter.filedialog.asksaveasfile(mode='w',filetypes=filetypes,title=msg,parent=self.frame)
+    def saveas_dialog(self,msg,filetypes,asbytes=False):
+        mode = 'wb' if bytes else 'w'
+        return tkinter.filedialog.asksaveasfile(mode=mode,filetypes=filetypes,title=msg,parent=self.frame)
 
     # Return a context object to use for a computation that might take
     # take or throw an error the needs reporting

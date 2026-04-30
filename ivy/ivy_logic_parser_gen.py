@@ -27,9 +27,15 @@ precedence = (
 )
 
 from .ivy_logic_parser import *
+from .ivy_utils import IvyError
+
+class LogicParseError(Exception):
+    """ Exception raised on parser error """
+    def __init__(self,token,msg):
+        self.token,self.msg = token,msg
 
 def p_error(token):
-    raise LogicParseError(token,"syntax error")
+    raise IvyError(None,f"syntax error at token '{token.value}'")
 
 import os
 tabdir = os.path.dirname(os.path.abspath(__file__))

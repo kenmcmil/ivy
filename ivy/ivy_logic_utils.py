@@ -27,11 +27,6 @@ from collections import defaultdict
 from . import logic_util
 
 
-class LogicParseError(Exception):
-    """ Exception raised on parser error """
-    def __init(token,msg):
-        self.token,self.msg = token,msg
-
 def coerce_clause_to_formula(c):
     if isinstance(c,list):
         return clause_to_formula(c)
@@ -373,6 +368,19 @@ def denormalize_temporal(ast):
                 return ast.clone([lg.Eventually(lhs.environ,lhs.body.body),
                                   lg.And()])
     return ast.clone(args)
+
+globally_binder = 'glo'
+future_binder = 'fut'
+
+def named_binders_to_temporal(ast):
+    def g2g(ast):
+        if isinstance(ast,lg.NamedBinder) and ast.name == globally_binder:
+            return lg.Globally(ast.environ,ast.body)
+        if isinstance(ast,lg.NamedBinder) and ast.name == future_binder:
+            return lg.Future(ast.environ,ast.body)
+        return None
+    res = expand_named_binders_ast(ast,g2g)
+    return denormalize_temporal(res)
 
 # Simplify formula assuming (perhaps falsely) that the arithmertic operators
 # actually represent standard arithmetic. For the moment, this just interprets
