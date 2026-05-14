@@ -933,7 +933,8 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     new_actions = {}
     use_mixin = lambda name: startswith_some(name,present,mod)
     def prefix_call_ext(name):
-        return 'ext:'+name if startswith_some(name,verified,mod) else name
+        # return 'ext:'+name if startswith_some(name,verified,mod) else name
+        return 'ext:'+name
     mod_mixin = lambda mixin,m: m if startswith_some(mixin.mixer(),verified,mod) else m.prefix_calls(prefix_call_ext)
     def ext_mod_mixin(ea):
         return lambda mixin,m: m if startswith_some(mixin.mixer(),verified,mod) and not ea(mixin) else m.prefix_calls(prefix_call_ext)
