@@ -5,7 +5,7 @@
 concept graphs """
 
 #
-# To run this you need packages python-tk, libgv-tcl and tix
+# To run this you need packages python-tk and libgv-tcl
 #
 
 #TODO: the import *'s are creating conflicts

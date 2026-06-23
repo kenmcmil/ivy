@@ -10,8 +10,8 @@ from . import tk_cy
 from .cy_elements import *
 from .dot_layout import dot_layout
 from tkinter import *
+from tkinter import ttk
 import tkinter.constants, tkinter.filedialog
-import tkinter.tix
 
 class RunContext(object):
     """ Context Manager that handles exceptions and reports errors. """
@@ -29,6 +29,7 @@ class RunContext(object):
             b = Button(dlg, text="OK", command=dlg.destroy)
             b.pack(padx=5,side=TOP)
 #            uu.center_window_on_window(dlg,self.parent.root)
+            uu.raise_window(dlg)
             self.parent.tk.wait_window(dlg)
             return True
         return False # don't block any exceptions
@@ -42,16 +43,19 @@ class TkUI(object):
 
     def __init__(self,tk=None,frame=None):
         if tk == None:
-            tk = tkinter.tix.Tk()
+            tk = Tk()
             tk.tk_setPalette(background='white')
             tk.wm_title("ivy")
             frame = tk
+            uu.raise_window(tk)
         elif frame == None:
             frame = Toplevel(tk)
+            uu.raise_window(frame)
         self.tk = tk
         self.frame = frame
-        self.notebook = tkinter.tix.NoteBook(frame)
+        self.notebook = ttk.Notebook(frame)
         self.notebook.pack(fill=BOTH,expand=1)
+        self._tabs = {}
         self.tab_counter = 0
         self.tabs = 0
         self.answers = []
@@ -87,11 +91,15 @@ class TkUI(object):
         nb = self.notebook
         if not hasattr(art,'state_graphs'):
             art.state_graphs = []
-        tab = nb.add(name,label=label) 
-        pw=tkinter.tix.PanedWindow(tab,orientation='horizontal')
+        tab = ttk.Frame(nb)
+        nb.add(tab, text=label)
+        self._tabs[name] = tab
+        pw = ttk.PanedWindow(tab, orient=HORIZONTAL)
         pw.pack(fill=BOTH,expand=1)
-        frame=pw.add('f1',min=50)
-        state_frame=pw.add('f2',min=200)
+        frame = ttk.Frame(pw)
+        state_frame = ttk.Frame(pw)
+        pw.add(frame, weight=1)
+        pw.add(state_frame, weight=4)
         hbar=Scrollbar(frame,orient=HORIZONTAL)
         hbar.pack(side=BOTTOM,fill=X)
         vbar=Scrollbar(frame,orient=VERTICAL)
@@ -106,12 +114,13 @@ class TkUI(object):
         gw.config(xscrollcommand=hbar.set, yscrollcommand=vbar.set)
         for sg in art.state_graphs:
             tk_graph_ui.show_graph(sg,tk,parent=gw,frame=state_frame,ui_parent=this)
-        nb.raise_page(name)
+        nb.select(tab)
         gw.start()
         return gw
 
     def remove(self,art):
-        self.notebook.delete(art.ui_tab_name)
+        tab = self._tabs.pop(art.ui_tab_name)
+        self.notebook.forget(tab)
         self.tabs -= 1
         if self.tabs == 0:
             self.tk.quit()

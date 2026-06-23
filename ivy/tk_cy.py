@@ -9,7 +9,6 @@ from . import ivy_graph_ui
 from .cy_elements import *
 from tkinter import *
 import tkinter.constants, tkinter.filedialog
-import tkinter.tix
 import functools
 
 # Functions for displaying a layed out CyElements graph in a Tk Canvas

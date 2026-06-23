@@ -7,8 +7,8 @@ from . import ivy_ui_util as uu
 from . import ivy_utils as iu
 from . import ivy_graph_ui
 from tkinter import *
+from tkinter import ttk
 import tkinter.constants, tkinter.filedialog
-import tkinter.tix
 import functools
 from .cy_elements import *
 from .tk_cy import *
@@ -331,13 +331,52 @@ def show_graph(g,tk=None,frame=None,parent=None,ui_parent=None):
     # export.pack(side=TOP)
 #    tk.mainloop()
 
+class _GridContent(Frame):
+    """Inner Frame that hosts embedded widgets in a scrollable grid.
+    Provides the subset of tix HList API used by update_relbuttons:
+    delete_all / add / item_create."""
+    def __init__(self, parent, **kw):
+        Frame.__init__(self, parent, **kw)
+        self._row_index = {}
+
+    def delete_all(self):
+        for child in self.winfo_children():
+            child.destroy()
+        self._row_index.clear()
+
+    def add(self, row_key):
+        if row_key not in self._row_index:
+            self._row_index[row_key] = len(self._row_index)
+
+    def item_create(self, row_key, col, itemtype='window', window=None):
+        if window is not None:
+            window.grid(row=self._row_index[row_key], column=col, sticky='w')
+
+
+def _make_scrollable_grid(parent, width=300, background='#ffffff'):
+    """Replacement for tix.ScrolledHList: a vertically scrollable region
+    whose inner Frame supports the API needed by update_relbuttons. Returns
+    (outer_frame_to_pack, inner_frame_for_child_widgets)."""
+    outer = Frame(parent)
+    canvas = Canvas(outer, width=width, background=background,
+                    borderwidth=0, highlightthickness=0)
+    vsb = ttk.Scrollbar(outer, orient=VERTICAL, command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+    vsb.pack(side=RIGHT, fill=Y)
+    canvas.pack(side=LEFT, fill=BOTH, expand=True)
+    inner = _GridContent(canvas, background=background)
+    canvas.create_window((0, 0), window=inner, anchor='nw')
+    inner.bind('<Configure>',
+               lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+    return outer, inner
+
+
 def create_relbuttons_window(gw,relbuttons):
     lb = Label(relbuttons,text="State: {}".format(gw.parent.state_label(gw.g.parent_state)))
     gw.state_label_widget = lb
     lb.pack(side = TOP)
-    sbtns = tkinter.tix.ScrolledHList(relbuttons,options='hlist.columns 5 hlist.background #ffffff',width=300)
+    sbtns, btns = _make_scrollable_grid(relbuttons, width=300)
     sbtns.pack(side="left", fill="both", expand=True)
-    btns = sbtns.subwidget('hlist')
     return lb,btns
     
     

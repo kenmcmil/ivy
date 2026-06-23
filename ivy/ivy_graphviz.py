@@ -2,6 +2,7 @@
 # difficult to install on Windows.
 
 import pydot
+import pydot.dot_parser  # pydot >= 2.0 no longer auto-imports this submodule
 import tempfile
 import os
 from subprocess import Popen, PIPE

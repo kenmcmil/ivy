@@ -3,7 +3,6 @@
 #
 from tkinter import *
 import tkinter.constants, tkinter.filedialog
-import tkinter.tix
 from . import ivy_utils as iu
 import functools
 
@@ -77,6 +76,7 @@ def new_file_browser(tk):
     tl = Toplevel(tk)
     fb = FileBrowser(tl)
     fb.pack(fill=BOTH,expand=1)
+    raise_window(tl)
     return fb
 
 def center_window(toplevel):
@@ -87,6 +87,31 @@ def center_window(toplevel):
     x = w//2 - size[0]//2
     y = h//2 - size[1]//2
     toplevel.geometry("%dx%d+%d+%d" % (size + (x, y)))
+
+def raise_window(toplevel, parent=None):
+    # Force a newly mapped window to the top of the stacking order and
+    # grab focus. Needed on macOS where new Toplevels otherwise stay
+    # behind existing windows of the same app.
+    #
+    # `parent` (if given) is registered as the dialog's parent via
+    # wm_transient — that's what tells macOS Tk to keep the dialog
+    # above its parent for its lifetime.
+    toplevel.update()  # ensure the window is actually mapped before lift
+    if parent is not None:
+        try:
+            toplevel.transient(parent.winfo_toplevel())
+        except TclError:
+            pass
+    toplevel.lift()
+    try:
+        toplevel.attributes('-topmost', True)
+        # Delay the reset so the WM has time to actually raise the
+        # window before we release the topmost flag. after_idle was
+        # firing too quickly on macOS.
+        toplevel.after(200, lambda: toplevel.attributes('-topmost', False))
+    except TclError:
+        pass
+    toplevel.focus_force()
 
 def center_window_on_window(toplevel,win):
     win = win.winfo_toplevel()
@@ -100,6 +125,7 @@ def center_window_on_window(toplevel,win):
     x = xc - size[0]//2
     y = yc - size[1]//2
     toplevel.geometry("%dx%d+%d+%d" % (size + (x, y)))
+    raise_window(toplevel, parent=win)
 
 def destroy_then_aux(dlg,command):
     command()
