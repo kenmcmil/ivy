@@ -1146,7 +1146,10 @@ class IvyDomainSetup(IvyDeclInterp):
                     ivy_logic.add_symbol(sym.name,ivy_logic.FunctionSort(*(new_dom + [sym.sort.rng])))
                     sym = ivy_logic.find_symbol(sym.name)
         self.domain.sort_constructors[rng.name].append(sym)
-
+    def invardep(self,v):
+        lhs = v.args[0].rep
+        rhs = [x.rep for x in v.args[1:]]
+        self.domain.invardeps[lhs] = rhs
 
 
     def add_definition(self,ldf):
@@ -1166,8 +1169,6 @@ class IvyDomainSetup(IvyDeclInterp):
             label = ldf.label
             df = ldf.formula
             lhs = df.args[0]
-            print (f'ldf: {ldf}')
-            print (f'lhs.sort: {lhs.sort}')
             sym = ivy_logic.add_symbol(lhs.rep,ivy_logic.TopFunctionSort(len(lhs.args)))
             df  = compile_defn(df)
             ivy_logic.remove_symbol(sym)

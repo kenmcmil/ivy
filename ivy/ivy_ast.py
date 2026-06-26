@@ -1030,6 +1030,16 @@ class DefinitionDecl(LabeledDecl):
     def name(self):
         return 'definition'
 
+class InvarDep(AST):
+    def __repr__(self):
+        return str(self.args[0]) + ' -> ' + ','.join(str(arg) for arg in self.args[1:])
+
+class InvarDepDecl(Decl):
+    def name(self):
+        return 'invardep'
+    def defines(self):
+        return []
+
 class ProgressDecl(Decl):
     def name(self):
         return 'progress'

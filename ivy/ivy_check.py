@@ -247,7 +247,7 @@ def pretty_lf(lf,indent=8):
     return indent*' ' + "{}{}".format(pretty_lineno(lf),pretty_label(lf.label))
     
 class ConjChecker(Checker):
-    def __init__(self,lf,indent=8):
+    def __init__(self,lf,indent=8,deps=[]):
         self.lf = lf
         self.indent = indent
         Checker.__init__(self,lf.formula)
@@ -424,7 +424,14 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[]):
         lcs = [sub for sub in conjs if sub.lineno == check_lineno]
     else:
         lcs = conjs
-    return check_fcs_in_state(mod,ag,post,[ConjChecker(c,indent) for c in lcs])
+    checkers = []
+    for c in lcs:
+        depnames = set(mod.invardeps.get(c.name,[]))
+        deps = [x.formula for x in mod.assumed_invariants if x.name in depnames]  
+        if deps:
+            c = c.clone([c.label,lg.Implies(lg.And(*deps),c.formula)])
+        checkers.append(ConjChecker(c,indent))
+    return check_fcs_in_state(mod,ag,post,checkers)
 
 def check_safety_in_state(mod,ag,post,report_pass=True):
     return check_fcs_in_state(mod,ag,post,[Checker(lg.Or(),report_pass=report_pass)])

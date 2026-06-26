@@ -91,6 +91,7 @@ class Module(object):
         self.isolate_proof = None
         self.logics = []
         self.wires = set()  # set of symbol
+        self.invardeps = {}  # map from string to string list
         self.sig = il.sig.copy() # capture the current signature
 
     def __enter__(self):

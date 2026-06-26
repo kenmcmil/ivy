@@ -525,12 +525,29 @@ def p_optexplicit_explicit(p):
     'optexplicit : EXPLICIT'
     p[0] = True
 
+def p_optinvwith(p):
+    'optinvwith : '
+    p[0] = []
+
+def p_moreatypes(p):
+    'moreatypes : '
+    p[0] = []
+    
+def p_moreatypes_more_atypes_comma_symbol(p):
+    'moreatypes : moreatypes COMMA atype'
+    p[0] = p[1]
+    p[0].append(p[3])
+
+def p_optinvwith_with_atoms(p):
+    'optinvwith : WITH atype moreatypes'
+    p[0] = [Atom(x) for x in  [p[2]] + p[3]]
+
 # from version 1.7, "invariant" replaces "conjecture"
 if not iu.get_numeric_version() <= [1,6]:
 
 
     def p_top_invariant_labeledfmla(p):
-        'top : top optexplicit INVARIANT labeledfmla optproof'
+        'top : top optexplicit INVARIANT labeledfmla optinvwith optproof'
         p[0] = p[1]
         lf = addlabel(p[4],'invar')
         lf.unprovable = False
@@ -538,10 +555,12 @@ if not iu.get_numeric_version() <= [1,6]:
             lf.explicit = True
         d = ConjectureDecl(lf)
         d.lineno = get_lineno(p,3)
+        if p[5]:
+            p[0].declare(InvarDepDecl(InvarDep(lf.label,*p[5])))
         if not lf.unprovable or check_unprovable.get():
             p[0].declare(d)
-            if p[5] is not None:
-                p[0].declare(ProofDecl(p[5]))
+            if p[6] is not None:
+                p[0].declare(ProofDecl(p[6]))
 
     def p_top_unprovable_invariant_labeledfmla(p):
         'top : top UNPROVABLE INVARIANT labeledfmla optproof'
