@@ -90,6 +90,7 @@ class Module(object):
         self.isolate_proofs = {}
         self.isolate_proof = None
         self.logics = []
+        self.wires = set()  # set of symbol
         self.sig = il.sig.copy() # capture the current signature
 
     def __enter__(self):

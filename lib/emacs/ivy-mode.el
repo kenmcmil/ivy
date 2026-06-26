@@ -139,6 +139,7 @@
     "subclass"
     "template"
     "constructor"
+    "wire"
 ))
 
 (defconst ivy-types '("bool" "int" "bv"))

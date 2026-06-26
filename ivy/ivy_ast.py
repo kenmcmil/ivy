@@ -988,7 +988,10 @@ class ConstantDecl(Decl):
         for c in self.args:
             tterm_type_names(c,names)
                 
-
+class WireConstantDecl(ConstantDecl):
+    def name(self):
+        return 'wire'
+    
 class ParameterDecl(ConstantDecl):
     def name(self):
         return 'parameter'
@@ -1013,11 +1016,15 @@ class ConstructorDecl(ConstantDecl):
     def name(self):
         return 'constructor'
 
-class DerivedDecl(Decl):
+class DerivedDecl(LabeledDecl):
     def name(self):
         return 'derived'
     def defines(self):
-        return [(c.formula.defines(),lineno(c.formula)) for c in self.args]
+        return LabeledDecl.defines(self) + [(c.formula.defines(),lineno(c.formula)) for c in self.args]
+
+class WireDerivedDecl(DerivedDecl):
+    def name(self):
+        return 'wire'
 
 class DefinitionDecl(LabeledDecl):
     def name(self):

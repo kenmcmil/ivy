@@ -170,6 +170,7 @@ reserved = all_reserved = {
     'whennext' : 'WHENNEXT',
     'unprovable' : 'UNPROVABLE',
     'trigger' : 'TRIGGER',
+    'wire' : 'WIRE',
 }
 
 tokens += tuple(all_reserved.values())
@@ -289,7 +290,7 @@ class LexerVersion(object):
                 if s in reserved:
                     del reserved[s]
         if self.version <= [1,7]:
-            for s in ['global','common','debug','field','for','process','subclass','template','whenfirst','whenlast','whennext','whenprev','unprovable','trigger']:
+            for s in ['global','common','debug','field','for','process','subclass','template','whenfirst','whenlast','whennext','whenprev','unprovable','trigger','wire']:
                 if s in reserved:
                     del reserved[s]
         else:

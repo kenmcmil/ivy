@@ -275,6 +275,12 @@ class Action(AST):
             # print(res[1])
             res = (updated,elim_destructors(clauses),elim_destructors(pre))
             # print(res[1])
+        # havoc the wires after action
+        # TODO: should reapply definitions?
+        (updated,clauses,pre) = res
+        ups = set(updated)
+        updated = updated + [x for x in domain.wires if x not in ups]
+        res = (updated,clauses,pre) # havoc the wires
         return res
     def hide_formals(self,update):
         to_hide = []

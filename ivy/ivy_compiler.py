@@ -1105,6 +1105,15 @@ class IvyDomainSetup(IvyDeclInterp):
 #        print "sym: {!r}".format(sym)
         self.domain.functions[sym] = len(v.args)
         return sym
+    def wire(self,v):
+        if isinstance(v,ivy_ast.LabeledFormula):
+            sym = self.derived(v)
+            print(f'sym.sort: {sym.sort}')
+            self.domain.updates.pop() # wires do not update
+        else:
+            sym = self.individual(v)
+        self.domain.wires.add(sym)
+        return sym
     def parameter(self,v):
         if isinstance(v,ivy_ast.Definition):
             sym = self.individual(v.args[0])
@@ -1157,6 +1166,8 @@ class IvyDomainSetup(IvyDeclInterp):
             label = ldf.label
             df = ldf.formula
             lhs = df.args[0]
+            print (f'ldf: {ldf}')
+            print (f'lhs.sort: {lhs.sort}')
             sym = ivy_logic.add_symbol(lhs.rep,ivy_logic.TopFunctionSort(len(lhs.args)))
             df  = compile_defn(df)
             ivy_logic.remove_symbol(sym)
@@ -1166,6 +1177,7 @@ class IvyDomainSetup(IvyDeclInterp):
             self.add_definition(ldf.clone([label,df]))
             self.domain.updates.append(DerivedUpdate(df))
             self.domain.symbol_order.append(sym)
+            return df.args[0].rep
         except ValueError:
             raise IvyError(df,"definition of derived relation must be a cube")
     def definition(self,ldf):

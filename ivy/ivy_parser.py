@@ -1055,6 +1055,37 @@ def p_top_function_tapp_colon_atype(p):
     for d in p[3]:
         p[0].declare(d)
 
+def p_wire_defnlhs_colon_atype(p):
+    'wire : typeddefn'
+#    p[1].sort = p[3]
+    p[0] = WireConstantDecl(p[1])
+    p[0].lineno = p[1].lineno
+
+def p_wire_defn(p):
+    'wire : typeddefn EQ defnrhs'
+    df = Definition(app_to_atom(p[1]),p[3])
+    df.lineno = get_lineno(p,2)
+    p[0] = WireDerivedDecl(addlabel(mk_lf(df),'def'))
+    print (f'p[0]: {p[0]}')
+
+def p_wires_wire(p):
+    'wires : wire'
+    p[0] = [p[1]]
+
+def p_wires_wires_comma_wire(p):
+    'wires : wires COMMA wire'
+    p[0] = p[1]
+    p[0].append(p[3])
+
+if iu.get_numeric_version() <= [1,6]:
+    pass
+else:
+    def p_top_wire_tapp_colon_atype(p):
+        'top : top WIRE wires'
+        p[0] = p[1]
+        for d in p[3]:
+            p[0].declare(d)
+
 def mk_lf(x):
     res = LabeledFormula(None,x)
     res.lineno = x.lineno

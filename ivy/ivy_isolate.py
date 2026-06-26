@@ -45,7 +45,9 @@ def add_mixins(mod,actname,action2,assert_to_assume=lambda m:[],use_mixin=lambda
     for mixin in mod.mixins[actname]:
         mixin_name = mixin.mixer()
         action1 = lookup_action(mixin,mod,mixin_name)
+        # print (f'trying mixin for {actname}: {mixin_name}')
         if use_mixin(mixin_name):
+            # print (f'using mixin for {actname}: {mixin_name}')
             ata = assert_to_assume(mixin)
             if ata:
                 action1 = action1.assert_to_assume(ata)
@@ -576,6 +578,7 @@ def find_references(mod,syms,new_actions):
 
 def check_interference(mod,new_actions,summarized_actions,impl_mixins,check_term,interf_syms,
                        after_inits,all_after_inits):
+    # print(f'interf_syms2: {",".join(str(x) for x in interf_syms)}')
     calls = dict()
     mods = dict()
     mixins = dict()
@@ -717,6 +720,7 @@ def set_privates(mod,isolate,suff=None):
                 pname = iu.compose_names(n,ns)
                 mod.privates.add(pname)
     for name in mod.attributes:
+        # print (f'attr: {name}')
         p,c = iu.parent_child_name(name)
         if c in ['spec','impl','private']:
             pp,pc = iu.parent_child_name(p)
@@ -931,7 +935,7 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
             implementation_map[m.mixee()] = m.mixer()
 
     new_actions = {}
-    use_mixin = lambda name: startswith_some(name,present,mod)
+    use_mixin = lambda name: startswith_eq_some(name,present,mod)
     def prefix_call_ext(name):
         return 'ext:'+name if startswith_some(name,verified,mod) else name
     mod_mixin = lambda mixin,m: m if startswith_some(mixin.mixer(),verified,mod) else m.prefix_calls(prefix_call_ext)
@@ -1017,6 +1021,8 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
             if use_mixin(mixin.mixer()):
                 mod.isolate_info.monitors.append((mixin.mixer(),mixin.mixee(),mod.actions[mixin.mixer()]))
             
+    # print (f'posedge: {new_actions["posedge"]}')
+    # print (f'ext:posedge: {new_actions["ext:posedge"]}')
 
     # figure out what is exported:
     exported = set()
@@ -1048,22 +1054,28 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     explicit_exports = set(exported)
 
     with_effects = set()
+
+    def add_exported(c):
+        if ('ext:' + c) in exported or c in with_effects:
+            return
+        if not has_side_effect(mod,new_actions,c):
+            with_effects.add(c)
+            return
+        exported.add('ext:' + c)
+        make_before_export(c)
+
     for actname,action in mod.actions.items():
         if not startswith_eq_some(actname,present,mod):
             for subaction in action.iter_subactions():
                 if isinstance(subaction,ia.CallAction):
                     c = subaction.args[0].rep
-                    if (startswith_eq_some(c,present,mod)
-                        or any(startswith_some(m.mixer(),present,mod) for m in mod.mixins[c])) :
-                            if ('ext:' + c) not in explicit_exports:
-                                add_extern_precond(mod,subaction,export_preconds['ext:' + c])
-                            if ('ext:' + c) in exported or c in with_effects:
-                                continue
-                            if not has_side_effect(mod,new_actions,c):
-                                with_effects.add(c)
-                                continue
-                            exported.add('ext:' + c)
-                            make_before_export(c)
+                    if startswith_eq_some(c,present,mod):
+                        if ('ext:' + c) not in explicit_exports:
+                            add_extern_precond(mod,subaction,export_preconds['ext:' + c])
+                        add_exported(c)
+            c = actname
+            if any(startswith_eq_some(m.mixer(),present,mod) for m in mod.mixins[c]):
+                add_exported(c)
 
     for actname in export_preconds:
         pcs = export_preconds[actname]
@@ -1078,7 +1090,10 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     # symbols and axioms (in particular, axioms in global scope have
     # label None). Maybe this needs to be cleaned up.
 
-        
+    # print (f'present: {present}')
+    # print (f'privates: {mod.privates}')
+    # print (f'implementation_map: {implementation_map}')
+    
     keep_ax = lambda name: (name is None or startswith_eq_some(name.rep,present,mod))
 
     prop_deps = get_prop_dependencies(mod)
@@ -1243,6 +1258,9 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
 
     orig_defs = mod.definitions
 
+    # for c in mod.definitions:
+    #     print (f'def: {c} {keep_ax(c.label)} {c.formula.defines().name in exact_present}')
+        
     mod.definitions = [c for c in mod.definitions if (keep_ax(c.label) or c.formula.defines().name in exact_present)  and c.formula.args[0].rep in all_syms]
     mod.native_definitions = [c for c in mod.native_definitions if keep_ax(c.label) and c.formula.args[0].rep in all_syms]
 
@@ -1257,6 +1275,7 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
         new_defs.append(y)
     mod.definitions = new_defs
 
+    
     # After checking, we can put in place the new action definitions
 
     old_actions = dict()
@@ -1272,8 +1291,13 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     # formulas
 
     asts = []
-    for x in [mod.labeled_axioms,mod.labeled_props,mod.labeled_inits,mod.labeled_conjs,mod.definitions]:
+    wire_asts = []
+    non_wires = [x for x in mod.definitions if x.formula.defines() not in mod.wires]
+    wires = [x for x in mod.definitions if x.formula.defines() in mod.wires]
+    # print (f'wires: {",".join(str(x) for x in wires)}')
+    for x in [mod.labeled_axioms,mod.labeled_props,mod.labeled_inits,mod.labeled_conjs,non_wires]:
         asts.extend(y.formula for y in x if not isinstance(y.formula,ivy_ast.SchemaBody))
+    wire_asts.extend(y.formula for y in non_wires) 
     asts.extend(action for action in list(mod.actions.values()))
     if opt_keep_destructors.get():
         asts.extend(mod.params) # if compiling, keep all of the parameters
@@ -1285,8 +1309,14 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     # in case a symbol is used only in a proof
     asts.extend(x[1] for x in mod.proofs)
     
-    all_syms = set(lu.used_symbols_asts(asts))
+    # TRICKY: we don't consider interference with wires, since these definitions
+    # freeze their values during actions.
 
+    all_syms = set(lu.used_symbols_asts(asts + wire_asts))
+    interf_syms = set(lu.used_symbols_asts(asts))
+
+    # print(f'interf_syms: {",".join(str(x) for x in interf_syms)}')
+    
     if opt_keep_destructors.get():
         for sym in list(all_syms):
             collect_relevant_destructors(sym,all_syms,set())
@@ -1316,8 +1346,10 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     #check non-interference (temporarily put back in old_actions)
 
     if do_check_interference.get():
-        interf_syms = set(x for x in ivy_logic.all_symbols() if x in all_syms)
-        follow_definitions(orig_defs,interf_syms)
+        interf_syms = set(x for x in ivy_logic.all_symbols() if x in interf_syms)
+        # print(f'interf_syms3: {",".join(str(x) for x in interf_syms)}')
+        nonwire_defs = [ldf for ldf in orig_defs if ldf.formula.defines() not in mod.wires]
+        follow_definitions(nonwire_defs,interf_syms)
         save_new_actions = mod.actions
         mod.actions = old_actions
         check_term = enforce_axioms.get() and iu.version_le("1.7",iu.get_string_version())
