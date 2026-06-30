@@ -1108,7 +1108,6 @@ class IvyDomainSetup(IvyDeclInterp):
     def wire(self,v):
         if isinstance(v,ivy_ast.LabeledFormula):
             sym = self.derived(v)
-            print(f'sym.sort: {sym.sort}')
             self.domain.updates.pop() # wires do not update
         else:
             sym = self.individual(v)

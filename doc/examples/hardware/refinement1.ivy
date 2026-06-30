@@ -1,0 +1,130 @@
+#lang ivy1.8
+
+# This is a silly example of compositional refinement for synchronous
+# hardware.
+
+# The abstract model is a bit that is initially false and toggles on
+# every clock.
+
+# The concrete model has two submodules `a` and `b`. Module `a` toggles
+# a bit `a.x` and outputs `~x` on a wire `w`. Module `b` has a bit `b.y`
+# that is initially false and then is set to `w` on each clock.
+
+# We want to prove compositionally that `b.y` tracks the abstract value.
+
+# First, we define a clock. This is justan action with no parameteres,
+# call from the environment.
+
+export action posedge
+
+# This is the abstract model. It's value just toggles: false,true,...
+
+isolate abs = {
+    var val : bool
+    after init {
+        val := false;
+    }
+    after posedge {
+        val := ~val;
+    }
+}
+
+# This is module `a`.
+
+isolate a = {
+
+    # The module's output `w`. This is declared as a 'wire'. A wire is
+    # a special variable whose value is frozen during action
+    # execution. Its value on entry can be defined as a function of
+    # state and other wires, a we see below. Wire definitions, like
+    # ordinary definitions, must be acyclic. We can think of these
+    # definitions as representing acyclic combinational logic.
+
+    wire w : bool
+
+    # The module guarantees the invariant that wire `w` is the
+    # negation of the abstract value.
+
+    specification {
+        invariant w = ~abs.val
+    }
+
+    # The following is the implementation logic. It is used to prove the
+    # invariant above, but is not visible outside the module.
+
+    implementation {
+        
+        # The module's state:
+
+        var x : bool
+
+        # Initialization
+
+        after init {
+            x := false;
+        }
+        
+        # State change on the clock edge. 
+
+        after posedge {
+            x := ~x;
+        }
+        
+        # Definition of the output wire as a function of state.
+
+        definition w = ~x
+
+        # Auxiliary invariant needed in the proof of the specification invariant.
+
+        invariant x = abs.val
+
+    }
+
+} with abs
+
+# The 'with' declaration above says we need the definitions in the
+# abstract model to prove this module's specification. In fact, if we
+# omit it, Ivy will about interference, since we have erased some code
+# that has a visible side effect on `x`.
+
+# Here is module `b`.
+
+isolate b = {
+
+    # Notice the we don't have to explicitly declare the the module
+    # inputs the wire `w` that is an output of `a`.  Ivy can figure
+    # this out from the fact that `w` is referenced below.
+
+    # This module guarantees an invariant that its state
+    # `y` tracks the abstract model.
+
+    specification {
+        invariant y <-> abs.val
+    }
+
+    # The implementation logic.
+
+    implementation {
+        var y : bool
+        
+        after init {
+            y := false;
+        }
+        
+        # In this module, the state updates from the input `w`
+
+        after posedge {
+            y := a.w;
+        }
+    }
+
+}
+with abs,a
+
+# Above, notice that we use the specifications of both the abstract
+# model and module `a`. However, don't use any of the implementation
+# logic of `a`. We just use the specification, which guarantees that
+# `w = ~abs.val`. That makes this a compositional proof.
+
+
+

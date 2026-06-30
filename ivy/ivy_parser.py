@@ -1085,7 +1085,6 @@ def p_wire_defn(p):
     df = Definition(app_to_atom(p[1]),p[3])
     df.lineno = get_lineno(p,2)
     p[0] = WireDerivedDecl(addlabel(mk_lf(df),'def'))
-    print (f'p[0]: {p[0]}')
 
 def p_wires_wire(p):
     'wires : wire'

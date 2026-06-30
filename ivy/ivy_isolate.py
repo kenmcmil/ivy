@@ -1313,7 +1313,8 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     # freeze their values during actions.
 
     all_syms = set(lu.used_symbols_asts(asts + wire_asts))
-    interf_syms = set(lu.used_symbols_asts(asts))
+    # interf_syms = set(lu.used_symbols_asts(asts))
+    interf_syms = all_syms
 
     # print(f'interf_syms: {",".join(str(x) for x in interf_syms)}')
     
