@@ -1026,6 +1026,30 @@ class WireDerivedDecl(DerivedDecl):
     def name(self):
         return 'wire'
 
+# Top-level (import/export) wire declarations. These behave exactly like
+# ordinary wire declarations, but in addition mark the wire as a global
+# input ('import wire') or output ('export wire') of the design. The
+# distinct name() values route them to the compiler's input_wire/output_wire
+# handlers. They are subclasses (rather than tagged instances) because the
+# class is preserved by AST.clone, whereas arbitrary attributes are not, and
+# wire declarations are cloned during isolate expansion.
+
+class InputWireConstantDecl(WireConstantDecl):
+    def name(self):
+        return 'input_wire'
+
+class InputWireDerivedDecl(WireDerivedDecl):
+    def name(self):
+        return 'input_wire'
+
+class OutputWireConstantDecl(WireConstantDecl):
+    def name(self):
+        return 'output_wire'
+
+class OutputWireDerivedDecl(WireDerivedDecl):
+    def name(self):
+        return 'output_wire'
+
 class DefinitionDecl(LabeledDecl):
     def name(self):
         return 'definition'

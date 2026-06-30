@@ -1113,6 +1113,16 @@ class IvyDomainSetup(IvyDeclInterp):
             sym = self.individual(v)
         self.domain.wires.add(sym)
         return sym
+    def input_wire(self,v):
+        # an `import wire`: an ordinary wire that is also a top-level input
+        sym = self.wire(v)
+        self.domain.input_wires.append(sym)
+        return sym
+    def output_wire(self,v):
+        # an `export wire`: an ordinary wire that is also a top-level output
+        sym = self.wire(v)
+        self.domain.output_wires.append(sym)
+        return sym
     def parameter(self,v):
         if isinstance(v,ivy_ast.Definition):
             sym = self.individual(v.args[0])

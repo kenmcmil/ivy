@@ -1,0 +1,76 @@
+#lang ivy1.8
+
+# A simple synchronous hardware design used as a test case for the
+# Ivy-to-RTL (RTLIL) translator.
+#
+# The design hierarchy is:
+#
+#   top              -- top-level module
+#     top.inc        -- combinational submodule: out = inp + 1
+#     top.delay      -- sequential submodule: registers its input
+#
+# Dataflow inside `top`:
+#
+#   inp --> inc --> delay --> out
+#
+# So `top` computes, on each clock, `out := old(inp) + 1`, i.e. it is a
+# one-stage pipeline that increments its 8-bit input and delays it by
+# one clock.
+
+# The 8-bit data type used throughout the design. `word` is an
+# uninterpreted Ivy type that we interpret as the bit-vector type
+# `bv[8]`, one of the bit-vector types allowed in hardware descriptions.
+
+type word
+interpret word -> bv[8]
+
+# The clock. An exported action with no parameters represents a clock,
+# called from the environment. Each exported action becomes a distinct
+# clock wire in the RTL.
+
+export action posedge
+
+isolate top = {
+
+    # Top-level input and output. An `import` wire is a global (top-level)
+    # input; an `export` wire is a global (top-level) output.
+
+    import wire inp : word
+    export wire out : word
+
+    # Combinational submodule: increment by one. It has no state, so it
+    # generates pure combinational logic in the RTL.
+
+    isolate inc = {
+        wire inp : word
+        wire out : word
+        definition out = inp + 1
+    }
+
+    # Sequential submodule: a register. On each clock it latches its
+    # input wire into the state variable `val`, and continuously drives
+    # `out` from `val`. `val` becomes a D flip-flop in the RTL, and the
+    # initializer becomes its reset logic.
+
+    isolate delay = {
+        wire inp : word
+        wire out : word
+        var val : word
+        after init {
+            val := 0;
+        }
+        after posedge {
+            val := inp;
+        }
+        definition out = val
+    }
+
+    # Interconnect. Each of these definitions connects a wire in `top`
+    # (or a submodule input) to a submodule output, and is realized in
+    # the RTL by wiring up cell ports (introducing an auxiliary wire
+    # where a submodule input is driven by another submodule output).
+
+    definition inc.inp = inp
+    definition delay.inp = inc.out
+    definition out = delay.out
+}

@@ -91,6 +91,8 @@ class Module(object):
         self.isolate_proof = None
         self.logics = []
         self.wires = set()  # set of symbol
+        self.input_wires = []  # list of symbol: top-level input wires (import wire), in declaration order
+        self.output_wires = []  # list of symbol: top-level output wires (export wire), in declaration order
         self.invardeps = {}  # map from string to string list
         self.sig = il.sig.copy() # capture the current signature
 

@@ -2036,6 +2036,26 @@ if not (iu.get_numeric_version() <= [1,1]):
         d.args[0].lineno = d.lineno
         p[0] = p[1]
         p[0].declare(d)
+    def p_top_export_wire(p):
+        'top : top EXPORT WIRE wires'
+        # An `export wire` is a top-level output: an ordinary wire that is
+        # additionally recorded in mod.output_wires (see the compiler's
+        # output_wire handler).
+        p[0] = p[1]
+        for d in p[4]:
+            d.__class__ = (OutputWireDerivedDecl if isinstance(d,WireDerivedDecl)
+                           else OutputWireConstantDecl)
+            p[0].declare(d)
+    def p_top_import_wire(p):
+        'top : top IMPORT WIRE wires'
+        # An `import wire` is a top-level input: an ordinary wire that is
+        # additionally recorded in mod.input_wires (see the compiler's
+        # input_wire handler).
+        p[0] = p[1]
+        for d in p[4]:
+            d.__class__ = (InputWireDerivedDecl if isinstance(d,WireDerivedDecl)
+                           else InputWireConstantDecl)
+            p[0].declare(d)
     if iu.get_numeric_version() <= [1,6]:
         def p_top_private_callatom(p):
             'top : top PRIVATE callatom'
