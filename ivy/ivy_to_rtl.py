@@ -88,6 +88,14 @@ def conj(enable, cond):
     """Conjoin a guard onto an (optional) enable term."""
     return cond if enable is None else il.And(enable, cond)
 
+def concat_words(words, width):
+    """Pack words into one integer, the first word in the low bits (matching
+    the RTLIL $meminit DATA layout)."""
+    data = 0
+    for i, w in enumerate(words):
+        data |= (w & ((1 << width) - 1)) << (width * i)
+    return data
+
 def strip_state_prefix(name):
     """Remove the transition-relation 'new_'/'__m_' (post/mid) prefixes. A wire
     is frozen during an action, so every copy denotes the same combinational
@@ -591,10 +599,10 @@ class Translator(object):
         m.memory(pub_id(memname), dw, 1 << aw)
         newsym = tr.new(arr)
 
-        if self.get_update(obj, 'init') and \
-           newsym.name in (self.get_update(obj, 'init')[2] or {}):
-            raise iu.IvyError(None,
-                "reset of array '{}' is not yet supported".format(arr.name))
+        # initial contents from the 'init' action become power-on init cells
+        init = self.get_update(obj, 'init')
+        if init and newsym.name in init[2]:
+            self.emit_meminit(m, obj, arr, aw, dw, init[2])
 
         # gather the write ports contributed by each clock update
         clk_used, writes = None, []
@@ -653,6 +661,69 @@ class Translator(object):
             return
         raise iu.IvyError(None,
             "unsupported array update (not a point write): {}".format(expr))
+
+    def emit_meminit(self, m, obj, arr, aw, dw, defidx):
+        """Translate an array's 'init' assignments into $meminit_v2 cells: a
+        broadcast fill (if the initializer assigns a constant to the whole
+        array) plus one cell per point assignment."""
+        memname = local_name(obj, arr.name)
+        d = defidx[tr.new(arr).name]
+        var = d.args[0].args[0]
+        points = []
+        default = self.collect_init(d.args[1], arr, var, defidx, points)
+        prio = 0
+        def meminit(addr, words, data_bits):
+            m.cell('$meminit_v2', m.fresh('$meminit$' + memname),
+                   [('\\MEMID', mem_id(memname)), ('\\ABITS', aw),
+                    ('\\WIDTH', dw), ('\\WORDS', words), ('\\PRIORITY', prio)],
+                   [('\\ADDR', rtlil_const(addr, aw)),
+                    ('\\DATA', rtlil_const(data_bits, dw * words)),
+                    ('\\EN', rtlil_const((1 << dw) - 1, dw))])
+        if default is not None:
+            size = 1 << aw
+            fill = self.eval_const(default)
+            meminit(0, size, concat_words([fill] * size, dw))
+            prio += 1
+        # later writes (earlier in the list) get higher priority
+        for (addr, data) in reversed(points):
+            meminit(self.eval_const(addr), 1, self.eval_const(data))
+            prio += 1
+
+    def collect_init(self, expr, arr, var, defidx, out):
+        """Like collect_writes but for the unconditional 'init' action, chasing
+        the transition relation's mid-state array copies. Returns a constant
+        broadcast-fill term (or None), appending (addr, data) point writes."""
+        if (il.is_app(expr) and not il.is_constant(expr) and len(expr.args) == 1
+                and expr.args[0] == var and is_array_sort(expr.rep.sort)):
+            # a read of arr or one of the transition relation's mid-state
+            # copies of it. Mid-states are defined in defidx (chase them); the
+            # original memory is not (it is the uninitialized base).
+            if expr.rep.name in defidx:
+                return self.collect_init(defidx[expr.rep.name].args[1],
+                                         arr, var, defidx, out)
+            return None
+        if il.is_ite(expr):
+            cond, then, els = expr.args
+            if self.uses_var(cond, var):
+                addr = self.eq_other_side(cond, var)
+                if addr is None:
+                    raise iu.IvyError(None,
+                        "unsupported array initializer index: {}".format(cond))
+                out.append((addr, then))
+                return self.collect_init(els, arr, var, defidx, out)
+            raise iu.IvyError(None,
+                "conditional array initializer is not supported")
+        if self.uses_var(expr, var):
+            raise iu.IvyError(None,
+                "unsupported array initializer: {}".format(expr))
+        return expr    # a constant, assigned to the whole array
+
+    def eval_const(self, term):
+        if il.is_numeral(term):
+            name = term.name
+            return int(name, 16) if name.startswith('0x') else int(name)
+        raise iu.IvyError(None,
+            "array initializer must be a constant: {}".format(term))
 
     def is_base_read(self, expr, arr, var):
         return (not il.is_constant(expr) and il.is_app(expr)

@@ -98,6 +98,12 @@ isolate cpu = {
     after init {
         pc := 0;
         ir_valid := false;
+        rf(R) := 0;            # zero the register file
+        # a small program: count r1 down from 5, looping via a branch
+        imem(0) := 0x6405;     # LI   r1, 5
+        imem(1) := 0x6801;     # LI   r2, 1
+        imem(2) := 0x44a0;     # SUB  r1, r1, r2
+        imem(3) := 0xc002;     # BEQZ r0, 2   (r0 == 0, so an unconditional jump to 2)
     }
 
     # ---- clock edge ----

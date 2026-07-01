@@ -6,15 +6,15 @@ module \cpu
   wire width 8 output 1 \pc_out
   wire input 2 \posedge
   wire input 3 \rst
-  wire width 3 \opcode
+  wire width 3 \rd
   wire \take_branch
   wire width 16 \b_val
-  wire width 16 \a_val
-  wire width 16 \fetched
+  wire width 8 \mem_addr
   wire width 3 \ra
   wire width 3 \rb
-  wire width 8 \mem_addr
-  wire width 3 \rd
+  wire width 16 \fetched
+  wire width 3 \opcode
+  wire width 16 \a_val
   wire width 8 \target
   wire $1
   wire $2
@@ -23,25 +23,21 @@ module \cpu
   wire width 16 $5
   wire width 16 $7
   wire width 16 $9
-  wire width 8 \pc
-  wire $11
-  wire width 8 $12
-  wire width 8 $13
-  wire width 8 $14
   wire \ir_valid
-  wire $15
-  wire $16
-  wire $17
+  wire $11
+  wire $12
+  wire $13
   wire width 16 \ir
-  wire $18
-  wire width 16 $19
-  wire width 16 $20
+  wire $14
+  wire width 16 $15
+  wire width 16 $16
+  wire width 8 \pc
+  wire $17
+  wire width 8 $18
+  wire width 8 $19
+  wire width 8 $20
   memory width 16 size 256 \imem
   memory width 16 size 256 \mem
-  wire $21
-  wire $22
-  wire $23
-  wire $24
   wire $25
   wire $26
   wire $27
@@ -58,23 +54,22 @@ module \cpu
   wire $38
   wire $39
   wire $40
-  memory width 16 size 8 \rf
+  wire $41
   wire $42
   wire $43
   wire $44
-  wire $45
-  wire width 16 $46
+  memory width 16 size 8 \rf
   wire $47
   wire $48
   wire $49
   wire $50
-  wire $51
-  wire width 16 $52
+  wire width 16 $51
+  wire $52
   wire $53
   wire $54
   wire $55
   wire $56
-  wire $57
+  wire width 16 $57
   wire $58
   wire $59
   wire $60
@@ -86,18 +81,23 @@ module \cpu
   wire $66
   wire $67
   wire $68
-  wire width 16 $69
+  wire $69
+  wire $70
   wire $71
+  wire $72
   wire $73
-  wire $75
-  wire width 3 $77
-  wire width 3 $79
-  wire width 3 $81
-  wire width 16 $83
-  wire width 16 $85
-  wire width 16 $87
+  wire width 16 $74
+  wire $76
+  wire $78
+  wire $80
+  wire width 3 $82
+  wire width 3 $84
+  wire width 3 $86
+  wire width 16 $88
+  wire width 16 $90
+  wire width 16 $92
   connect \pc_out \pc
-  connect \opcode \ir [15:13]
+  connect \rd \ir [12:10]
   cell $eq $eq$1
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
@@ -152,20 +152,10 @@ module \cpu
     connect \DATA $5
   end
   connect \b_val $5
-  cell $memrd $memrd$rf$8
-    parameter \MEMID "\\rf"
-    parameter \ABITS 3
-    parameter \WIDTH 16
-    parameter \CLK_ENABLE 0
-    parameter \CLK_POLARITY 0
-    parameter \TRANSPARENT 0
-    connect \CLK 1'x
-    connect \EN 1'x
-    connect \ADDR \ra
-    connect \DATA $7
-  end
-  connect \a_val $7
-  cell $memrd $memrd$imem$10
+  connect \mem_addr \a_val [7:0]
+  connect \ra \ir [9:7]
+  connect \rb \ir [6:4]
+  cell $memrd $memrd$imem$8
     parameter \MEMID "\\imem"
     parameter \ABITS 8
     parameter \WIDTH 16
@@ -175,16 +165,70 @@ module \cpu
     connect \CLK 1'x
     connect \EN 1'x
     connect \ADDR \pc
+    connect \DATA $7
+  end
+  connect \fetched $7
+  connect \opcode \ir [15:13]
+  cell $memrd $memrd$rf$10
+    parameter \MEMID "\\rf"
+    parameter \ABITS 3
+    parameter \WIDTH 16
+    parameter \CLK_ENABLE 0
+    parameter \CLK_POLARITY 0
+    parameter \TRANSPARENT 0
+    connect \CLK 1'x
+    connect \EN 1'x
+    connect \ADDR \ra
     connect \DATA $9
   end
-  connect \fetched $9
-  connect \ra \ir [9:7]
-  connect \rb \ir [6:4]
-  connect \mem_addr \a_val [7:0]
-  connect \rd \ir [12:10]
+  connect \a_val $9
   connect \target \ir [7:0]
   connect $11 \take_branch
-  cell $add $add$12
+  cell $not $not$12
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $11
+    connect \Y $12
+  end
+  cell $mux $mux$cpu.ir_valid
+    parameter \WIDTH 1
+    connect \A $12
+    connect \B 1'0
+    connect \S \rst
+    connect \Y $13
+  end
+  cell $dff $dff$cpu.ir_valid
+    parameter \WIDTH 1
+    parameter \CLK_POLARITY 1
+    connect \CLK \posedge
+    connect \D $13
+    connect \Q \ir_valid
+  end
+  connect $14 \take_branch
+  cell $mux $mux$15
+    parameter \WIDTH 16
+    connect \A \fetched
+    connect \B \ir
+    connect \S $14
+    connect \Y $15
+  end
+  cell $mux $mux$cpu.ir
+    parameter \WIDTH 16
+    connect \A $15
+    connect \B 16'0000000000000000
+    connect \S \rst
+    connect \Y $16
+  end
+  cell $dff $dff$cpu.ir
+    parameter \WIDTH 16
+    parameter \CLK_POLARITY 1
+    connect \CLK \posedge
+    connect \D $16
+    connect \Q \ir
+  end
+  connect $17 \take_branch
+  cell $add $add$18
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 8
@@ -192,102 +236,70 @@ module \cpu
     parameter \Y_WIDTH 8
     connect \A \pc
     connect \B 8'00000001
-    connect \Y $12
+    connect \Y $18
   end
-  cell $mux $mux$13
+  cell $mux $mux$19
     parameter \WIDTH 8
-    connect \A $12
+    connect \A $18
     connect \B \target
-    connect \S $11
-    connect \Y $13
+    connect \S $17
+    connect \Y $19
   end
   cell $mux $mux$cpu.pc
     parameter \WIDTH 8
-    connect \A $13
+    connect \A $19
     connect \B 8'00000000
     connect \S \rst
-    connect \Y $14
+    connect \Y $20
   end
   cell $dff $dff$cpu.pc
     parameter \WIDTH 8
     parameter \CLK_POLARITY 1
     connect \CLK \posedge
-    connect \D $14
+    connect \D $20
     connect \Q \pc
   end
-  connect $15 \take_branch
-  cell $not $not$16
-    parameter \A_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $15
-    connect \Y $16
-  end
-  cell $mux $mux$cpu.ir_valid
-    parameter \WIDTH 1
-    connect \A $16
-    connect \B 1'0
-    connect \S \rst
-    connect \Y $17
-  end
-  cell $dff $dff$cpu.ir_valid
-    parameter \WIDTH 1
-    parameter \CLK_POLARITY 1
-    connect \CLK \posedge
-    connect \D $17
-    connect \Q \ir_valid
-  end
-  connect $18 \take_branch
-  cell $mux $mux$19
+  cell $meminit_v2 $meminit$imem$21
+    parameter \MEMID "\\imem"
+    parameter \ABITS 8
     parameter \WIDTH 16
-    connect \A \fetched
-    connect \B \ir
-    connect \S $18
-    connect \Y $19
+    parameter \WORDS 1
+    parameter \PRIORITY 0
+    connect \ADDR 8'00000000
+    connect \DATA 16'0110010000000101
+    connect \EN 16'1111111111111111
   end
-  cell $mux $mux$cpu.ir
+  cell $meminit_v2 $meminit$imem$22
+    parameter \MEMID "\\imem"
+    parameter \ABITS 8
     parameter \WIDTH 16
-    connect \A $19
-    connect \B 16'0000000000000000
-    connect \S \rst
-    connect \Y $20
+    parameter \WORDS 1
+    parameter \PRIORITY 1
+    connect \ADDR 8'00000001
+    connect \DATA 16'0110100000000001
+    connect \EN 16'1111111111111111
   end
-  cell $dff $dff$cpu.ir
+  cell $meminit_v2 $meminit$imem$23
+    parameter \MEMID "\\imem"
+    parameter \ABITS 8
     parameter \WIDTH 16
-    parameter \CLK_POLARITY 1
-    connect \CLK \posedge
-    connect \D $20
-    connect \Q \ir
+    parameter \WORDS 1
+    parameter \PRIORITY 2
+    connect \ADDR 8'00000010
+    connect \DATA 16'0100010010100000
+    connect \EN 16'1111111111111111
   end
-  connect $21 \ir_valid
-  cell $eq $eq$22
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 3
-    parameter \B_WIDTH 3
-    parameter \Y_WIDTH 1
-    connect \A \opcode
-    connect \B 3'001
-    connect \Y $22
+  cell $meminit_v2 $meminit$imem$24
+    parameter \MEMID "\\imem"
+    parameter \ABITS 8
+    parameter \WIDTH 16
+    parameter \WORDS 1
+    parameter \PRIORITY 3
+    connect \ADDR 8'00000011
+    connect \DATA 16'1100000000000010
+    connect \EN 16'1111111111111111
   end
-  connect $23 $22
-  cell $not $not$24
-    parameter \A_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $23
-    connect \Y $24
-  end
-  cell $and $and$25
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \B_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $21
-    connect \B $24
-    connect \Y $25
-  end
+  connect $25 \ir_valid
   cell $eq $eq$26
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
@@ -295,7 +307,7 @@ module \cpu
     parameter \B_WIDTH 3
     parameter \Y_WIDTH 1
     connect \A \opcode
-    connect \B 3'010
+    connect \B 3'001
     connect \Y $26
   end
   connect $27 $26
@@ -323,7 +335,7 @@ module \cpu
     parameter \B_WIDTH 3
     parameter \Y_WIDTH 1
     connect \A \opcode
-    connect \B 3'011
+    connect \B 3'010
     connect \Y $30
   end
   connect $31 $30
@@ -351,7 +363,7 @@ module \cpu
     parameter \B_WIDTH 3
     parameter \Y_WIDTH 1
     connect \A \opcode
-    connect \B 3'100
+    connect \B 3'011
     connect \Y $34
   end
   connect $35 $34
@@ -379,21 +391,49 @@ module \cpu
     parameter \B_WIDTH 3
     parameter \Y_WIDTH 1
     connect \A \opcode
-    connect \B 3'101
+    connect \B 3'100
     connect \Y $38
   end
   connect $39 $38
-  cell $and $and$40
+  cell $not $not$40
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $39
+    connect \Y $40
+  end
+  cell $and $and$41
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
     connect \A $37
-    connect \B $39
-    connect \Y $40
+    connect \B $40
+    connect \Y $41
   end
-  cell $memwr_v2 $memwr$mem$41
+  cell $eq $eq$42
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 3
+    parameter \B_WIDTH 3
+    parameter \Y_WIDTH 1
+    connect \A \opcode
+    connect \B 3'101
+    connect \Y $42
+  end
+  connect $43 $42
+  cell $and $and$44
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $41
+    connect \B $43
+    connect \Y $44
+  end
+  cell $memwr_v2 $memwr$mem$45
     parameter \MEMID "\\mem"
     parameter \ABITS 8
     parameter \WIDTH 16
@@ -403,11 +443,21 @@ module \cpu
     parameter \CLK_POLARITY 1'1
     connect \ADDR \mem_addr
     connect \DATA \b_val
-    connect \EN { $40 $40 $40 $40 $40 $40 $40 $40 $40 $40 $40 $40 $40 $40 $40 $40 }
+    connect \EN { $44 $44 $44 $44 $44 $44 $44 $44 $44 $44 $44 $44 $44 $44 $44 $44 }
     connect \CLK \posedge
   end
-  connect $42 \ir_valid
-  cell $eq $eq$43
+  cell $meminit_v2 $meminit$rf$46
+    parameter \MEMID "\\rf"
+    parameter \ABITS 3
+    parameter \WIDTH 16
+    parameter \WORDS 8
+    parameter \PRIORITY 0
+    connect \ADDR 3'000
+    connect \DATA 128'00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+    connect \EN 16'1111111111111111
+  end
+  connect $47 \ir_valid
+  cell $eq $eq$48
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 3
@@ -415,20 +465,20 @@ module \cpu
     parameter \Y_WIDTH 1
     connect \A \opcode
     connect \B 3'001
-    connect \Y $43
+    connect \Y $48
   end
-  connect $44 $43
-  cell $and $and$45
+  connect $49 $48
+  cell $and $and$50
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $42
-    connect \B $44
-    connect \Y $45
+    connect \A $47
+    connect \B $49
+    connect \Y $50
   end
-  cell $add $add$46
+  cell $add $add$51
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 16
@@ -436,26 +486,26 @@ module \cpu
     parameter \Y_WIDTH 16
     connect \A \a_val
     connect \B \b_val
-    connect \Y $46
+    connect \Y $51
   end
-  cell $not $not$47
+  cell $not $not$52
     parameter \A_SIGNED 0
     parameter \A_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $44
-    connect \Y $47
+    connect \A $49
+    connect \Y $52
   end
-  cell $and $and$48
+  cell $and $and$53
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $42
-    connect \B $47
-    connect \Y $48
+    connect \A $47
+    connect \B $52
+    connect \Y $53
   end
-  cell $eq $eq$49
+  cell $eq $eq$54
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 3
@@ -463,20 +513,20 @@ module \cpu
     parameter \Y_WIDTH 1
     connect \A \opcode
     connect \B 3'010
-    connect \Y $49
+    connect \Y $54
   end
-  connect $50 $49
-  cell $and $and$51
+  connect $55 $54
+  cell $and $and$56
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $48
-    connect \B $50
-    connect \Y $51
+    connect \A $53
+    connect \B $55
+    connect \Y $56
   end
-  cell $sub $sub$52
+  cell $sub $sub$57
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 16
@@ -484,60 +534,22 @@ module \cpu
     parameter \Y_WIDTH 16
     connect \A \a_val
     connect \B \b_val
-    connect \Y $52
-  end
-  cell $not $not$53
-    parameter \A_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $44
-    connect \Y $53
-  end
-  cell $and $and$54
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \B_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $42
-    connect \B $53
-    connect \Y $54
-  end
-  cell $not $not$55
-    parameter \A_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $50
-    connect \Y $55
-  end
-  cell $and $and$56
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \B_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $54
-    connect \B $55
-    connect \Y $56
-  end
-  cell $eq $eq$57
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 3
-    parameter \B_WIDTH 3
-    parameter \Y_WIDTH 1
-    connect \A \opcode
-    connect \B 3'011
     connect \Y $57
   end
-  connect $58 $57
+  cell $not $not$58
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $49
+    connect \Y $58
+  end
   cell $and $and$59
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $56
+    connect \A $47
     connect \B $58
     connect \Y $59
   end
@@ -545,7 +557,7 @@ module \cpu
     parameter \A_SIGNED 0
     parameter \A_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $44
+    connect \A $55
     connect \Y $60
   end
   cell $and $and$61
@@ -554,45 +566,83 @@ module \cpu
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $42
+    connect \A $59
     connect \B $60
     connect \Y $61
   end
-  cell $not $not$62
+  cell $eq $eq$62
     parameter \A_SIGNED 0
-    parameter \A_WIDTH 1
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 3
+    parameter \B_WIDTH 3
     parameter \Y_WIDTH 1
-    connect \A $50
+    connect \A \opcode
+    connect \B 3'011
     connect \Y $62
   end
-  cell $and $and$63
+  connect $63 $62
+  cell $and $and$64
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
     connect \A $61
-    connect \B $62
-    connect \Y $63
+    connect \B $63
+    connect \Y $64
   end
-  cell $not $not$64
+  cell $not $not$65
     parameter \A_SIGNED 0
     parameter \A_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $58
-    connect \Y $64
+    connect \A $49
+    connect \Y $65
   end
-  cell $and $and$65
+  cell $and $and$66
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $63
-    connect \B $64
-    connect \Y $65
+    connect \A $47
+    connect \B $65
+    connect \Y $66
   end
-  cell $eq $eq$66
+  cell $not $not$67
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $55
+    connect \Y $67
+  end
+  cell $and $and$68
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $66
+    connect \B $67
+    connect \Y $68
+  end
+  cell $not $not$69
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $63
+    connect \Y $69
+  end
+  cell $and $and$70
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $68
+    connect \B $69
+    connect \Y $70
+  end
+  cell $eq $eq$71
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 3
@@ -600,20 +650,20 @@ module \cpu
     parameter \Y_WIDTH 1
     connect \A \opcode
     connect \B 3'100
-    connect \Y $66
+    connect \Y $71
   end
-  connect $67 $66
-  cell $and $and$68
+  connect $72 $71
+  cell $and $and$73
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $65
-    connect \B $67
-    connect \Y $68
+    connect \A $70
+    connect \B $72
+    connect \Y $73
   end
-  cell $memrd $memrd$mem$70
+  cell $memrd $memrd$mem$75
     parameter \MEMID "\\mem"
     parameter \ABITS 8
     parameter \WIDTH 16
@@ -623,81 +673,81 @@ module \cpu
     connect \CLK 1'x
     connect \EN 1'x
     connect \ADDR \mem_addr
-    connect \DATA $69
+    connect \DATA $74
   end
-  cell $or $or$72
+  cell $or $or$77
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $45
-    connect \B $51
-    connect \Y $71
+    connect \A $50
+    connect \B $56
+    connect \Y $76
   end
-  cell $or $or$74
+  cell $or $or$79
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $71
-    connect \B $59
-    connect \Y $73
+    connect \A $76
+    connect \B $64
+    connect \Y $78
   end
-  cell $or $or$76
+  cell $or $or$81
     parameter \A_SIGNED 0
     parameter \B_SIGNED 0
     parameter \A_WIDTH 1
     parameter \B_WIDTH 1
     parameter \Y_WIDTH 1
-    connect \A $73
-    connect \B $68
-    connect \Y $75
+    connect \A $78
+    connect \B $73
+    connect \Y $80
   end
-  cell $mux $mux$78
+  cell $mux $mux$83
     parameter \WIDTH 3
     connect \A \rd
     connect \B \rd
-    connect \S $51
-    connect \Y $77
+    connect \S $56
+    connect \Y $82
   end
-  cell $mux $mux$80
+  cell $mux $mux$85
     parameter \WIDTH 3
-    connect \A $77
+    connect \A $82
     connect \B \rd
-    connect \S $59
-    connect \Y $79
+    connect \S $64
+    connect \Y $84
   end
-  cell $mux $mux$82
+  cell $mux $mux$87
     parameter \WIDTH 3
-    connect \A $79
+    connect \A $84
     connect \B \rd
-    connect \S $68
-    connect \Y $81
+    connect \S $73
+    connect \Y $86
   end
-  cell $mux $mux$84
+  cell $mux $mux$89
     parameter \WIDTH 16
-    connect \A $46
-    connect \B $52
-    connect \S $51
-    connect \Y $83
+    connect \A $51
+    connect \B $57
+    connect \S $56
+    connect \Y $88
   end
-  cell $mux $mux$86
+  cell $mux $mux$91
     parameter \WIDTH 16
-    connect \A $83
+    connect \A $88
     connect \B { 8'00000000 \target }
-    connect \S $59
-    connect \Y $85
+    connect \S $64
+    connect \Y $90
   end
-  cell $mux $mux$88
+  cell $mux $mux$93
     parameter \WIDTH 16
-    connect \A $85
-    connect \B $69
-    connect \S $68
-    connect \Y $87
+    connect \A $90
+    connect \B $74
+    connect \S $73
+    connect \Y $92
   end
-  cell $memwr_v2 $memwr$rf$89
+  cell $memwr_v2 $memwr$rf$94
     parameter \MEMID "\\rf"
     parameter \ABITS 3
     parameter \WIDTH 16
@@ -705,9 +755,9 @@ module \cpu
     parameter \PRIORITY_MASK 0'0
     parameter \CLK_ENABLE 1'1
     parameter \CLK_POLARITY 1'1
-    connect \ADDR $81
-    connect \DATA $87
-    connect \EN { $75 $75 $75 $75 $75 $75 $75 $75 $75 $75 $75 $75 $75 $75 $75 $75 }
+    connect \ADDR $86
+    connect \DATA $92
+    connect \EN { $80 $80 $80 $80 $80 $80 $80 $80 $80 $80 $80 $80 $80 $80 $80 $80 }
     connect \CLK \posedge
   end
 end

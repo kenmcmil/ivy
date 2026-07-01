@@ -53,34 +53,17 @@ synchronous reset from the reset multiplexer, and the `ir` enable), `$add`/
 `$sub` for the ALU, `$eq` for instruction decode, and `$mux` for the
 writeback/branch selects.
 
-## Simulating a design (and loading a memory)
+## Loading a memory, and simulating
 
-`ivy_to_rtl` translates an array state variable to a memory but does not yet
-support initializing it (e.g. loading an instruction ROM from an Ivy `after
-init`), so a freshly generated memory reads as all-`x`. To simulate a concrete
-program, add a `$meminit_v2` cell for the memory, then run `sim`. For example,
-to load a four-instruction program into `pipe_cpu`'s `imem` and zero its
-register file:
-
-```
-# in module \cpu, before the closing `end`:
-  cell $meminit_v2 $meminit$imem
-    parameter \MEMID "\\imem"
-    parameter \ABITS 8
-    parameter \WIDTH 16
-    parameter \WORDS 4
-    parameter \PRIORITY 0
-    connect \ADDR 8'00000000
-    connect \DATA 64'<word3><word2><word1><word0>   # low word first (LSBs)
-    connect \EN 16'1111111111111111
-  end
-```
-
-`DATA` is `WORDS * WIDTH` bits, with the word at `ADDR` in the low bits. Then
-drive the clock and reset:
+Assignments to an array in an Ivy `after init` are translated to power-on
+memory contents (`$meminit_v2` cells): a broadcast fill when a constant is
+assigned to the whole array (`rf(R) := 0`) and one cell per point assignment
+(`imem(0) := 0x6405`). `pipe_cpu.ivy` uses this to zero its register file and
+load a small program into its instruction ROM, so the generated `pipe_cpu.il`
+is self-contained and can be simulated directly:
 
 ```
-$ yosys -p "read_rtlil pipe_cpu_prog.il; hierarchy -top cpu; proc; memory_collect;
+$ yosys -p "read_rtlil pipe_cpu.il; hierarchy -top cpu; proc; memory_collect;
             sim -clock posedge -reset rst -n 12 -vcd cpu.vcd"
 ```
 
@@ -89,6 +72,9 @@ trace after reset is `0, 1, 2, 3, 4, 2, 3, 4, ...`. The `3, 4, 2` shows the
 control hazard: the `BEQZ` fetched at PC 3 is resolved a cycle later in the
 execute stage, so the instruction already fetched at PC 4 is squashed (a
 one-cycle bubble) before the PC redirects to the branch target 2.
+
+(Memory init is realized as power-on contents, so re-asserting `rst` does not
+reload a memory — the standard hardware ROM/initialized-RAM behavior.)
 
 ## Checking equivalence of two RTLIL designs
 
