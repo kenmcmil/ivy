@@ -55,6 +55,12 @@ isolate cpu = {
     var ir : word                 # instruction being executed in X
     var ir_valid : bool           # false => bubble (nothing to execute)
 
+    # A trace output so the processor has an observable output: the current
+    # program counter.
+
+    export wire pc_out : addr
+    definition pc_out = pc
+
     # ---- fetch stage (combinational) ----
 
     wire fetched : word

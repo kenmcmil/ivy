@@ -51,6 +51,17 @@ def sort_width(sort):
     raise iu.IvyError(None,
         "unsupported type in hardware description: {}".format(sort))
 
+def is_array_sort(sort):
+    """True if sort is an array/function sort dom -> rng (a memory)."""
+    return hasattr(sort, 'dom') and len(sort.dom) >= 1
+
+def array_dims(sort):
+    """(address width, data width) of a single-dimension array sort."""
+    if len(sort.dom) != 1:
+        raise iu.IvyError(None,
+            "only one-dimensional arrays are supported: {}".format(sort))
+    return sort_width(sort.dom[0]), sort_width(sort.rng)
+
 
 # ----------------------------------------------------------------------------
 # RTLIL identifiers and constants
@@ -61,6 +72,10 @@ def sort_width(sort):
 def pub_id(name):
     return '\\' + name
 
+def mem_id(name):
+    """A memory id as an RTLIL string literal, e.g. \\rf -> "\\rf"."""
+    return '"\\\\' + name + '"'
+
 def rtlil_const(value, width):
     bits = format(value & ((1 << width) - 1), '0{}b'.format(width))
     return "{}'{}".format(width, bits)
@@ -68,6 +83,23 @@ def rtlil_const(value, width):
 
 # ----------------------------------------------------------------------------
 # Name helpers
+
+def conj(enable, cond):
+    """Conjoin a guard onto an (optional) enable term."""
+    return cond if enable is None else il.And(enable, cond)
+
+def strip_state_prefix(name):
+    """Remove the transition-relation 'new_'/'__m_' (post/mid) prefixes. A wire
+    is frozen during an action, so every copy denotes the same combinational
+    value, i.e. the base wire."""
+    changed = True
+    while changed:
+        changed = False
+        for p in ('new_', '__m_'):
+            if name.startswith(p):
+                name = name[len(p):]
+                changed = True
+    return name
 
 def parent_name(name):
     return name.rsplit('.', 1)[0] if '.' in name else 'this'
@@ -111,6 +143,14 @@ class Module(object):
     def new_net(self, width):
         self.net_n += 1
         return self.add_wire('$' + str(self.net_n), width)
+
+    def fresh(self, prefix):
+        self.net_n += 1
+        return '{}${}'.format(prefix, self.net_n)
+
+    def memory(self, name, width, size):
+        self.header.append('  memory width {} size {} {}'.format(
+            width, size, name))
 
     def connect(self, lhs, rhs):
         self.body.append('  connect {} {}'.format(lhs, rhs))
@@ -444,9 +484,14 @@ class Translator(object):
                 val = self.emit_expr(ctx, self.wire_defs[w])
                 m.connect(pub_id(local_name(obj, w.name)), val)
 
-        # state variables -> D flip-flops with synchronous reset
+        # scalar state variables -> D flip-flops with synchronous reset
         for v in self.state_vars.get(obj, []):
-            self.emit_dff(m, obj, v)
+            if not is_array_sort(v.sort):
+                self.emit_dff(m, obj, v)
+
+        # array state variables and read-only arrays -> memories
+        for arr in self.memories(obj):
+            self.emit_memory(m, ctx, obj, arr)
 
         self.modules.append(m)
         for c in self.children(obj):
@@ -516,6 +561,145 @@ class Translator(object):
                [('\\WIDTH', width), ('\\CLK_POLARITY', 1)],
                [('\\CLK', clk_net), ('\\D', dnet), ('\\Q', qnet)])
 
+    # -- memories -----------------------------------------------------------
+
+    def memories(self, obj):
+        """Array-valued symbols owned by obj that are updated or read: these
+        become RTLIL memories."""
+        syms = {}
+        for v in self.state_vars.get(obj, []):
+            if is_array_sort(v.sort):
+                syms[v.name] = v
+        def scan(term):
+            if self.is_array_ref(term) and self.owning_object(term.rep.name) == obj:
+                syms[term.rep.name] = term.rep
+            for a in term.args:
+                scan(a)
+        for sym, rhs in self.wire_defs.items():
+            if self.def_owner.get(sym.name) == obj:
+                scan(rhs)
+        for mixee in self.obj_mixers.get(obj, {}):
+            upd = self.get_update(obj, mixee)
+            if upd:
+                for d in upd[1].defs:
+                    scan(d.args[1])
+        return [syms[k] for k in sorted(syms)]
+
+    def emit_memory(self, m, ctx, obj, arr):
+        aw, dw = array_dims(arr.sort)
+        memname = local_name(obj, arr.name)
+        m.memory(pub_id(memname), dw, 1 << aw)
+        newsym = tr.new(arr)
+
+        if self.get_update(obj, 'init') and \
+           newsym.name in (self.get_update(obj, 'init')[2] or {}):
+            raise iu.IvyError(None,
+                "reset of array '{}' is not yet supported".format(arr.name))
+
+        # gather the write ports contributed by each clock update
+        clk_used, writes = None, []
+        for clk in self.clocks:
+            upd = self.get_update(obj, clk)
+            if upd and newsym.name in upd[2]:
+                if clk_used is not None:
+                    raise iu.IvyError(None,
+                        "array '{}' is written on more than one clock"
+                        .format(arr.name))
+                clk_used = clk
+                d = upd[2][newsym.name]
+                var = d.args[0].args[0]
+                wctx = Ctx(self, m, obj, upd[2])
+                self.collect_writes(d.args[1], arr, var, None, writes)
+        if not writes:
+            return   # a ROM: declared and read, never written
+
+        # combine the (mutually exclusive) writes into one write port
+        en_nets, addr_nets, data_nets = [], [], []
+        for (en, addr, data) in writes:
+            en_nets.append(self.emit_expr(wctx, en) if en is not None
+                           else rtlil_const(1, 1))
+            addr_nets.append(self.emit_expr(wctx, addr))
+            data_nets.append(self.emit_expr(wctx, data))
+        en = self.reduce_or(m, en_nets)
+        addr = self.fold_mux(m, en_nets, addr_nets, aw)
+        data = self.fold_mux(m, en_nets, data_nets, dw)
+        en_wide = en if dw == 1 else '{ ' + ' '.join([en] * dw) + ' }'
+        m.cell('$memwr_v2', m.fresh('$memwr$' + memname),
+               [('\\MEMID', mem_id(memname)), ('\\ABITS', aw), ('\\WIDTH', dw),
+                ('\\PORTID', 0), ('\\PRIORITY_MASK', "0'0"),
+                ('\\CLK_ENABLE', "1'1"), ('\\CLK_POLARITY', "1'1")],
+               [('\\ADDR', addr), ('\\DATA', data), ('\\EN', en_wide),
+                ('\\CLK', pub_id(clk_used))])
+
+    def collect_writes(self, expr, arr, var, enable, out):
+        """Decompose a functional array-update body new_arr(var) = expr into a
+        list of (enable, addr, data) point writes, appended to `out`. enable is
+        an Ivy bool term (None means unconditional)."""
+        if self.is_base_read(expr, arr, var):
+            return
+        if il.is_ite(expr):
+            cond, then, els = expr.args
+            if self.uses_var(cond, var):
+                addr = self.eq_other_side(cond, var)
+                if addr is None:
+                    raise iu.IvyError(None,
+                        "unsupported array index expression: {}".format(cond))
+                out.append((enable, addr, then))
+                self.collect_writes(els, arr, var, enable, out)
+            else:
+                self.collect_writes(then, arr, var, conj(enable, cond), out)
+                self.collect_writes(els, arr, var,
+                                    conj(enable, il.Not(cond)), out)
+            return
+        raise iu.IvyError(None,
+            "unsupported array update (not a point write): {}".format(expr))
+
+    def is_base_read(self, expr, arr, var):
+        return (not il.is_constant(expr) and il.is_app(expr)
+                and expr.rep.name == arr.name
+                and len(expr.args) == 1 and expr.args[0] == var)
+
+    def uses_var(self, expr, var):
+        if expr == var:
+            return True
+        return any(self.uses_var(a, var) for a in expr.args)
+
+    def eq_other_side(self, cond, var):
+        # an index test may be wrapped in a single-conjunct And/Or
+        while isinstance(cond, (lg.And, lg.Or)) and len(cond.args) == 1:
+            cond = cond.args[0]
+        if il.is_eq(cond):
+            a, b = cond.args
+            if a == var and not self.uses_var(b, var):
+                return b
+            if b == var and not self.uses_var(a, var):
+                return a
+        return None
+
+    def reduce_or(self, m, nets):
+        acc = nets[0]
+        for n in nets[1:]:
+            y = m.new_net(1)
+            m.cell('$or', m.fresh('$or'),
+                   [('\\A_SIGNED', 0), ('\\B_SIGNED', 0),
+                    ('\\A_WIDTH', 1), ('\\B_WIDTH', 1), ('\\Y_WIDTH', 1)],
+                   [('\\A', acc), ('\\B', n), ('\\Y', y)])
+            acc = y
+        return acc
+
+    def fold_mux(self, m, sels, vals, width):
+        """Combine value nets under mutually-exclusive selects into one net:
+        later ports take precedence (irrelevant here, as selects are disjoint)."""
+        acc = vals[0]
+        for i in range(1, len(vals)):
+            y = m.new_net(width)
+            m.cell('$mux', m.fresh('$mux'),
+                   [('\\WIDTH', width)],
+                   [('\\A', acc), ('\\B', vals[i]), ('\\S', sels[i]),
+                    ('\\Y', y)])
+            acc = y
+        return acc
+
     # -- expression translation ---------------------------------------------
 
     def emit_expr(self, ctx, term):
@@ -537,7 +721,7 @@ class Translator(object):
                 m.connect(net, val)
                 ctx.cache[name] = net
                 return net
-            return pub_id(local_name(ctx.obj, name))
+            return pub_id(local_name(ctx.obj, strip_state_prefix(name)))
         if il.is_ite(term):
             return self.emit_mux(ctx, term.args[0], term.args[1], term.args[2])
         if il.is_eq(term):
@@ -554,8 +738,31 @@ class Translator(object):
         if isinstance(term, lg.Iff):
             return self.emit_cmp(ctx, '$eq', term.args[0], term.args[1])
         if il.is_app(term):
+            if self.is_array_ref(term):
+                return self.emit_read(ctx, term)
             return self.emit_op(ctx, term)
         raise iu.IvyError(None, "cannot translate expression: {}".format(term))
+
+    def is_array_ref(self, term):
+        """True if term is a read of an array-valued state symbol (a memory),
+        as opposed to an interpreted operator application."""
+        return (il.is_app(term) and not il.is_constant(term)
+                and is_array_sort(term.rep.sort)
+                and self.in_design(self.owning_object(term.rep.name)))
+
+    def emit_read(self, ctx, term):
+        """Emit an asynchronous memory read port for term = arr(index)."""
+        arr = term.rep
+        aw, dw = array_dims(arr.sort)
+        addr = self.emit_expr(ctx, term.args[0])
+        data = ctx.m.new_net(dw)
+        memname = local_name(ctx.obj, arr.name)
+        ctx.m.cell('$memrd', ctx.m.fresh('$memrd$' + memname),
+            [('\\MEMID', mem_id(memname)), ('\\ABITS', aw), ('\\WIDTH', dw),
+             ('\\CLK_ENABLE', 0), ('\\CLK_POLARITY', 0), ('\\TRANSPARENT', 0)],
+            [('\\CLK', "1'x"), ('\\EN', "1'x"), ('\\ADDR', addr),
+             ('\\DATA', data)])
+        return data
 
     _binops = {'+': '$add', '-': '$sub', '*': '$mul', '/': '$div'}
 
