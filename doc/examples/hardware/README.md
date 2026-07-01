@@ -13,9 +13,12 @@ $ ivy_to_rtl <file>.ivy      # writes <file>.il in the current directory
 The translator walks the object hierarchy from the design's top module and
 emits one RTLIL module per Ivy object. Wires become nets, `wire` definitions
 and interpreted operators (`+ - * /`, `bfe`, `concat`, `=`, `if`/`Ite`, the
-logical connectives) become RTLIL cells/sigspecs, state variables become
-`$dff`s, and each initializer becomes synchronous-reset logic. Each exported
-action is a clock; a global `rst` is the reset.
+logical connectives) become RTLIL cells/sigspecs, scalar state variables
+become `$dff`s, and each initializer becomes synchronous-reset logic. Array
+state variables (type `bv[j] -> bv[k]`, i.e. register files and memories)
+become RTLIL memories: reads become asynchronous `$memrd` ports and the
+clocked update becomes a `$memwr_v2` port. Each exported action is a clock; a
+global `rst` is the reset.
 
 ## Examples
 
@@ -24,6 +27,7 @@ action is a clock; a global `rst` is the reset.
 | `test_to_rtl.ivy` | one-stage pipeline: registers `inp + 1` (a combinational `inc` submodule feeding a `delay` register). |
 | `refinement3.ivy` | a 2-bit counter built by cascading two 1-bit counters `c0`, `c1`; the abstract model `abs` is a specification-only isolate (ignored by the translator). The top module is the global scope. |
 | `bfe_concat.ivy` | registers a nibble-swap of the input, `out := old(concat(inp[3:0], inp[7:4]))`, exercising the `bfe` and `concat` operators. |
+| `pipe_cpu.ivy` | a two-stage (fetch/execute) pipelined processor with a register file, data memory, and instruction ROM (all array state → RTLIL memories) and a conditional branch resolved in execute (a control hazard). Exposes the PC as `pc_out`. |
 | `refinement1.ivy`, `refinement2.ivy` | earlier compositional-proof examples. `refinement3.ivy` is the version written in the intended hierarchical style. |
 
 Each `.il` beside a `.ivy` is the committed golden output of the translator.
@@ -35,6 +39,56 @@ Structural sanity check of a generated netlist:
 ```
 $ yosys -p "read_rtlil refinement3.il; hierarchy -check -top this; proc; check -assert; flatten; opt"
 ```
+
+A design with memories (e.g. `pipe_cpu.il`) needs `memory_collect` to gather
+the per-port cells into `$mem` cells before `check`:
+
+```
+$ yosys -p "read_rtlil pipe_cpu.il; hierarchy -check -top cpu; memory_collect; check -assert"
+```
+
+After `opt`, `pipe_cpu` has the expected structure: three memories
+(`imem`, `mem`, `rf`), `$sdff`/`$sdffe` registers (Yosys infers the
+synchronous reset from the reset multiplexer, and the `ir` enable), `$add`/
+`$sub` for the ALU, `$eq` for instruction decode, and `$mux` for the
+writeback/branch selects.
+
+## Simulating a design (and loading a memory)
+
+`ivy_to_rtl` translates an array state variable to a memory but does not yet
+support initializing it (e.g. loading an instruction ROM from an Ivy `after
+init`), so a freshly generated memory reads as all-`x`. To simulate a concrete
+program, add a `$meminit_v2` cell for the memory, then run `sim`. For example,
+to load a four-instruction program into `pipe_cpu`'s `imem` and zero its
+register file:
+
+```
+# in module \cpu, before the closing `end`:
+  cell $meminit_v2 $meminit$imem
+    parameter \MEMID "\\imem"
+    parameter \ABITS 8
+    parameter \WIDTH 16
+    parameter \WORDS 4
+    parameter \PRIORITY 0
+    connect \ADDR 8'00000000
+    connect \DATA 64'<word3><word2><word1><word0>   # low word first (LSBs)
+    connect \EN 16'1111111111111111
+  end
+```
+
+`DATA` is `WORDS * WIDTH` bits, with the word at `ADDR` in the low bits. Then
+drive the clock and reset:
+
+```
+$ yosys -p "read_rtlil pipe_cpu_prog.il; hierarchy -top cpu; proc; memory_collect;
+            sim -clock posedge -reset rst -n 12 -vcd cpu.vcd"
+```
+
+With the program `LI r1,5; LI r2,1; SUB r1,r1,r2; BEQZ r0,2`, the `pc_out`
+trace after reset is `0, 1, 2, 3, 4, 2, 3, 4, ...`. The `3, 4, 2` shows the
+control hazard: the `BEQZ` fetched at PC 3 is resolved a cycle later in the
+execute stage, so the instruction already fetched at PC 4 is squashed (a
+one-cycle bubble) before the PC redirects to the branch target 2.
 
 ## Checking equivalence of two RTLIL designs
 
