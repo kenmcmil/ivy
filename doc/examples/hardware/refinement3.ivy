@@ -1,0 +1,118 @@
+#lang ivy1.8
+
+# This is an example of compositional refinement for synchronous
+# hardware.
+
+# The abstract model is a two-bit counter with an enable input whose
+# output is the carry out bit.
+
+# The concrete model has two submodules `c0` and `c1`. Each is a
+# one-bit counter with enable in and carry out. The are cascaded to
+# form a two-bit counter. We prove composiitonally the the concrete
+# refines the abstarct.
+
+include numbers
+
+# First, we define a clock. This is just an action with no parameteres,
+# called from the environment.
+
+export action posedge
+
+import wire en : bool # the counter enable bit
+export wire cout : bool # the counter carry out
+
+# This is the abstract model. It's value just toggles: false,true,...
+
+isolate abs = {
+    specification {
+        wire cout : bool  # the carry output
+        
+        var val : uint[2]
+        
+        after init {
+            val := 0;
+        }
+        after posedge {
+            if en {
+                val := val + 1;
+            }
+        }
+        definition cout = en & (val = 3)
+    }
+}
+
+# This is module `c0`.
+
+
+isolate c0 = {
+
+    wire en : bool # enable input
+    wire cout : bool  # the carry output
+    
+    specification {
+        invariant [cout_spec] cout <-> en & (bfe[0][0](abs.val) = 1:uint[1]) 
+    }
+
+    implementation {
+        var val : uint[1]
+        
+        after init {
+            val := 0;
+        }
+        after posedge {
+            if en {
+                val := val + 1;
+            }
+        }
+        definition cout = en & (val = 1)
+
+        invariant val = bfe[0][0](abs.val)
+        
+    }
+
+} with this
+
+# The 'with' declaration above says we need the definitions in the
+# abstract model to prove this module's specification. In fact, if we
+# omit it, Ivy will about interference, since we have erased some code
+# that has a visible side effect on `abs.val`.
+
+# Here is module `c1`.
+
+isolate c1 = {
+
+    wire en : bool # enable input
+    wire cout : bool  # the carry output
+    
+    specification {
+        invariant cout <-> abs.cout with c0.cout_spec
+    }
+
+    implementation {
+        var val : uint[1]
+        
+        after init {
+            val := 0;
+        }
+        after posedge {
+            if en {
+                val := val + 1;
+            }
+        }
+        definition cout = en & (val = 1)
+
+        invariant val = bfe[1][1](abs.val)
+    }
+
+ }
+with this
+
+# Wire the submodules
+
+definition c0.en = en
+wire tmp = c0.cout
+definition c1.en = tmp
+definition cout = c1.cout
+
+
+

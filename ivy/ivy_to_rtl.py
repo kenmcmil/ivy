@@ -169,8 +169,11 @@ class Translator(object):
             if ldf.label is not None:
                 self.def_owner[sym.name] = parent_name(str(ldf.label))
         self.objects = set(mod.hierarchy.keys())
+        self.wire_by_name = dict((s.name, s) for s in mod.wires)
         self._update_cache = {}
         self.compute_state()
+        self.top = self.top_object()
+        self.compute_has_state()
 
     # -- specification filtering --------------------------------------------
 
@@ -186,16 +189,40 @@ class Translator(object):
         """True if name or any ancestor carries the 'spec' attribute."""
         return self.has_attr(name, 'spec')
 
+    def is_spec_only(self, obj):
+        """True if every member of obj is specification code. Such an object
+        (e.g. an abstract model written inside `specification { ... }`) is not
+        part of the hardware and is excluded from the netlist, even though the
+        isolate name itself carries no 'spec' attribute."""
+        members = self.mod.hierarchy.get(obj, set())
+        if not members:
+            return self.is_spec(obj)
+        for k in members:
+            full = compose(obj, k)
+            if full in self.objects:
+                if not self.is_spec_only(full):
+                    return False
+            elif not self.is_spec(full):
+                return False
+        return True
+
     def in_design(self, obj):
         """True if obj is a hardware module of the design, as opposed to a
         specification, a shared theory/library object, or a type."""
         if obj == 'this':
             return False
-        if self.is_spec(obj) or self.has_attr(obj, 'global'):
+        if self.is_spec(obj) or self.is_spec_only(obj) or self.has_attr(obj, 'global'):
             return False
         if obj in il.sig.sorts:
             return False
         return True
+
+    def is_descendant(self, owner, obj):
+        """True if object `owner` lies within object `obj` (everything lies
+        within the global scope 'this')."""
+        if obj == 'this':
+            return True
+        return owner == obj or owner.startswith(obj + '.')
 
     # -- hierarchy helpers --------------------------------------------------
 
@@ -237,6 +264,8 @@ class Translator(object):
         for mixee in list(self.clocks) + ['init']:
             for mx in self.mod.mixins.get(mixee, []):
                 mixer = mx.mixer()
+                if self.is_spec(mixer):
+                    continue   # e.g. the state update of an abstract model
                 if not isinstance(mx, ivy_ast.MixinAfterDef):
                     raise iu.IvyError(None,
                         "'{}' mixes into the exported action '{}' but is not "
@@ -257,7 +286,19 @@ class Translator(object):
                         seen.add(s.name)
                         self.state_vars[obj].append(s)
 
-        # transitive has-state
+    def top_object(self):
+        """The root module of the design: the object owning the top-level
+        import/export wires. With no such wires, a single root object, else the
+        global scope 'this'."""
+        io = list(self.mod.input_wires) + list(self.mod.output_wires)
+        owners = set(self.owning_object(s.name) for s in io)
+        if len(owners) == 1:
+            return owners.pop()
+        roots = self.root_objects()
+        return roots[0] if len(roots) == 1 else 'this'
+
+    def compute_has_state(self):
+        # transitive has-state, from the top module down
         self.has_state_set = set()
         def visit(obj):
             res = bool(self.state_vars.get(obj))
@@ -266,8 +307,7 @@ class Translator(object):
             if res:
                 self.has_state_set.add(obj)
             return res
-        for r in self.root_objects():
-            visit(r)
+        visit(self.top)
 
     def get_update(self, obj, mixee):
         """Return (state_syms, trans, defidx) for object obj on mixee, or
@@ -313,35 +353,50 @@ class Translator(object):
         return names
 
     def classify(self, obj):
-        """Return (inputs, outputs, internals) lists of wire symbols of obj."""
-        is_root = (parent_name(obj) == 'this')
-        parent = parent_name(obj)
-        prefs = self.references(parent)
-        inputs, outputs, internals = [], [], []
+        """Return (inputs, outputs, internals) lists of the wire symbols owned
+        by obj. Foreign wires referenced from obj (a sibling's output, say) are
+        not owned by obj; see foreign_inputs."""
+        is_top = (obj == self.top)
         input_names = set(s.name for s in self.mod.input_wires)
         output_names = set(s.name for s in self.mod.output_wires)
+        # for a non-top module, an owned wire defined inside obj is an output
+        # iff it is referenced by the parent (otherwise it is internal)
+        prefs = self.references(parent_name(obj)) if not is_top else set()
+        inputs, outputs, internals = [], [], []
         for w in self.module_wires(obj):
             d = self.def_owner.get(w.name)
-            if is_root and w.name in input_names:
-                inputs.append(w)
-            elif is_root and w.name in output_names:
-                outputs.append(w)
-            elif d == obj:
-                if w.name in prefs:
+            if is_top:
+                if w.name in input_names:
+                    inputs.append(w)
+                elif w.name in output_names:
                     outputs.append(w)
                 else:
                     internals.append(w)
+            elif d == obj:
+                outputs.append(w) if w.name in prefs else internals.append(w)
             else:
                 inputs.append(w)
         inputs.sort(key=lambda s: s.name)
         outputs.sort(key=lambda s: s.name)
         return inputs, outputs, internals
 
+    def foreign_inputs(self, obj):
+        """Wires referenced by obj's logic but owned by an object outside obj
+        (e.g. a sibling's output). Per the doc's implicit-I/O rule, such a wire
+        is an input of obj, wired up by the parent."""
+        res, seen = [], set()
+        for name in self.references(obj):
+            if name in self.wire_by_name and name not in seen:
+                owner = self.owning_object(name)
+                if owner != obj and not self.is_descendant(owner, obj):
+                    seen.add(name)
+                    res.append(self.wire_by_name[name])
+        return sorted(res, key=lambda s: s.name)
+
     # -- top-level driver ---------------------------------------------------
 
     def translate(self):
-        for r in self.root_objects():
-            self.emit_object(r)
+        self.emit_object(self.top)
         header = '# Generated by ivy_to_rtl from {}\n\nautoidx 1\n\n'.format(
             self.mod.name + '.ivy')
         return header + '\n'.join(m.to_str() for m in self.modules)
@@ -351,10 +406,10 @@ class Translator(object):
     def emit_object(self, obj):
         m = Module(obj)
         inputs, outputs, internals = self.classify(obj)
-        in_set = set(s.name for s in inputs)
+        foreign = self.foreign_inputs(obj)
 
         # declare data ports (named connections make the numbering cosmetic)
-        for w in inputs:
+        for w in inputs + foreign:
             m.add_wire(pub_id(local_name(obj, w.name)), sort_width(w.sort), 'input')
         for w in outputs:
             m.add_wire(pub_id(local_name(obj, w.name)), sort_width(w.sort), 'output')
@@ -409,6 +464,12 @@ class Translator(object):
                 conns.append((port, net))
             else:
                 conns.append((port, self.emit_expr(ctx, rhs)))
+        # foreign inputs of the child are driven, by name, from the net in obj
+        # carrying that wire (e.g. a sibling's output)
+        for w in self.foreign_inputs(c):
+            net = pub_id(local_name(obj, w.name))
+            m.add_wire(net, sort_width(w.sort))
+            conns.append((pub_id(local_name(c, w.name)), net))
         for w in coutputs:
             net = pub_id(local_name(obj, w.name))
             m.add_wire(net, sort_width(w.sort))
