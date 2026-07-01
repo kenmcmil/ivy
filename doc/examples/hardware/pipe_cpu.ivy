@@ -1,0 +1,134 @@
+#lang ivy1.8
+
+# A very simple two-stage pipelined processor.
+#
+# Pipeline stages:
+#   F (fetch)   : read the instruction at PC from instruction memory.
+#   X (execute) : decode and execute the instruction fetched last cycle,
+#                 reading/writing the register file and data memory and
+#                 redirecting the PC on a taken branch.
+#
+# The pipeline register between F and X is (ir, ir_valid). Operands are read
+# and results written in the same stage (X), so there are no data hazards. A
+# taken conditional branch is resolved in X, so the instruction fetched in its
+# shadow must be squashed -- a one-cycle bubble. That is the classic control
+# hazard.
+#
+# Instruction encoding (16 bits):
+#
+#     [15:13] opcode   [12:10] rd   [9:7] ra   [6:4] rb   [7:0] imm/target
+#
+#   opcode 0  NOP
+#          1  ADD  rd, ra, rb     rf[rd] := rf[ra] + rf[rb]
+#          2  SUB  rd, ra, rb     rf[rd] := rf[ra] - rf[rb]
+#          3  LI   rd, imm        rf[rd] := zero_extend(imm8)
+#          4  LD   rd, [ra]       rf[rd] := mem[ rf[ra] ]
+#          5  ST   [ra], rb       mem[ rf[ra] ] := rf[rb]
+#          6  BEQZ ra, target     if rf[ra] == 0 then pc := target
+
+# Word (data / instruction), address (PC / memory), and register-index types.
+
+type word
+interpret word -> bv[16]
+type addr
+interpret addr -> bv[8]
+type reg
+interpret reg -> bv[3]
+type opc
+interpret opc -> bv[3]
+
+# The clock: one exported action driven by the environment.
+
+export action posedge
+
+isolate cpu = {
+
+    # ---- architectural state ----
+
+    var pc : addr                 # program counter
+    var rf(R:reg) : word          # register file
+    var mem(A:addr) : word        # data memory
+    var imem(A:addr) : word       # instruction memory (ROM; never written)
+
+    # ---- pipeline register (F -> X) ----
+
+    var ir : word                 # instruction being executed in X
+    var ir_valid : bool           # false => bubble (nothing to execute)
+
+    # ---- fetch stage (combinational) ----
+
+    wire fetched : word
+    definition fetched = imem(pc)
+
+    # ---- decode of the X-stage instruction (combinational) ----
+
+    wire opcode : opc
+    wire rd : reg
+    wire ra : reg
+    wire rb : reg
+    wire target : addr            # low 8 bits: branch target or immediate
+    definition opcode = bfe[13][15](ir)
+    definition rd = bfe[10][12](ir)
+    definition ra = bfe[7][9](ir)
+    definition rb = bfe[4][6](ir)
+    definition target = bfe[0][7](ir)
+
+    # ---- operands and ALU (combinational) ----
+
+    wire a_val : word
+    wire b_val : word
+    wire mem_addr : addr          # address for LD/ST: low 8 bits of rf[ra]
+    definition a_val = rf(ra)
+    definition b_val = rf(rb)
+    definition mem_addr = bfe[0][7](a_val)
+
+    # ---- branch decision (BEQZ) ----
+
+    wire take_branch : bool
+    definition take_branch = ir_valid & (opcode = 6) & (a_val = 0)
+
+    # ---- reset ----
+
+    after init {
+        pc := 0;
+        ir_valid := false;
+    }
+
+    # ---- clock edge ----
+
+    after posedge {
+
+        # Execute / write back the X-stage instruction, if it is real.
+        if ir_valid {
+            if opcode = 1 {                          # ADD
+                rf(rd) := a_val + b_val
+            } else {
+                if opcode = 2 {                      # SUB
+                    rf(rd) := a_val - b_val
+                } else {
+                    if opcode = 3 {                  # LI
+                        rf(rd) := concat(0:addr, target)
+                    } else {
+                        if opcode = 4 {              # LD
+                            rf(rd) := mem(mem_addr)
+                        } else {
+                            if opcode = 5 {          # ST
+                                mem(mem_addr) := b_val
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        # Advance the PC and the pipeline register.
+        if take_branch {
+            pc := target;          # redirect to the branch target
+            ir_valid := false;     # squash the instruction fetched in the shadow
+        } else {
+            pc := pc + 1;
+            ir := fetched;
+            ir_valid := true;
+        }
+    }
+}
