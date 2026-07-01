@@ -1,0 +1,59 @@
+#lang ivy1.8
+
+# A test case for the bit-field-extract (bfe) and concat operators.
+#
+# The design registers a nibble-swapped copy of its 8-bit input:
+#
+#   out := old( concat(inp[3:0], inp[7:4]) )
+#
+# i.e. on each clock the two 4-bit halves of the input are swapped and
+# the result is latched.
+#
+# Hierarchy:
+#   top
+#     top.swap    -- combinational: nibble swap using bfe + concat
+#     top.delay   -- register
+
+type byte
+interpret byte -> bv[8]
+type nibble
+interpret nibble -> bv[4]
+
+export action posedge
+
+isolate top = {
+
+    import wire inp : byte
+    export wire out : byte
+
+    # Combinational nibble swap. bfe[0][3](inp) is the low nibble
+    # (bits 3:0) and bfe[4][7](inp) is the high nibble (bits 7:4). concat
+    # puts its first argument in the high bits, so this swaps the halves.
+    isolate swap = {
+        wire inp : byte
+        wire lo : nibble
+        wire hi : nibble
+        wire out : byte
+        definition lo = bfe[0][3](inp)
+        definition hi = bfe[4][7](inp)
+        definition out = concat(lo, hi)
+    }
+
+    # Register the swapped value.
+    isolate delay = {
+        wire inp : byte
+        wire out : byte
+        var val : byte
+        after init {
+            val := 0;
+        }
+        after posedge {
+            val := inp;
+        }
+        definition out = val
+    }
+
+    definition swap.inp = inp
+    definition delay.inp = swap.out
+    definition out = delay.out
+}
