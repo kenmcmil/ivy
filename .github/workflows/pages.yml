@@ -1,7 +1,8 @@
 name: Deploy docs to GitHub Pages
 
 # Build the Jekyll site in doc/ on the master branch and publish it to
-# GitHub Pages via GitHub Actions (instead of the gh-pages branch).
+# GitHub Pages via GitHub Actions (instead of the gh-pages branch). The build
+# uses doc/Gemfile with Bundler, so it matches a local `bundle exec jekyll`.
 
 on:
   push:
@@ -29,7 +30,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Ruby and install gems (doc/Gemfile)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: doc
+
       - name: Setup Pages
+        id: pages
         uses: actions/configure-pages@v5
         with:
           # Switch the repository's Pages source to "GitHub Actions" on the
@@ -37,13 +46,15 @@ jobs:
           enablement: true
 
       - name: Build Jekyll site from doc/
-        uses: actions/jekyll-build-pages@v1
-        with:
-          source: ./doc
-          destination: ./_site
+        working-directory: doc
+        env:
+          JEKYLL_ENV: production
+        run: bundle exec jekyll build --destination "${{ github.workspace }}/_site"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
 
   deploy:
     needs: build

@@ -1,0 +1,8 @@
+source "https://rubygems.org"
+
+# Jekyll for building/previewing the documentation site. The Pages CI
+# workflow builds from this same Gemfile, so local and CI use the same gems.
+gem "jekyll", "~> 4.3"
+
+# webrick is no longer bundled with Ruby 3+, but `jekyll serve` needs it.
+gem "webrick", "~> 1.8"
