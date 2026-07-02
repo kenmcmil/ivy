@@ -1,0 +1,6 @@
+# Declare the build system so that `pip install .` / `python -m build`
+# always provision setuptools and wheel in an isolated build environment.
+# Project metadata continues to be defined in setup.py.
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
