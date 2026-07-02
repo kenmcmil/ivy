@@ -426,7 +426,7 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[]):
         lcs = conjs
     checkers = []
     for c in lcs:
-        depnames = set(mod.invardeps.get(c.name,[]))
+        depnames = set(mod.invardeps.get(c.name,[])) if c.label is not None else set([])
         deps = [x.formula for x in mod.assumed_invariants if x.name in depnames]  
         if deps:
             c = c.clone([c.label,lg.Implies(lg.And(*deps),c.formula)])
