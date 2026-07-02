@@ -24,7 +24,7 @@ also work on other Debian-based distributions.
 
 ### Prerequisites
 
-    $ sudo apt-get install python3 python3-pip python3-venv g++ cmake python3-ply python3-pygraphviz git python3-tk tix pkg-config libssl-dev libreadline-dev
+    $ sudo apt-get install python3 python3-pip python3-venv g++ cmake python3-ply python3-pygraphviz git python3-tk pkg-config libssl-dev libreadline-dev
 
 ### Install IVy
 
@@ -42,15 +42,15 @@ Optional, recommended: use a python virtal environment:
     $ python3 -m venv venv
     $ . venv/bin/activate
 
-If you want to use a particular version of Z3, you can instal it like this:
+If you want to use a particular version of Z3, you can install it like this:
 
-    $ sudo pip3 install z3-solver==X.Y
+    $ pip3 install z3-solver==X.Y
 
 where X.Y is the version. 
 
 Install into your local Python like this:
 
-    $ sudo pip3 install .
+    $ pip3 install .
 
 If Z3 is not already installed in your Python, you'll get the latest
 version in PyPI.
@@ -58,7 +58,7 @@ version in PyPI.
 If you want to run from the source tree for development purposes, do
 this instead:
 
-    $ sudo pip3 install -e .
+    $ pip3 install -e .
 
 Optionally, build the experimental Ivy v2.0 compiler:
 
@@ -90,39 +90,60 @@ somewhere in your emacs load path and add the following code to your
 <a name="macnotes"></a> Installation from source on MacOS
 =========================================================
 
-Install using MacPorts
+Install using Homebrew
 ----------------------
 
-These instructions have not been tested on recent MacOS versions.
+These instructions have been tested on macOS 26 (Tahoe) on Apple silicon.
 
-1. Install Xcode from App Store
-2. Install Xcode command line tools
+1. Install the Xcode command line tools (if not already installed). These
+   provide the C/C++ compiler used to build Ivy's submodules; a full Xcode
+   installation from the App Store is not required.
 
         $ xcode-select --install
 
-3. Install Xserver
+2. Optional: install [XQuartz](https://www.xquartz.org) if you need the Ivy
+   GUI.
 
-    - [https://www.xquartz.org](https://www.xquartz.org)
+3. Install Homebrew (if not already installed), following the instructions
+   at [https://brew.sh](https://brew.sh):
 
-4. Macports
+        $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-        $ sudo xcodebuild -license
+   On Apple silicon, make sure Homebrew is on your `PATH` afterwards. The
+   installer prints the exact command; it is usually:
 
-   Install Macports from [https://www.macports.org/install.php](https://www.macports.org/install.php). Select
-   the version matching the macOS version running on your
-   machine.
+        $ eval "$(/opt/homebrew/bin/brew shellenv)"
 
-        $ sudo port install python310 py310-pip graphviz tix py310-tkinter git cmake openssl
-        $ sudo port select --set python3 python310
-        $ sudo port select --set pip3 pip310
-        
-5. Install Ivy:
+4. Install the build prerequisites:
 
-    Follow the Linux instructions above, under "Install Ivy".
+        $ brew install cmake coreutils git graphviz pkgconf openssl@3 readline python@3.10 python-tk@3.10
 
-    You may have to do this to work around a bug in the python setup tools installed by macports:
+   `openssl@3` is required to build the `picotls` submodule, and `pkgconf`
+   (which provides `pkg-config`) lets that build find it.
 
-        $ sudo ln -s /opt/local/Library/Frameworks/Python.framework/Versions/3.10/bin/ivy* /opt/local/bin
+5. Use Python 3.10.
+
+   Ivy is built and installed using Python 3.10 (installed above as
+   `python3.10`). This version is needed only to build and install Ivy: it
+   does not change the Python you use for anything else, and you do not need
+   Python at all to *run* Ivy afterwards, since Ivy is used through its
+   command-line tools (such as `ivy_check`).
+
+   Homebrew's Python is "externally managed", so install Ivy into a virtual
+   environment created with Python 3.10. This also keeps the installation
+   self-contained:
+
+        $ python3.10 -m venv ivy-venv
+        $ . ivy-venv/bin/activate
+        $ python --version        # should print Python 3.10.x
+
+6. Install Ivy:
+
+   With the virtual environment activated, follow the Linux instructions
+   above under "Install Ivy", starting from the `git clone` step (you can
+   skip the separate virtual-environment step there, since you created one
+   above).
+
 
 
 
@@ -149,6 +170,19 @@ these from github like this (see the directory `ivy/doc`):
 
 ### <a name="macbinary"> Install binary release on Mac
 
-Mac binary distributions are not yet available.
+A macOS binary wheel (Apple silicon, Python 3.10) is published on PyPI.
+Install it into a Python 3.10 environment; a virtual environment is
+recommended:
+
+    $ brew install python@3.10 graphviz
+    $ python3.10 -m venv ivy-venv
+    $ . ivy-venv/bin/activate
+    $ pip3 install ms-ivy
+
+`graphviz` provides the `dot` tool used for visualization. As on Linux,
+this does not install the documentation and example files; get those from
+GitHub:
+
+    $ git clone https://github.com/kenmcmil/ivy.git
 
  
