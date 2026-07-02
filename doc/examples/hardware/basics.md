@@ -51,6 +51,7 @@ become one-bit signals in the RTL.
 The interpreted operators available on bit vectors are:
 
 - the unsigned arithmetic operators `+`, `-`, `*` and `/`,
+- the unsigned comparison operators `<`, `<=`, `>` and `>=`,
 - bit-field extraction `bfe[i][j](w)`, which selects bits `j` down to `i`
   of `w` (so the result has width `j-i+1`), and
 - the concatenation operator `concat`, whose first argument becomes the

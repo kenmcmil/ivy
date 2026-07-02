@@ -18,6 +18,10 @@
   - examples/indexset
   - examples/window
   - examples/number_theory
+- title: Hardware design in Ivy
+  docs:
+  - examples/hardware/basics
+  - examples/hardware/pipe_cpu
 - title: Sharded Hash Table
   docs:
   - examples/sht/sharded_hash_table
