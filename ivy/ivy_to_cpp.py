@@ -23,11 +23,67 @@ from . import ivy_fragment as ifc
 import sys
 import os
 import platform
+import z3
 
 from collections import defaultdict
 from operator import mul
 import re
 from functools import reduce
+
+#!/usr/bin/env python3
+"""Locate an OpenSSL installation (Homebrew or MacPorts) and print its
+prefix and the compiler/linker flags to use it."""
+
+import shutil
+import subprocess
+
+
+def _valid(prefix):
+    """A prefix is usable if it has the OpenSSL headers and the ssl library."""
+    if not prefix:
+        return False
+    if not os.path.exists(os.path.join(prefix, "include", "openssl", "ssl.h")):
+        return False
+    libdir = os.path.join(prefix, "lib")
+    return any(os.path.exists(os.path.join(libdir, name))
+               for name in ("libssl.dylib", "libssl.a", "libssl.so"))
+
+
+def _brew_prefix(pkg):
+    brew = shutil.which("brew")
+    if not brew:
+        return None
+    try:
+        out = subprocess.run([brew, "--prefix", pkg],
+                             capture_output=True, text=True, check=True)
+        return out.stdout.strip()
+    except subprocess.CalledProcessError:
+        return None
+
+
+def find_openssl():
+    """Return the prefix of a usable OpenSSL install, or None."""
+    candidates = []
+
+    # 1. Explicit override.
+    candidates += [os.environ.get("OPENSSL_ROOT_DIR"),
+                   os.environ.get("OPENSSL_PREFIX")]
+
+    # 2. Homebrew (keg-only; ask brew for the exact prefix).
+    for pkg in ("openssl@3", "openssl@1.1", "openssl"):
+        candidates.append(_brew_prefix(pkg))
+
+    # 3. MacPorts (installs under /opt/local).
+    candidates.append("/opt/local")
+
+    # 4. Common fallbacks.
+    candidates += ["/opt/homebrew/opt/openssl@3", "/usr/local/opt/openssl@3",
+                   "/opt/homebrew", "/usr/local"]
+
+    for prefix in candidates:
+        if _valid(prefix):
+            return prefix
+    return None
 
 
 def all_state_symbols():
@@ -472,11 +528,11 @@ thunk_counter = 0
 
 def expr_to_z3(expr,prefix=''):
     fmla = '(assert ' + slv.formula_to_z3(expr).sexpr().replace('|!1','!1|').replace('\\|','').replace('\n',' "\n"') + ')'
-    return 'z3::expr(g.ctx,Z3_parse_smtlib2_string({}ctx, "{}", {}sort_names.size(), &{}sort_names[0], &{}sorts[0], {}decl_names.size(), &{}decl_names[0], &{}decls[0]))'.format(prefix,fmla,prefix,prefix,prefix,prefix,prefix,prefix)
+    return 'z3::mk_and(z3::expr_vector(g.ctx,Z3_parse_smtlib2_string({}ctx, "{}", {}sort_names.size(), &{}sort_names[0], &{}sorts[0], {}decl_names.size(), &{}decl_names[0], &{}decls[0])))'.format(prefix,fmla,prefix,prefix,prefix,prefix,prefix,prefix)
 
 def expr_to_z3_no_type_cnst(expr,prefix=''):
     fmla = '(assert ' + slv.formula_to_z3_int(expr).sexpr().replace('|!1','!1|').replace('\\|','').replace('\n',' "\n"') + ')'
-    return 'z3::expr(g.ctx,Z3_parse_smtlib2_string({}ctx, "{}", {}sort_names.size(), &{}sort_names[0], &{}sorts[0], {}decl_names.size(), &{}decl_names[0], &{}decls[0]))'.format(prefix,fmla,prefix,prefix,prefix,prefix,prefix,prefix)
+    return 'z3::mk_and(z3::expr_vector(g.ctx,Z3_parse_smtlib2_string({}ctx, "{}", {}sort_names.size(), &{}sort_names[0], &{}sorts[0], {}decl_names.size(), &{}decl_names[0], &{}decls[0])))'.format(prefix,fmla,prefix,prefix,prefix,prefix,prefix,prefix)
 
 
 
@@ -1178,12 +1234,14 @@ def get_lib_dirs(with_z3=True):
     import platform
     def file_dir_path(x):
         return os.path.dirname(os.path.abspath(x))
-    files = [__file__]
+    files = [z3.__file__,__file__]
 #    if sys.version_info[0] >= 3 and with_z3:
 #        files.append(z3.__file__)
     dirs = [file_dir_path(x) for x in files]
     if platform.system() == 'Darwin':
-        dirs.append('/usr/local/opt/openssl')  # work around Mac openssl bug
+        openssldir = find_openssl()
+        if openssldir is not None:
+            dirs.append(openssldir)  # work around Mac openssl bug
     if with_z3 and 'Z3DIR' in os.environ:
         dirs.append('$Z3DIR')
     return dirs
@@ -5301,7 +5359,7 @@ public:
             if (foo.is_int()) {
                 assert(foo.is_numeral());
                 int v;
-                if (Z3_get_numeral_int(ctx,foo,&v) != Z3_TRUE) {
+                if (Z3_get_numeral_int(ctx,foo,&v) != Z3_L_TRUE) {
                     std::cerr << "integer value from Z3 too large for machine int: " << foo << std::endl;
                     assert(false);
                 }
@@ -5310,7 +5368,7 @@ public:
             if (foo.is_bv()) {
                 assert(foo.is_numeral());
                 uint64_t v;
-                if (Z3_get_numeral_uint64(ctx,foo,&v) != Z3_TRUE) {
+                if (Z3_get_numeral_uint64(ctx,foo,&v) != Z3_L_TRUE) {
                     std::cerr << "bit vector value from Z3 too large for machine uint64: " << foo << std::endl;
                     assert(false);
                 }
@@ -5347,7 +5405,7 @@ public:
             if (foo.is_int()) {
                 assert(foo.is_numeral());
                 int v;
-                if (Z3_get_numeral_int(ctx,foo,&v) != Z3_TRUE) {
+                if (Z3_get_numeral_int(ctx,foo,&v) != Z3_L_TRUE) {
                     assert(false && "integer value from Z3 too large for machine int");
                 }
                 return v;
@@ -5355,7 +5413,7 @@ public:
             if (foo.is_bv()) {
                 assert(foo.is_numeral());
                 uint64_t v;
-                if (Z3_get_numeral_uint64(ctx,foo,&v) != Z3_TRUE) {
+                if (Z3_get_numeral_uint64(ctx,foo,&v) != Z3_L_TRUE) {
                     assert(false && "bit vector value from Z3 too large for machine uint64");
                 }
                 return v;
@@ -5363,7 +5421,7 @@ public:
             if (foo.is_bv() || foo.is_int()) {
                 assert(foo.is_numeral());
                 unsigned v;
-                if (Z3_get_numeral_uint(ctx,foo,&v) != Z3_TRUE)
+                if (Z3_get_numeral_uint(ctx,foo,&v) != Z3_L_TRUE)
                     assert(false && "bit vector value too large for machine int");
                 return v;
             }
@@ -5606,8 +5664,8 @@ public:
         sorts.push_back(sort);
         for(unsigned i = 0; i < num_values; i++){
             Z3_symbol sym = Z3_mk_string_symbol(ctx,value_names[i]);
-            decl_names.push_back(sym);
-            decls.push_back(cs[i]);
+            // decl_names.push_back(sym);
+            // decls.push_back(cs[i]);
             enum_to_int[sym] = i;
         }
     }
@@ -5662,9 +5720,12 @@ public:
     }
 
     void add(const std::string &z3inp) {
-        z3::expr fmla(ctx,Z3_parse_smtlib2_string(ctx, z3inp.c_str(), sort_names.size(), &sort_names[0], &sorts[0], decl_names.size(), &decl_names[0], &decls[0]));
+        // Z3_parse_smtlib2_string returns the vector of parsed assertions
+        // (in older Z3 it returned a single expression). Conjoin them.
+        Z3_ast_vector x = Z3_parse_smtlib2_string(ctx, z3inp.c_str(), sort_names.size(), &sort_names[0], &sorts[0], decl_names.size(), &decl_names[0], &decls[0] );
         ctx.check_error();
-
+        z3::expr_vector fmlas(ctx,x);
+        z3::expr fmla = z3::mk_and(fmlas);
         slvr.add(fmla);
     }
 
