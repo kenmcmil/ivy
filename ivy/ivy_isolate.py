@@ -1073,9 +1073,13 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
                         if ('ext:' + c) not in explicit_exports:
                             add_extern_precond(mod,subaction,export_preconds['ext:' + c])
                         add_exported(c)
-            c = actname
-            if any(startswith_eq_some(m.mixer(),present,mod) for m in mod.mixins[c]):
-                add_exported(c)
+                    if any(startswith_eq_some(m.mixer(),present,mod) for m in mod.mixins[c]):
+                        add_exported(c)
+    for e in mod.exports:
+        actname = e.exported()
+        if not e.scope() and not startswith_eq_some(actname,present,mod):
+            if any(startswith_eq_some(m.mixer(),present,mod) for m in mod.mixins[actname]):
+                add_exported(actname)
 
     for actname in export_preconds:
         pcs = export_preconds[actname]
