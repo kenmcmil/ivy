@@ -118,11 +118,12 @@ def build_picotls():
             except Exception:
                 ssl = subprocess.check_output(['brew','--prefix','openssl']).decode().strip()
             do_cmd(('PKG_CONFIG_PATH="{ssl}/lib/pkgconfig" cmake . '
+                    '-DCMAKE_POLICY_VERSION_MINIMUM=3.5 '
                     '-DOPENSSL_ROOT_DIR={ssl} '
                     '-DOPENSSL_CRYPTO_LIBRARY={ssl}/lib/libcrypto.dylib '
                     '-DOPENSSL_SSL_LIBRARY={ssl}/lib/libssl.dylib').format(ssl=ssl))
         else:
-            do_cmd('cmake .')
+            do_cmd('cmake . -DCMAKE_POLICY_VERSION_MINIMUM=3.5')
         do_cmd('make')
 
     os.chdir(cwd)
