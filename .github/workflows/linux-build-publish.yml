@@ -1,4 +1,4 @@
-name: Continuous Integration
+name: Linux Continuous Integration
 
 on:
   workflow_dispatch:
@@ -9,28 +9,28 @@ jobs:
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
-        os: ['ubuntu-22.04']
+        os: ['ubuntu-24.04']
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.10.13
+          python-version: '3.10'
           architecture: x64
 
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}
           max-size: 100M
 
-      - name: use-ccache
+      - name: Install build dependencies
         run: |
-          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          sudo apt-get update
+          sudo apt-get -y install build-essential cmake git pkg-config libssl-dev libreadline-dev
 
-      - run: sudo apt-get -y install python3 python3-pip g++ cmake python3-ply python3-pygraphviz git python3-tk tix pkg-config libssl-dev libreadline-dev
       - run: pip3 install wheel
       - run: python3 build_submodules.py
       - run: python3 setup.py bdist_wheel --plat-name manylinux1_x86_64
@@ -43,7 +43,7 @@ jobs:
   publish:
     name: Publish
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
 
       - uses: actions/download-artifact@v4
@@ -57,7 +57,6 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
-          repository_url: https://test.pypi.org/legacy/      
+          repository_url: https://test.pypi.org/legacy/
           skip_existing: true
           verbose: true
-          
