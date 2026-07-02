@@ -166,7 +166,7 @@ module tcp_impl(addr,pkt,me,port_base) = {
 #ifdef _WIN32
             inetaddr = ntohl(inet_addr("127.0.0.1")); // can't send to INADDR_ANY in windows
 #else
-            inetaddr = INADDR_ANY;
+            inetaddr = INADDR_LOOPBACK;
 #endif
             inetport = `port_base`+ id;
     }
