@@ -1,31 +1,68 @@
-This directory can be builds into a web site using Jekyll
-(https://jekyllrb.com/).
+This directory contains the Ivy documentation web site, built with Jekyll
+(https://jekyllrb.com/). The Gemfile here pins the Jekyll version, so the
+site builds the same way locally and in CI.
 
-Viewing the site locally:
+--------------------------------------------------------------------------
+Prerequisites: Ruby and Bundler
+--------------------------------------------------------------------------
 
-$ jekyll serve --port 8989 --watch
+You need a reasonably modern Ruby (>= 3.0). Check what you have:
 
-(open http://localhost:8989)
+    $ ruby --version
 
-Deploying the site to Github pages:
+The Ruby that ships with macOS (2.6) is too old, so install a current one
+with Homebrew (https://brew.sh):
 
-The script "deploy" will do the following:
+    $ brew install ruby
 
-1) Clone the repository into a temp directory and check out the
-gh-pages branch.
+Homebrew's Ruby is "keg-only" (it does not replace the system Ruby), so add
+it to your PATH -- put this in your ~/.zshrc (or ~/.bash_profile) and open a
+new shell:
 
-2) Remove all the files from git and copy this directory into the project.
+    export PATH="$(brew --prefix ruby)/bin:$PATH"
 
-3) Add all the files to git, commit the changes and push to Github.
+Confirm the new Ruby is in use (should print the Homebrew version, not 2.6):
 
-This has the odd effect that all the files are freshly created in git
-each time you deploy, but it works around the problem that Github
-project web sites use a separate branch for the site content instead
-of a directory.
+    $ which ruby && ruby --version
 
+Bundler ships with Ruby; if it is missing, install it with:
 
+    $ gem install bundler
 
+(On Linux, install Ruby with your package manager, e.g.
+`sudo apt-get install ruby-full build-essential`, then use Bundler as below.)
 
+--------------------------------------------------------------------------
+Building and viewing the site locally
+--------------------------------------------------------------------------
 
+Install the gems listed in the Gemfile (run once, and again whenever the
+Gemfile changes):
 
+    $ cd doc
+    $ bundle install
 
+Then serve the site with live reload:
+
+    $ bundle exec jekyll serve --livereload
+
+and open http://localhost:4000/ . The server rebuilds as you edit; use
+--port N to choose a different port, or drop --livereload if you prefer.
+
+To just generate the static site into _site/ without serving:
+
+    $ bundle exec jekyll build
+
+The _site/ output, the Bundler vendor/ directory, and Gemfile.lock are all
+git-ignored.
+
+--------------------------------------------------------------------------
+Deploying the site to GitHub Pages
+--------------------------------------------------------------------------
+
+Deployment is automatic. The workflow .github/workflows/pages.yml builds
+this directory with the same Gemfile and publishes it to GitHub Pages on
+every push to the master branch (it can also be run manually from the
+Actions tab). There is no longer a gh-pages branch or a manual "deploy"
+script: in the repository settings, Pages must be configured with
+"Source: GitHub Actions".
