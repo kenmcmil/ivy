@@ -9,32 +9,31 @@ jobs:
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
-        os: ['macos-latest']
+        os: ['macos-26']
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.10.13
-          architecture: x64
+          python-version: '3.10'
+          architecture: arm64
+
+      - name: Install build dependencies
+        run: brew install openssl@3 pkg-config
 
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}
           max-size: 100M
-
-      - name: use-ccache
-        run: |
-          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
 
       - run: pip3 install wheel
       - run: python3 build_submodules.py
       - run: python3 setup.py bdist_wheel
       - run: ls -l dist
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: ivy-wheels
           path: dist/
@@ -45,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: ivy-wheels
           path: dist/
@@ -56,7 +55,6 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
-          repository_url: https://test.pypi.org/legacy/      
+          repository_url: https://test.pypi.org/legacy/
           skip_existing: true
           verbose: true
-          

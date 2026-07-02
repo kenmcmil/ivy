@@ -1,6 +1,7 @@
 import sys
 import os
 import platform
+import subprocess
 
 def do_cmd(cmd):
     print(cmd)
@@ -110,7 +111,16 @@ def build_picotls():
         do_cmd('"{}" & msbuild /p:OPENSSL64DIR=c:\\OpenSSL-Win64 picotlsvs\\picotls\\picotls.vcxproj'.format(find_vs()))
     else:
         if platform.system() == 'Darwin':
-            do_cmd('PKG_CONFIG_PATH="/usr/local/opt/openssl/lib/pkgconfig" cmake . -DOPENSSL_CRYPTO_LIBRARY=/usr/local/opt/openssl/lib/libcrypto.dylib -DOPENSSL_SSL_LIBRARY=/usr/local/opt/openssl/lib/libssl.dylib')
+            # Locate OpenSSL via Homebrew so this works on both Apple-silicon
+            # (/opt/homebrew) and Intel (/usr/local) prefixes.
+            try:
+                ssl = subprocess.check_output(['brew','--prefix','openssl@3']).decode().strip()
+            except Exception:
+                ssl = subprocess.check_output(['brew','--prefix','openssl']).decode().strip()
+            do_cmd(('PKG_CONFIG_PATH="{ssl}/lib/pkgconfig" cmake . '
+                    '-DOPENSSL_ROOT_DIR={ssl} '
+                    '-DOPENSSL_CRYPTO_LIBRARY={ssl}/lib/libcrypto.dylib '
+                    '-DOPENSSL_SSL_LIBRARY={ssl}/lib/libssl.dylib').format(ssl=ssl))
         else:
             do_cmd('cmake .')
         do_cmd('make')
@@ -198,8 +208,10 @@ def install_abc():
     os.chdir(cwd)
     
 if __name__ == "__main__":
-    build_z3()
-    install_z3()
+    # Z3 now comes from the pip-installed z3-solver package, so we no longer
+    # build or bundle it here.
+    # build_z3()
+    # install_z3()
     build_picotls()
     install_picotls()
 
