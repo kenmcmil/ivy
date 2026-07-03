@@ -1,0 +1,62 @@
+name: Nightly regression
+
+# Runs the 'normal' regression tests (test/run_expects.py) once a night, but
+# only when there have been new commits since the previous night's run.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'    # 07:00 UTC daily
+  workflow_dispatch:        # allow manual runs (which always proceed)
+
+jobs:
+  # Decide whether to run: skip a scheduled run if nothing has been pushed in
+  # the last day. A manual (workflow_dispatch) run always proceeds.
+  check:
+    name: Check for new commits
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.freshness.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: freshness
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Manual run: proceeding."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(( $(date +%s) - $(git show -s --format=%ct HEAD) ))" -lt 86400 ]; then
+            echo "New commits in the last 24h: proceeding."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No commits in the last 24h: skipping the nightly run."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Normal regression tests
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          architecture: x64
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install build-essential cmake git pkg-config libssl-dev libreadline-dev
+
+      - name: Build submodules and install Ivy
+        run: |
+          pip3 install pexpect
+          python3 build_submodules.py
+          pip3 install -e .
+
+      - name: Run normal regression tests
+        run: python3 test/run_expects.py group='^normal$'
