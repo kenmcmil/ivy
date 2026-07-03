@@ -16,12 +16,17 @@
 #              types it is instead the name of the expect module, or omitted
 #              (None) to use "<name>_expect"
 #     timeout  (optional) seconds allowed for the test (default 100)
+#     group    (optional) a label for selecting the test (default 'normal').
+#              For example, 'long' for a slow test or 'unreliable' for one
+#              that is expected to fail intermittently.
 #
 # Command-line options (all values are regular expressions, matched anywhere):
 #
 #     type=<pat>   select tests whose type matches
 #     dir=<pat>    select tests whose directory (relative to root) matches
 #     name=<pat>   select tests whose name matches
+#     group=<pat>  select tests whose group matches (default: ^normal$, so
+#                  non-'normal' groups are skipped unless requested)
 #     root=<path>  directory to search (default: the repository root)
 #     list         just list the selected tests; do not run them
 
@@ -52,6 +57,7 @@ class Test(object):
         self.opts = spec.get('args', [])
         self.res = spec.get('expect')       # regex, or (repl) module name / None
         self.timeout = spec.get('timeout', DEFAULT_TIMEOUT)
+        self.group = spec.get('group', 'normal')
 
     def run(self):
         oldcwd = os.getcwd()
@@ -222,6 +228,7 @@ options:
     type=<test type pattern>
     dir=<test directory pattern>
     name=<test name pattern>
+    group=<test group pattern>   (default: ^normal$)
     root=<directory to search>
     list        list the selected tests without running them
 """.format(sys.argv[0]))
@@ -230,7 +237,8 @@ options:
 
 def main():
     allpat = re.compile('.*')
-    pats = {'type': allpat, 'dir': allpat, 'name': allpat}
+    pats = {'type': allpat, 'dir': allpat, 'name': allpat,
+            'group': re.compile('^normal$')}
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     root = repo_root
     list_only = False
@@ -253,12 +261,13 @@ def main():
     selected = [t for t in collect(root)
                 if pats['type'].search(t.type)
                 and pats['dir'].search(t.rel)
-                and pats['name'].search(t.name)]
+                and pats['name'].search(t.name)
+                and pats['group'].search(t.group)]
 
     if list_only:
         for t in selected:
-            print('{} [{}] {} {}'.format(t.rel, t.type, t.name,
-                                         ' '.join(t.opts)))
+            print('{} [{}] {} ({}) {}'.format(t.rel, t.type, t.name,
+                                              t.group, ' '.join(t.opts)))
         print('{} test(s) selected'.format(len(selected)))
         return
 
