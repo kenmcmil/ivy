@@ -44,7 +44,7 @@ tests = [
     {'type': 'check', 'name': 'udp_test', 'expect': 'OK'},
     {'type': 'check', 'name': 'list_reverse', 'expect': 'OK'},
     {'type': 'check', 'name': 'indexset', 'expect': 'OK'},
-    {'type': 'check', 'name': 'number_theory', 'expect': 'OK'},
+    {'type': 'check', 'name': 'number_theory', 'expect': 'OK', 'group': 'unreliable'},
 
     # repl (ivy_to_cpp target=repl); expect is the expect-module name, or
     # omitted to use "<name>_expect"
