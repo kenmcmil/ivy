@@ -20,5 +20,5 @@ tests = [
 
     # repl and compilation via the ivyc (v2) compiler
     {'type': 'ivyc_repl', 'name': 'modular'},
-    {'type': 'ivyc', 'name': 'borrow', 'expect': ''},
+    {'type': 'ivyc', 'name': 'borrow', 'expect': '', 'group': 'v2'},
 ]
