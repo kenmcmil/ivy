@@ -1,15 +1,12 @@
 name: Deploy docs to GitHub Pages
 
-# Build the Jekyll site in doc/ on the master branch and publish it to
-# GitHub Pages via GitHub Actions (instead of the gh-pages branch). The build
-# uses doc/Gemfile with Bundler, so it matches a local `bundle exec jekyll`.
-
+# DISABLED: the active GitHub Pages workflow is jekyll-gh-pages.yml, which
+# builds doc/ with the github-pages gem and renders correctly. This Bundler/
+# Jekyll-4 build is kept for reference (and local parity via doc/Gemfile) but
+# no longer runs automatically -- the push trigger has been removed so it does
+# not race jekyll-gh-pages.yml on the shared "pages" environment. It can still
+# be started manually from the Actions tab.
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'doc/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 # Permissions needed by the deploy-pages action.
