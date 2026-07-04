@@ -296,6 +296,25 @@ def compile_inline_call(self,args,methodcall=False):
 def old_sym(sym,old):
     return sym.prefix('old_') if old else sym
 
+def ascribe_result_sort(term,sort):
+    """Apply an explicit result-sort ascription (e.g. `bfe[i][j](x) : t`) as a
+    constraint on a compiled term. For an application, this fixes the range of
+    the (possibly polymorphic) head symbol, leaving the argument sorts to be
+    inferred; for a bare constant it sets the constant's sort. HM inference
+    then enforces the constraint. This is needed for polymorphic operators such
+    as bfe/concat whose result sort is not determined by their arguments."""
+    if ivy_logic.is_topsort(sort):
+        return term
+    if isinstance(term,ivy_logic.App):
+        fsort = term.func.sort
+        if isinstance(fsort,ivy_logic.FunctionSort):
+            newfunc = ivy_logic.Symbol(term.func.name,
+                                       ivy_logic.FunctionSort(*(list(fsort.dom) + [sort])))
+            return newfunc(*term.args)
+    elif ivy_logic.is_constant(term):
+        return ivy_logic.Symbol(term.name,sort)
+    return term
+
 def compile_app(self,old=False):
     rep = resolve_alias(self.rep) if isinstance(self.rep,str) else self.rep
     if rep == "true" or rep == "false":
@@ -310,15 +329,23 @@ def compile_app(self,old=False):
     if expr_context and top_context and rep in top_context.actions:
         # note, we are taking 'old' of an action to be the action, since actions are immutable
         return compile_inline_call(self,args)
-    sym = rep.cmpl() if isinstance(rep,ivy_ast.NamedBinder) else ivy_logic.Equals if rep == '=' else ivy_logic.find_polymorphic_symbol(rep,throw=False) 
+    sym = rep.cmpl() if isinstance(rep,ivy_ast.NamedBinder) else ivy_logic.Equals if rep == '=' else ivy_logic.find_polymorphic_symbol(rep,throw=False)
+    # An explicit sort ascription (e.g. `x : t`) on this application. Numerals
+    # are handled specially below by rewriting the symbol; other applications
+    # have the ascription applied to the result term after it is built.
+    ascribed = hasattr(self,'sort') and self.sort != 'S'
     if sym is not ivy_logic.Equals:
         if ivy_logic.is_numeral(sym):
-            if hasattr(self,'sort') and self.sort != 'S':
+            if ascribed:
                 sym = ivy_logic.Symbol(sym.name,variable_sort(self))
+                ascribed = False
     if sym is not None:
         sym = old_sym(sym,old)
-        return (sym)(*args)
-    res = compile_field_reference(rep,args,self.lineno,old=old)
+        res = (sym)(*args)
+    else:
+        res = compile_field_reference(rep,args,self.lineno,old=old)
+    if ascribed:
+        res = ascribe_result_sort(res,variable_sort(self))
     return res
     
 def compile_method_call(self):
@@ -1195,7 +1222,15 @@ class IvyDomainSetup(IvyDeclInterp):
         df = ldf.formula
         df = compile_defn(df)
         self.add_definition(ldf.clone([label,df]))
-        self.domain.updates.append(DerivedUpdate(df))
+        # Wires do not update: their value is frozen at the pre-action value
+        # throughout an action. A DerivedUpdate would instead thread the wire
+        # through sequential composition, so it would track intervening register
+        # updates (e.g. `pc := pc+1; ir := fetched` would read the post-pc
+        # value of `fetched`). This mirrors the inline `wire x = e` case in
+        # wire() above, and is needed for the split `wire x : t` + `definition
+        # x = e` form.
+        if df.args[0].rep not in self.domain.wires:
+            self.domain.updates.append(DerivedUpdate(df))
         self.domain.symbol_order.append(df.args[0].rep)
         if not self.domain.sig.contains_symbol(df.args[0].rep):
             add_symbol(df.args[0].rep.name,df.args[0].rep.sort)
