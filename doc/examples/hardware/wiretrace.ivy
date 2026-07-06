@@ -1,0 +1,30 @@
+#lang ivy1.8
+
+# Regression fixture: check that the *post-state* value of a wire appears in a
+# counterexample trace.
+#
+# `w` is a combinational wire equal to x+1. The invariant `w ~= 5` fails one
+# step after x reaches 3 (then x = 4, so w = 5). The counterexample trace must
+# end with the post-state value `w = 5` (computed from the post-state x = 4),
+# not the pre-state value `w = 4`. See the ivy_tests.py entry, which runs this
+# with trace=true and expects `w = 5` in the trace.
+
+type t
+interpret t -> bv[4]
+
+var x : t
+
+wire w : t
+definition w = x + 1
+
+export action step
+
+after init {
+    x := 0
+}
+
+after step {
+    x := x + 1
+}
+
+invariant w ~= 5
