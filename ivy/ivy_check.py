@@ -34,6 +34,7 @@ from . import ivy_tactics
 from . import ivy_mypyvy
 
 import sys
+import os
 from collections import defaultdict
 
 diagnose = iu.BooleanParameter("diagnose",False)
@@ -45,6 +46,10 @@ opt_trace = iu.BooleanParameter("trace",False)
 opt_separate = iu.BooleanParameter("separate",None)
 opt_method = iu.Parameter("method","")
 opt_out = iu.Parameter("out",check = lambda x: x.endswith('a2g'))
+# Directory in which to write one counterexample trace per failing check
+# (named <check name>.a2g). Unlike "out=", this does not stop at the first
+# failing check. The directory must not already exist; it is created.
+opt_trace_dir = iu.Parameter("trace_dir","")
 
 def display_cex(msg,ag):
     if diagnose.get():
@@ -221,7 +226,7 @@ class Checker(object):
         global failures
         failures += 1
         self.failed = True
-        return not (diagnose.get() or opt_trace.get()) # ignore failures if not diagnosing
+        return not (diagnose.get() or opt_trace.get() or opt_trace_dir.get()) # ignore failures if not diagnosing
     def unsat(self):
         return self.fail() if act.check_unprovable.get() else self._pass()
     def assume(self):
@@ -233,7 +238,10 @@ class Checker(object):
         global failures
         failures += 1
         self.failed = True
-        return not (diagnose.get() or opt_trace.get()) or act.check_unprovable.get() # ignore failures if not diagnosing
+        # Return False (keep the model) when we need a counterexample: for
+        # diagnose=, trace=, or trace_dir=. Otherwise ignore the failure and
+        # continue checking.
+        return not (diagnose.get() or opt_trace.get() or opt_trace_dir.get()) or act.check_unprovable.get()
     def _pass(self):
         if self.report_pass:
             print('PASS')
@@ -370,12 +378,80 @@ def filter_fcs(fcs):
         return fcs
     return [fc for fc in fcs if (not isinstance(fc,ConjChecker) or fc.lf.lineno == check_lineno)]
 
+def build_trace_handler(mod,history,clauses,model,failed,ffcs):
+    """Build a counterexample trace for the failed checkers, given `model`, a
+    model of `clauses` together with the failed conditions."""
+    mclauses = lut.and_clauses(*([clauses] + [c.cond() for c in failed]))
+    vocab = lut.used_symbols_clauses(mclauses)
+#    handler = MatchHandler(mclauses,model,vocab) if opt_trace.get() else ivy_trace.Trace(mclauses,model,vocab)
+    handler = ivy_trace.Trace(mclauses,model,vocab)
+    thing = failed[-1].get_annot()
+    if thing is None:
+        assert all(x is not None for x in history.actions)
+        # work around a bug in ivy_interp
+        actions = [im.module.actions[a] if isinstance(a,str) else a for a in history.actions]
+        action = act.Sequence(*actions)
+        annot = clauses.annot
+    else:
+        action,annot = thing
+    act.match_annotation(action,annot,handler)
+    handler.end()
+    hook = getattr(mod,"trace_hook",None)
+    if hook is not None:
+        handler = hook(handler,ffcs)
+    ff = failed[0]
+    handler.is_cti = (lut.formula_to_clauses(ff.lf.formula) if isinstance(ff,ConjChecker)
+                      else None)
+    return handler
+
+# Names of checks for which a trace has already been written under trace_dir.
+# We keep the first counterexample found for each named check.
+written_trace_names = set()
+
+def checker_name(fc):
+    """The name used for a checker's trace file under trace_dir."""
+    lf = getattr(fc,'lf',None)
+    if lf is not None and getattr(lf,'label',None) is not None:
+        name = str(lf.name)
+    else:
+        name = getattr(fc,'trace_name',None) or 'trace'
+    # source-location components use '.'; keep the name a single path element
+    return name.replace('/','_').replace(os.sep,'_')
+
+def write_trace_to_dir(fc,handler):
+    """Write a counterexample trace for a failing check to
+    <trace_dir>/<name>.a2g. The first counterexample found for each name is
+    kept; later ones for the same name are ignored."""
+    name = checker_name(fc)
+    if name in written_trace_names:
+        return
+    written_trace_names.add(name)
+    fn = os.path.join(opt_trace_dir.get(),name+'.a2g')
+    try:
+        with open(fn,'wb') as f:
+            handler.pickle(f)
+    except IOError:
+        raise iu.IvyError(None,"Cannot write trace file {}".format(fn))
+    print('        wrote counterexample to {} (view with "ivy replay {}")'.format(fn,fn))
+
 def check_fcs_in_state(mod,ag,post,fcs):
 #    iu.dbg('"foo"')
     history = ag.get_history(post)
 #    iu.dbg('history.actions')
     gmc = lambda cls, final_cond: itr.small_model_clauses(cls,final_cond,shrink=diagnose.get())
     axioms = im.module.background_theory()
+    if opt_trace_dir.get():
+        # Write a counterexample trace for *every* failing check to its own
+        # file, and keep checking (do not stop at the first failure). Each
+        # check is queried on its own so that its trace is a genuine
+        # counterexample to that check.
+        clauses = lut.and_clauses(history.post,axioms)
+        for fc in filter_fcs(fcs):
+            model = itr.small_model_clauses(clauses,[fc],shrink=True)
+            if model is not None:  # this check failed
+                handler = build_trace_handler(mod,history,clauses,model,[fc],[fc])
+                write_trace_to_dir(fc,handler)
+        return not any(fc.failed for fc in fcs)
     if opt_trace.get() or diagnose.get():
         clauses = history.post
         clauses = lut.and_clauses(clauses,axioms)
@@ -384,26 +460,7 @@ def check_fcs_in_state(mod,ag,post,fcs):
         if model is not None:
 #            iu.dbg('history.actions')
             failed = [c for c in ffcs if c.failed]
-            mclauses = lut.and_clauses(*([clauses] + [c.cond() for c in failed]))
-            vocab = lut.used_symbols_clauses(mclauses)
-#            handler = MatchHandler(mclauses,model,vocab) if opt_trace.get() else ivy_trace.Trace(mclauses,model,vocab)
-            handler = ivy_trace.Trace(mclauses,model,vocab)
-            thing = failed[-1].get_annot()
-            if thing is None:
-                assert all(x is not None for x in history.actions)
-                # work around a bug in ivy_interp
-                actions = [im.module.actions[a] if isinstance(a,str) else a for a in history.actions]
-                action = act.Sequence(*actions)
-                annot = clauses.annot
-            else:
-                action,annot = thing
-            act.match_annotation(action,annot,handler)
-            handler.end()
-            if hasattr(mod,"trace_hook"):
-                handler = mod.trace_hook(handler,ffcs)
-            ff = failed[0]
-            handler.is_cti = (lut.formula_to_clauses(ff.lf.formula) if isinstance(ff,ConjChecker)
-                              else None)
+            handler = build_trace_handler(mod,history,clauses,model,failed,ffcs)
             if not opt_trace.get():
                 gui_art(handler)
             else:
@@ -456,8 +513,25 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None):
         checkers.append(ConjChecker(c,indent,action=action))
     return check_fcs_in_state(mod,ag,post,checkers)
 
-def check_safety_in_state(mod,ag,post,report_pass=True):
-    return check_fcs_in_state(mod,ag,post,[Checker(lg.Or(),report_pass=report_pass)])
+def check_safety_in_state(mod,ag,post,report_pass=True,name=None):
+    checker = Checker(lg.Or(),report_pass=report_pass)
+    if name is not None:
+        checker.trace_name = name  # used to name the trace file under trace_dir
+    return check_fcs_in_state(mod,ag,post,[checker])
+
+def guarantee_trace_name(sub):
+    """A trace-file name for a program assertion (guarantee): its label if it
+    has one, otherwise derived from its source location."""
+    name = guarantee_name(sub)
+    if name:
+        return name
+    ln = getattr(sub,'lineno',None)
+    if ln is not None and ln.line:
+        base = os.path.basename(str(ln.filename)) if ln.filename else 'assert'
+        if base.endswith('.ivy'):
+            base = base[:-4]
+        return 'assert_{}_{}'.format(base,ln.line)
+    return 'assert'
 
 opt_summary = iu.BooleanParameter("summary",False)
 
@@ -607,7 +681,8 @@ def check_isolate(trace_hook = None):
                 if check:
                     ag = ivy_art.AnalysisGraph(initializer=lambda x:None)
                     fail = itp.State(expr = itp.fail_expr(ag.states[0].expr))
-                    check_safety_in_state(mod,ag,fail)
+                    nm = guarantee_trace_name(guarantees[0]) if len(guarantees) == 1 else 'init_assertions'
+                    check_safety_in_state(mod,ag,fail,name=nm)
 
 
         checked_actions = get_checked_actions()
@@ -690,7 +765,8 @@ def check_isolate(trace_hook = None):
                                with itp.EvalContext(check=False):
                                    post = ag.execute(action,prestate=pre)
                                fail = itp.State(expr = itp.fail_expr(post.expr))
-                               if not check_safety_in_state(mod,ag,fail,report_pass=False):
+                               if not check_safety_in_state(mod,ag,fail,report_pass=False,
+                                                            name=guarantee_trace_name(sub)):
                                    some_failed = True
                                    break
                         if not some_failed:
@@ -922,6 +998,15 @@ def get_isolate_method(isolate):
 def check_module():
     # If user specifies an isolate, check it. Else, if any isolates
     # are specificied in the file, check all, else check globally.
+
+    # With trace_dir=, create the (fresh) directory that will hold one trace
+    # file per failing check. It must not already exist, so we never overwrite
+    # traces from a previous run.
+    if opt_trace_dir.get():
+        d = opt_trace_dir.get()
+        if os.path.exists(d):
+            raise iu.IvyError(None,'trace_dir "{}" already exists'.format(d))
+        os.makedirs(d)
 
     missing = []
 

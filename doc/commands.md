@@ -93,6 +93,20 @@ the file `file.a2g`.  The trace is in a binary format and can be
 viewed with `ivy replay` or `ivy interact`.  Without this option, the
 trace is printed in a readable format on standard out.
 
+`trace_dir=dir`
+
+Computes a counterexample trace for *every* failing check, rather than
+stopping at the first one, and writes them to the directory `dir`. For
+each failing check named `name` (see the `check=` option for how check
+names are formed), a trace is written to `dir/name.a2g`, in the same
+binary format as `out=` (view with `ivy replay dir/name.a2g`). If a
+check fails in more than one context, the first counterexample found for
+it is kept. The directory `dir` must not already exist; it is created, so
+that traces from a previous run are never overwritten. This is intended
+for tools, such as an editor integration, that annotate each failing
+property with its counterexample. Unlike `trace=true`, this option does
+not stop at the first failure, and does not print traces to standard out.
+
 `summary=boolean`
 
 If true, this causes the summary to be printed, but no actual checking
