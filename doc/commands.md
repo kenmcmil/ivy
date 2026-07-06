@@ -7,6 +7,10 @@ IVy's commands share a common argument syntax:
 
 *command* *option*=*value* ... *file*.ivy
 
+or
+
+ivy *verb* *option*=*value* ... *file*.ivy
+
 Common options
 --------------
 
@@ -32,12 +36,21 @@ isolate.
 
 If true, certain optional warnings are enabled. The default value is false.
 
+`track=string`
+
+The string is a semicolon-seprated list of expressions, or the name of
+a file ending in `.trk` that contains the list. When displaying a
+counterexample, changes to the values of these expressions are
+tracked. Without this option, all symbols are tracked.
+
 
 Commands
 --------
 
-ivy_check
-=========
+`ivy_check`
+==========
+
+[Alternately: `ivy check`]
 
 This command checks the proof of an IVy program. This includes
 checking all the invariants and program assertions as well as the
@@ -69,8 +82,16 @@ corresponding execution trace is printed on standard out. The trace is
 formatted so that in an emacs compilation buffer, references to source
 lines are active links. The printed trace can be more convenient than the
 graphical counterexample viewer, especially if the state contains functions
-or relations of arity greater than two. 
+or relations of arity greater than two. The `track` option (see above) is
+often useful with `trace` for debugging purposes. 
 The default value is false.
+
+`out=file.a2g`
+
+With `trace=true` this causes the counterexmple trace to written to
+the file `file.a2g`.  The trace is in a binary format and can be
+viewed with `ivy replay` or `ivy interact`.  Without this option, the
+trace is printed in a readable format on standard out.
 
 `summary=boolean`
 
@@ -100,7 +121,6 @@ decidable fragment. The possible values of `logic` are:
 
 - `epr` This is the "effectively propositional" fragment, which is extended to
   include stratified use of function symbols.
-- `qf` This fragment allows interpreted theories of the prover, but no quantifiers.
 - `fo` This is unrestricted first-order logic modulo the prover's theories.
 
 The last option does not guarantee decidability and may result in
@@ -121,18 +141,31 @@ If true, Z3 is used incrementally when checking invariants. Default is true.
 
 Sets the random seed for the SMT solver. 
 
+`ivy replay`
+===========
+
+Prints out a readable version of a trace stored with `out=file.a2g`. The
+filename must end with `.a2g`. The `track` option (see above) is useful
+for controlling the output. 
+
 ivy_show
---------
+========
 
 This command prints the elaborated program (see the option
 `show_compiled` above) and exits.
 
 
-ivy
------
+`ivy interact`
+==============
 
 This command runs an interactive user interface for constructing
-inductive invariants. The options are as follows:
+inductive invariants. The file argument of this command can be either
+an Ivy file (`.ivy`) or a trace file (`.a2g`). The latter is useful
+for debugging a counterexample trace using the graphical interface,
+and allows refining an invariant to eliminate a counterexample to
+induction previously produced.
+
+The options are as follows:
 
 `ui=interface`
 
@@ -144,58 +177,42 @@ Here, `interface` specifies the user interface for invariant construction. The v
 
 The default value is `art`.
 
-ivy_to_cpp
-------------
+ivyc
+----
 
-This command extracts an IVY program to C++. The `isolate` option in
-this command usually references an 'extract' in the IVy program,
-representing an implementation to be extracted. The options are:
+This command compiles an Ivy program to executable code. The `isolate` option
+can be used to compile code for a single isolate. 
+
+The options are:
 
 `target={repl,test,class}"
 
-The `ivy_to_cpp` command can extract code in several forms:
+The `ivyc` command can extract code in several forms:
 
-- `repl` This is a a "read-eval-print" loop that reads calls to exported actions from the
-command line and writes output on calls to imported actions. 
+- `repl` This is a "read-eval-print" loop that reads calls to exported actions from the
+standard input and writes standard output on calls to imported actions. Each process
+in the Ivy program is compiled to a separate executable. 
 
-- `test` This composes the extract with a randomized tester.
+- `test` This composes the program with an automatically generated randomized tester to form a single executable.
 
-- `class` This produces only a C++ class representing the extract, without a main function.
+- `class` This produces only a C++ class, without a main function, and does not produce an executable.
 
-There is no default value.
+The default is `repl`.
 
 `classname=cname`
 
-This gives the name of the extracted C++ class. The default is the
-name of the main IVy file, without the `.ivy` extension. The names of
-the extracted header and implementation files are `cname.h` and
-`cname.cpp` respectively.
+With `target=class`, this gives the name of the extracted C++
+class. The default is the name of the main IVy file, without the
+`.ivy` extension. The names of the extracted header and implementation
+files are `cname.h` and `cname.cpp` respectively.
 
 `build=boolean`
 
-If true, this option causes the extracted C++ to be compiled. In case
-of `repl` or `test` targets, the code is also linked into an
-executable file. On Unix the name of the executable is the same as the
-class name, whereas on Windows it is `cname.exe`, where `cname` is the
-class name.
-
-`compiler={g++,cl}`
-
-This option determines the compiler used to build the code. The default is g++
-on Unix and cl on Windows.
-
-`trace=boolean`
-
-This option causes statements producing trace information on stdout to
-be inserted in the extracted code.
+If false, C++ code is extracted, but not compiled. Default is true.
 
 `main=cname`
 
 Determines the name of the main function, if one is generated. The default is `main`.
-
-`stdafx=boolean`
-
-Causes the file `stdafx.h` to be included in the first line of the implementation file.
 
 `outdir=directory`
 

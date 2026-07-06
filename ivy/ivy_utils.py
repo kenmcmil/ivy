@@ -771,3 +771,18 @@ def distinct(l):
             return False
         seen.add(x)
     return True
+
+class IvyFilenNotFound(IvyError):
+    def __init__(self,name):
+        self.name = name
+    def __str__(self):
+        return f'file not found: {name}'
+
+def read_text_file(name):
+    try:
+        with open(name,'r') as f:
+            return f.read()
+    except:
+        raise IvyFilenNotFound(name)
+
+

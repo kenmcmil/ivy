@@ -159,6 +159,16 @@ class State(object):
     def to_formula(self):
         return self.clauses.to_formula()
 
+    def string_to_formula(self,text):
+        # set up the signature with symbols in graph so
+        # we can parse the formula.
+        with sig.copy():
+            for c in used_symbols_clauses(self.clauses):
+                if not isinstance(c.sort,EnumeratedSort) and not c.is_numeral():
+                    add_symbol(str(c),c.sort)
+            return to_formula(text)
+                          
+
 class EvalContext(object):
     """ Context Manager for evaluating states and actions. """
     def __init__(self,check=True):

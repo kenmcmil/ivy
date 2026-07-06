@@ -92,7 +92,8 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
     # compiled definitions into goal
 
     for defn in tactic_defns:
-        goal = ipr.compile_definition_goal_vocab(defn,goal) 
+        with ivy_compiler.TopContext({}):
+            goal = ipr.compile_definition_goal_vocab(defn,goal) 
 
     # compile definition dependcies
 
@@ -120,7 +121,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
     l2s_d = lambda sort: lg.Const('l2s_d',lg.FunctionSort(sort,lg.Boolean))
     l2s_w = lambda vs, t: lg.NamedBinder('l2s_w', vs, proof_label, t)
-    l2s_g = lambda vs, t, environ: lg.NamedBinder('l2s_g', vs, environ, t)
+    l2s_g = lambda vs, t, environ: lg.NamedBinder(ilu.globally_binder, vs, environ, t)
     old_l2s_g = lambda vs, t, environ: lg.NamedBinder('_old_l2s_g', vs, environ, t)
     l2s_init = lambda vs, t: lg.NamedBinder('l2s_init', tuple(vs), proof_label, t)
     l2s_when = lambda name, vs, t: lg.NamedBinder('l2s_when'+name, vs, proof_label, t)
@@ -467,6 +468,9 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         print ('---------------------------')
 
         
+    orig_invars = list(invars)
+    orig_postconds = list(postconds)
+
     # Desugar the invariants.
     #
     # $was. phi(V)  -->   l2s_saved & ($l2s_s V.phi(V))(V)
@@ -969,7 +973,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 #    assert len(named_binders['l2s_g']) == len(named_binders['_old_l2s_g'])
     named_binders['_old_l2s_g'] = [
          lg.NamedBinder('_old_l2s_g', b.variables, b.environ, b.body)
-         for b in named_binders['l2s_g']
+         for b in named_binders[ilu.globally_binder]
     ]
 
     subs = dict(
@@ -1008,7 +1012,7 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 
     goal = ipr.remove_unused_definitions_goal(goal)
 
-    goal.trace_hook = lambda tr,fcs: auto_hook(tasks,triggers,subs,tr,fcs)
+    goal.trace_hook = lambda tr,fcs: auto_hook(tasks,triggers,subs,orig_invars,orig_postconds,tr,fcs)
     # goal.trace_hook = lambda tr,fcs: renaming_hook(subs,tr,fcs)
 
     # Return the new goal stack
@@ -1022,22 +1026,206 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
 def renaming_hook(subs,tr,fcs):
     return tr.rename(dict((x,y) for (y,x) in subs.items()))
 
-def temporal_and_l2s(sym):
-    return (sym.name.startswith('l2s') and not sym.name.startswith('l2s_g')
-            or sym.name.startswith('_old_l2s'))
 
 def ls2_g_to_globally(ast):
     def g2g(ast):
-        if isinstance(ast,lg.NamedBinder) and ast.name == 'l2s_g':
+        if isinstance(ast,lg.NamedBinder) and ast.name == ilu.globally_binder:
             return lg.Globally(ast.environ,ast.body)
         return None
     res = ilu.expand_named_binders_ast(ast,g2g)
     return ilu.denormalize_temporal(res)
 
-def auto_hook(tasks,triggers,subs,tr,fcs):
+def auto_hook(tasks,triggers,subs,invars,postconds,tr,fcs):
     tr = renaming_hook(subs,tr,fcs)
-    tr.pp = ls2_g_to_globally
+    # tr.pp = ls2_g_to_globally
     # tr.hidden_symbols = temporal_and_l2s
+
+    def lookup(name):
+        for x in invars:
+            if x.name == name:
+                return ('invariant',x)
+        for x in postconds:
+            if x.name == name:
+                return ('postcondition',x)
+        return (None,None)
+
+    rsubs = dict((x,y) for (y,x) in subs.items())
+    # Figure out which property failed
+    failed_fc = None
+    for fc in fcs:
+        if fc.failed:
+            failed_fc = fc
+            break
+    if failed_fc is None or not hasattr(failed_fc,'lf'):
+        return tr # shouldn't happen
+
+    # Find the justice conditions
+
+    # justice_pred_map = dict()
+    # for fc in fcs:
+    #     lf = fc.lf
+    #     if lf.name.startswith('l2s_progress_invar'):
+    #         sfx = lf.name[len('l2s_progress_invar'):]
+    #         gfmla = rsubs[lf.formula.args[1].rep]
+    #         gargs = lf.formula.args[1].args
+    #         jfmla = gfmla.body.args[0]
+    #         jfmla = subs[jfmla.rep]
+    #         justice_pred_map[sfx] = jfmla
+
+    lf = failed_fc.lf
+    invar = lf.formula
+    name = lf.name
+    pkind,origlf = lookup(name)
+    if pkind:
+        act_note = f' executing action {failed_fc.action}' if hasattr(failed_fc,'action') else ''
+        print (f'\nThe {pkind} {name} has failed{act_note}:\n\n {origlf.formula}')
+    
+
+    # if name.startswith('l2s_created'):
+    #     sfx = name[len('l2s_created'):]
+    #     print ('\n\nFailed to prove that work_created{} is finite by induction.\n'.format(sfx))
+    #     work_created = tasks[sfx]['work_created']
+    #     vs = work_created.args[0].args
+    #     sks = [ilg.Symbol('_'+v.name,v.sort) for v in vs]
+    #     post_state = tr.states[-1]
+    #     vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+    #     if None not in vals:
+    #         pred = (work_created.args[0].rep)(*vals)
+    #         print ('Note: {} is true in the post-state of the action, but not in the pre-state,'.format(pred))
+    #         print ('and its argument(s) are not visited during the action execution.\n')
+    #     tr.hidden_symbols = temporal_and_l2s
+            
+    # elif name.startswith('l2s_needed_when_start'):
+    #     sfx = name[len('l2s_needed_when_start'):]
+
+    #     # TODO: handle the case where we have already started and needed increases
+
+    #     print ('\n\nFailed to prove that work_needed{} is a subset of work_created{} when the start condition has occurred.\n'.format(sfx,sfx))
+    #     work_needed = tasks[sfx]['work_needed']
+    #     work_created = tasks[sfx]['work_created']
+    #     vs = work_needed.args[0].args
+    #     sks = [ilg.Symbol('_'+v.name,v.sort) for v in vs]
+    #     post_state = tr.states[-1]
+    #     vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+    #     if None not in vals:
+    #         pred1 = (work_needed.args[0].rep)(*vals)
+    #         pred2 = (work_created.args[0].rep)(*vals)
+    #         print ('Note: the start condition occurs during the action and {} is true in the post-state of the action, but {} is not true.'.format(pred1,pred2))
+    #     tr.hidden_symbols = temporal_and_l2s
+
+    if name.startswith('l2s_needed_preserved'):
+        sfx = name[len('l2s_needed_preserved'):]
+
+        print ('\n\nFailed to prove that work_needed{} is preserved.\n'.format(sfx,sfx))
+        work_needed = tasks[sfx]['work_needed']
+        vs = work_needed.args[0].args
+        sks = [ilg.Symbol('_'+v.name,v.sort) for v in vs]
+        post_state = tr.states[-1]
+        vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+        if None not in vals:
+            pred = (work_needed.args[0].rep)(*vals)
+            print ('Note: work_invar{} is true and {} changes from false to true.\n'.format(sfx,pred))
+        # tr.hidden_symbols = temporal_and_l2s
+
+    # elif name.startswith('l2s_needed_are_frozen'):
+    #     sfx = name[len('l2s_needed_are_frozen'):]
+
+    #     print ('\n\nFailed to prove that work_needed{} is preserved.\n'.format(sfx,sfx))
+    #     work_needed = tasks[sfx]['work_needed']
+    #     vs = work_needed.args[0].args
+    #     sks = [ilg.Symbol('_'+v.name,v.sort) for v in vs]
+    #     post_state = tr.states[-1]
+    #     vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+    #     if None not in vals:
+    #         pred = (work_needed.args[0].rep)(*vals)
+    #         print ('Note: work_invar{} is true and {} changes from false to true.\n'.format(sfx,pred))
+    #     tr.hidden_symbols = temporal_and_l2s
+        
+    # elif name.startswith('l2s_progress_made'):
+    #     sfx = name[len('l2s_progress_made'):]
+
+    #     print ('\n\nFailed to prove that work_needed{} decreases when a helpful transition occurs\n'.format(sfx,sfx))
+    #     lhs = invar.args[0]
+    #     all_helpful_happened = lhs.args[4]
+    #     if (ilg.is_forall(all_helpful_happened)):
+    #         was_helpful_pred_nonce = all_helpful_happened.body.args[0].rep
+    #     else:
+    #         was_helpful_pred_nonce = all_helpful_happened.args[0].rep
+    #     work_helpful = tasks[sfx]['work_helpful']
+    #     helpful_map = dict()
+    #     for eqn in tr.states[0].clauses.fmlas:
+    #         if eqn.args[0].rep == was_helpful_pred_nonce:
+    #             helpful_map[tuple(eqn.args[0].args)] = eqn.args[1]
+    #             print ('{} = {}'.format(work_helpful.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+    #     if (ilg.is_forall(all_helpful_happened)):
+    #         trigger_happened_pred_nonce = all_helpful_happened.body.args[1].args[0].rep
+    #     else:
+    #         trigger_happened_pred_nonce = all_helpful_happened.args[1].args[0].rep
+    #     work_progress = tasks[sfx]['work_progress']
+    #     happened_maps = [dict(),dict()]
+    #     for idx in range(2):
+    #         print ('')
+    #         for eqn in tr.states[idx].clauses.fmlas:
+    #             if eqn.args[0].rep == trigger_happened_pred_nonce:
+    #                 happened_maps[idx][tuple(eqn.args[0].args)] = eqn.args[1]
+    #                 print ('~happened {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+    #     justice_map = dict()
+    #     if sfx in justice_pred_map:
+    #         print ('')
+    #         justice_pred = justice_pred_map[sfx]
+    #         for eqn in tr.states[0].clauses.fmlas:
+    #             if eqn.args[0].rep == justice_pred:
+    #                 justice_map[tuple(eqn.args[0].args)] = eqn.args[1]
+    #                 print ('~eventually {} = {}'.format(work_progress.args[0].rep(*eqn.args[0].args),eqn.args[1]))
+    #     for args in helpful_map:
+    #         if ilg.is_true(helpful_map[args]):
+    #             if all(args in happened_maps[idx] for idx in range(2)):
+    #                 if ilg.is_true(happened_maps[0][args]) and ilg.is_false(happened_maps[1][args]):
+    #                     print ('\nNote: {} is true and {} occurs during the action, but work_needed is not reduced.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
+    #                     break
+    #     for args in helpful_map:
+    #         if ilg.is_true(helpful_map[args]):
+    #             if args in justice_map:
+    #                 if ilg.is_true(happened_maps[0][args]) and ilg.is_true(justice_map[args]):
+    #                     print ('\nNote: {} is true and eventually {} is false.\n'.format(work_helpful.args[0].rep(*args),work_progress.args[0].rep(*args)))
+    #                     break
+    #     work_needed = tasks[sfx]['work_needed']
+    #     vs = work_needed.args[0].args
+    #     sks = [ilg.Symbol('_'+v.name,v.sort) for v in vs]
+    #     post_state = tr.states[-1]
+    #     vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+    #     if None not in vals:
+    #         pred = (work_needed.args[0].rep)(*vals)
+    #         print ('Note: work_invar{} is true and {} changes from false to true.\n'.format(sfx,pred))
+    #     # tr.hidden_symbols = temporal_and_l2s
+
+    # elif name.startswith('l2s_sched_stable'):
+    #     sfx = name[len('l2s_sched_stable'):]
+
+    #     print ('\n\nFailed to prove that work_helpful{} is stable until helpful transition occurs\n'.format(sfx))
+
+    #     work_progress = tasks[sfx]['work_progress']
+    #     vs = work_progress.args[0].args
+    #     work_helpful = tasks[sfx]['work_helpful']
+    #     sks = [ilg.Symbol('_'+v.name,v.sort) for v in vs]
+    #     post_state = tr.states[-1]
+    #     vals = [tr.eval_in_state(post_state,sk) for sk in sks]
+    #     if None not in vals:
+    #         pred = (work_helpful.args[0].rep)(*vals)
+    #         print ('Note: work_invar{} is true and {} changes from true to false, but {} does not occur during the action.\n'.format(sfx,pred,work_progress.args[0].rep(*vals)))
+    #     tr.hidden_symbols = temporal_and_l2s
+
+    # elif name.startswith('l2s_not_all_done'):
+    #     rank_names = ' and '.join('work_needed'+sfx for sfx in tasks if 'work_needed' in tasks[sfx])
+    #     print ('The ranking(s) {} have become empty, but termination has not occurred.'.format(rank_names))
+    #     tr.hidden_symbols = temporal_and_l2s
+        
+    # elif name.startswith('l2s_sched_exists'):
+    #     rank_names = ' and '.join('work_helpful'+sfx for sfx in tasks if 'work_helpful' in tasks[sfx])
+    #     print ('The helpful set(s)  {} have become empty, but termination has not occurred'.format(rank_names))
+    #     tr.hidden_symbols = temporal_and_l2s
+
+
     return tr
             
         

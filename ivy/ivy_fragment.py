@@ -262,7 +262,7 @@ def create_macro_maps(assumes,asserts,macros):
                                 if u in macro_var_map:
                                     macro_dep_map[w].add(macro_var_map[u])
                                 if u in macro_dep_map:
-                                    macro_dep_map[w].update(macro_var_map[u])
+                                    macro_dep_map[w].update(macro_dep_map[u])
     # print 'macro_var_map: {'
     # for x,y in macro_var_map.iteritems():
     #     print '{} -> {}'.format(x,y)

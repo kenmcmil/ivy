@@ -6,7 +6,6 @@ from .ivy_graph import *
 from string import *
 import copy
 import functools
-import pickle
 from .ivy_concept_space import clauses_to_concept
 from . import ivy_actions
 from . import ivy_graph_ui
@@ -76,9 +75,9 @@ class AnalysisGraphUI(object):
     # Save the current arg and maybe concept graph in a file
 
     def save(self):
-        f = self.ui_parent.saveas_dialog('Save analysis state as...',[('analysis files', '.a2g')])
+        f = self.ui_parent.saveas_dialog('Save analysis state as...',[('analysis files', '.a2g')],asbytes=True)
         if f:
-            pickle.dump(self.g,f, protocol=2)
+            self.g.pickle(f)
             f.close()
 
     # Save the current abstract domain in a file
