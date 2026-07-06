@@ -18,11 +18,45 @@ from . import ivy_utils as iu
 
 def p_c_a(s):
     a = s.split(':')
-    return iu.Location(a[0]+'.ivy',int(a[1]))
+    # Accept the file name with or without the '.ivy' extension. Source
+    # locations are stored with the extension, so add it if the user left it
+    # off (the extensionless form matches the behavior of 'include').
+    fn = a[0] if a[0].endswith('.ivy') else a[0]+'.ivy'
+    return iu.Location(fn,int(a[1]))
 
 checked_assert = iu.Parameter("assert","",check=lambda s: len(s.split(':'))==2,
                               process=p_c_a)
 check_unprovable = iu.BooleanParameter("unprovable",False)
+
+# The "check=" option restricts the checks (invariants, properties, program
+# assertions, ...) that are performed to those whose name matches. Its value is
+# a comma-separated list of glob-like patterns; a check is performed if any
+# pattern occurs in its name (a substring match). In a pattern, '.' matches a
+# literal dot (so it can be used to separate name components) and '?' matches
+# any single character. An empty value (the default) selects all checks. This
+# generalizes the older "assert=<file>:<lineno>" option, which selects a single
+# check by source location; the two filters are conjoined.
+
+checked_names = iu.Parameter("check","")
+
+def check_name_selected(name):
+    """True if a check named `name` is selected by the `check=` filter. An
+    empty filter selects everything. A check with no name (name is None) is
+    selected only when the filter is empty."""
+    import re
+    pats = checked_names.get()
+    if not pats:
+        return True
+    if name is None:
+        return False
+    # Each pattern is glob-like: everything is a literal (in particular '.'
+    # matches a dot, not any character) except '?', which matches one
+    # character. A pattern selects a name if it occurs anywhere in it.
+    for pat in pats.split(','):
+        regex = re.escape(pat).replace('\\?','.')
+        if re.search(regex,name):
+            return True
+    return False
 
 class Schema(AST):
     def __init__(self,defn):
@@ -408,18 +442,22 @@ class AssertAction(Action):
     def action_update(self,domain,pvars):
         fmla = self.args[0]
         unprovable = False
+        aname = None
         if isinstance(fmla,ivy_ast.LabeledFormula):
             unprovable = fmla.unprovable
+            aname = fmla.name
             fmla = fmla.formula
         type_check(domain,fmla)
         if check_unprovable.get() != unprovable:
             return ([],true_clauses(annot = EmptyAnnotation()),false_clauses(annot = EmptyAnnotation()))
+        # This assertion is checked only if it is selected by both the
+        # "assert=" (source location) and "check=" (name) filters. Otherwise it
+        # is treated as an assumption.
         ca = checked_assert.get()
-        if ca:
-            if ca != self.lineno:
-                if unprovable:
-                    return ([],true_clauses(annot = EmptyAnnotation()),false_clauses(annot = EmptyAnnotation()))
-                return ([],formula_to_clauses(fmla,annot = EmptyAnnotation()),false_clauses(annot = EmptyAnnotation()))
+        if (ca and ca != self.lineno) or not check_name_selected(aname):
+            if unprovable:
+                return ([],true_clauses(annot = EmptyAnnotation()),false_clauses(annot = EmptyAnnotation()))
+            return ([],formula_to_clauses(fmla,annot = EmptyAnnotation()),false_clauses(annot = EmptyAnnotation()))
     
         cl = formula_to_clauses(dual_formula(fmla))
 #        return ([],formula_to_clauses_tseitin(self.args[0]),cl)

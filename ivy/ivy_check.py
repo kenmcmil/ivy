@@ -245,6 +245,14 @@ def pretty_label(label):
 def pretty_lineno(ast):
     return str(ast.lineno) if hasattr(ast,'lineno') else '(internal) '
 
+def guarantee_name(sub):
+    """The name of a program assertion (guarantee), or None if it is
+    unlabeled. Used by the "check=" name filter."""
+    args = getattr(sub,'args',None)
+    if args and isinstance(args[0],ivy_ast.LabeledFormula):
+        return args[0].name
+    return None
+
 def pretty_lf(lf,indent=8):
     return indent*' ' + "{}{}".format(pretty_lineno(lf),pretty_label(lf.label))
     
@@ -437,6 +445,8 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None):
         lcs = [sub for sub in conjs if sub.lineno == check_lineno]
     else:
         lcs = conjs
+    # Restrict to conjectures selected by the "check=" name filter.
+    lcs = [c for c in lcs if act.check_name_selected(c.name if c.label is not None else None)]
     checkers = []
     for c in lcs:
         depnames = set(mod.invardeps.get(c.name,[])) if c.label is not None else set([])
@@ -531,6 +541,7 @@ def check_isolate(trace_hook = None):
                 props = [x for x in im.module.labeled_props if not x.temporal]
                 props = [p for p in props if not(p.id in subgoalmap and p.explicit)]
                 props = [p for p in props if is_check_mod_unprovable(p)]
+                props = [p for p in props if act.check_name_selected(p.name)]
                 fcs = ([(ConjAssumer if prop.assumed or prop.id in subgoalmap else ConjChecker)(prop) for prop in props])
                 check_fcs_in_state(mod,ag,pre,fcs)
             else:
@@ -590,6 +601,7 @@ def check_isolate(trace_hook = None):
             if check_lineno is not None:
                 guarantees = [sub for sub in guarantees if sub.lineno == check_lineno]
             guarantees = [x for x in guarantees if is_guarantee_mod_unprovable(x)]
+            guarantees = [x for x in guarantees if act.check_name_selected(guarantee_name(x))]
             if guarantees and not unprovable:
                 print("\n    Any assertions in initializers must be checked", end=' ')
                 if check:
@@ -649,6 +661,7 @@ def check_isolate(trace_hook = None):
             if check_lineno is not None:
                 guarantees = [sub for sub in guarantees if sub.lineno == check_lineno]
             guarantees = [x for x in guarantees if is_guarantee_mod_unprovable(x)]
+            guarantees = [x for x in guarantees if act.check_name_selected(guarantee_name(x))]
             if guarantees:
                 if not some_guarants:
                     print("\n    The following program assertions are treated as guarantees:")

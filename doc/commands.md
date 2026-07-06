@@ -141,6 +141,38 @@ If true, Z3 is used incrementally when checking invariants. Default is true.
 
 Sets the random seed for the SMT solver. 
 
+`check=pattern,...,pattern`
+
+Restricts the checks that are performed to those whose name matches one
+of the given patterns. A check's name is the name of the invariant,
+property or program assertion, including its enclosing object/isolate
+prefix (the name printed in the summary, for example `cpu.invar12` or
+`index.spec.transitivity`). A check is performed if any pattern occurs
+somewhere in its name (a substring match, so a pattern need not match the
+whole name). In a pattern, all characters are matched literally except:
+
+- `.` matches a literal dot, so it can be used to delimit name
+  components (for example `cpu.` matches the components of `cpu`, such as
+  `cpu.invar12`, but not `cpufoo`);
+- `?` matches any single character.
+
+Checks that are not selected are still *assumed* (they remain part of the
+inductive hypothesis); they are simply not verified. This is useful for
+focusing on a single failing invariant while debugging. Unnamed program
+assertions are never selected when this option is given. The default is
+empty, which selects all checks.
+
+For example, `check=cpu.` checks only the components of object `cpu`, and
+`check=invar12,invar15` checks only those two invariants.
+
+`assert=file:line`
+
+Restricts checking to the single invariant, property or program
+assertion at the given source line of the given file (the `.ivy`
+extension of the file name is optional). Like `check=`, unselected checks
+are still assumed. This option predates, and is subsumed by, `check=`;
+the two filters are conjoined if both are given.
+
 `ivy replay`
 ===========
 
