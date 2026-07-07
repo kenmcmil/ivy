@@ -1,0 +1,32 @@
+#lang ivy1.8
+
+# A whole-array assignment memb(A) := mema(A) in the clock-update logic. This
+# copies the entire array in one cycle, which has no single-port RAM
+# implementation (a write port writes one computed address per cycle). So
+# ivy_to_rtl must reject it with a clear "not a point write" error rather than
+# emit incorrect hardware. See the 'to_rtl' regression in ivy_tests.py.
+
+type addr
+interpret addr -> bv[4]
+type word
+interpret word -> bv[8]
+
+export action posedge
+
+isolate top = {
+
+    import wire read_addr_a : addr
+    import wire read_addr_b : addr
+    export wire out_a : word
+    export wire out_b : word
+
+    var mema(A:addr) : word
+    var memb(A:addr) : word
+
+    after posedge {
+        memb(A) := mema(A)
+    }
+
+    definition out_a = mema(read_addr_a)
+    definition out_b = memb(read_addr_b)
+}

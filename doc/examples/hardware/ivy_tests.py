@@ -44,4 +44,9 @@ tests = [
     # elsewhere, which cannot be dropped soundly, so translation must error.
     {'type': 'to_rtl', 'name': 'memtest2',
      'expect': 'cannot translate initialization of array', 'group': 'rtl'},
+
+    # arrcopy: a whole-array copy memb(A) := mema(A) in the update logic is not
+    # a single-address RAM write, so translation must error.
+    {'type': 'to_rtl', 'name': 'arrcopy',
+     'expect': 'not a point write', 'group': 'rtl'},
 ]
