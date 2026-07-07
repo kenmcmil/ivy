@@ -397,6 +397,24 @@ object cpu = {
         invariant (w_valid & w_opcode = 2) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
         invariant (w_valid & w_opcode = 3) -> w_val = concat(0:addr, trace.st(commit).target)
         invariant (w_valid & w_opcode = 4) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
+
+        # ---- ghost bookkeeping ------------------------------------------
+        # The reference tags and the trace step are ghost state. We update
+        # them here, in the specification, rather than in the datapath
+        # `after posedge` below, so that the datapath is free of ghost state
+        # and can be translated to RTL. This mirrors the datapath's stage
+        # movement, reading the pre-state of the real signals (validity bits
+        # via `old`; ex_stall / fetch_stall are frozen wires).
+
+        after posedge {
+            if old w_valid { commit := commit.next };
+            if old m_valid { mcommit := mcommit.next };
+            if ~ex_stall {
+                if old e_valid { ecommit := ecommit.next };
+                if old d_valid { dcommit := dcommit.next };
+                if ~fetch_stall { trace.step }
+            }
+        }
     }
 
     # ---- architectural state ----
@@ -500,17 +518,17 @@ object cpu = {
         if w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4) {
             rf(w_rd) := w_val
         };
-        if w_valid { commit := commit.next };
 
-        # MEM: the instruction in MEM does its memory access, then moves to WB.
-        if m_valid & (m_opcode = 5) {          # ST
-            mem(m_addr) := m_store
-        };
-        if m_valid { mcommit := mcommit.next };
+        # MEM: latch into WB (a LD reads the current memory), then do the store.
+        # A MEM instruction is a load or a store, not both, so reading before
+        # storing is equivalent -- and it keeps w_val a function of the current
+        # (pre-clock) memory, as required for RTL.
         w_ir := m_ir;
         w_valid := m_valid;
         w_val := (mem(m_addr) if m_opcode = 4 else m_res);   # LD loads; else ALU/LI result
-        # (commit tag for WB is the old mcommit's predecessor bookkeeping via ghosts)
+        if m_valid & (m_opcode = 5) {          # ST
+            mem(m_addr) := m_store
+        };
 
         # EX: if stalled, bubble MEM; else execute and move to MEM.
         if ex_stall {
@@ -522,24 +540,21 @@ object cpu = {
                      (e_a - e_b if e_opcode = 2 else
                      (concat(0:addr, e_target) if e_opcode = 3 else 0)));
             m_addr := bfe[0][7](e_a);
-            m_store := e_b;
-            if e_valid { ecommit := ecommit.next }
+            m_store := e_b
         };
 
         # ID -> EX (unless EX is stalled, in which case EX holds).
         if ~ex_stall {
-            if d_valid { dcommit := dcommit.next };   # the ID instruction passes to EX
             e_ir := d_ir;
             e_valid := d_valid;
 
-            # IF -> ID: fetch and issue a new instruction, unless a branch is
-            # pending (fetch_stall), in which case ID gets a bubble.
+            # IF -> ID: fetch a new instruction, unless a branch is pending
+            # (fetch_stall), in which case ID gets a bubble.
             if fetch_stall {
                 d_valid := false
             } else {
                 d_ir := fetched;
                 d_valid := true;
-                trace.step;              # record the issued instruction (arch runs ahead)
                 pc := pc + 1             # fall-through address
             };
 

@@ -70,12 +70,11 @@ export action posedge
 function init_mem(A:addr) : word     # initial data memory contents
 function init_imem(A:addr) : word    # initial instruction memory (the program)
 
-# The branch predictor. `predict(A)` is the predicted "taken" bit for a branch
-# fetched at address A. It is an arbitrary, uninterpreted function: correctness
-# must hold for *any* predictor (a good predictor only affects performance, not
-# correctness), so we never constrain it.
-
-function predict(A:addr) : bool
+# The branch predictor is an external module: the pipeline receives its
+# "predicted taken" output as an input (the `predicted_taken` wire below).
+# Correctness must hold for *any* prediction (a good predictor only affects
+# performance, not correctness), so the input is left unconstrained. Later we
+# will implement a predictor as a separate isolate driving this input.
 
 # This is the isa model. It is a specification-only isolate that
 # provides a single action `step`. It has a number of functions
@@ -469,6 +468,13 @@ object cpu = {
         }
     }
 
+    # ---- branch-predictor input ----
+    # The predicted "taken" bit for the instruction being fetched this cycle,
+    # driven by an external branch predictor. Left unconstrained: correctness
+    # holds for any prediction.
+
+    import wire predicted_taken : bool
+
     # ---- architectural state ----
 
     var pc : addr
@@ -555,7 +561,7 @@ object cpu = {
     definition f_is_branch = ((bfe[13][15](fetched):opc) = 6)
 
     wire f_ptaken : bool             # predicted-taken for the fetched instruction
-    definition f_ptaken = f_is_branch & predict(pc)
+    definition f_ptaken = f_is_branch & predicted_taken
 
     wire f_target : addr
     definition f_target = bfe[0][7](fetched)
@@ -585,13 +591,16 @@ object cpu = {
             rf(w_rd) := w_val
         };
 
-        # MEM: memory access, then move to WB.
-        if m_valid & (m_opcode = 5) {
-            mem(m_addr) := m_store
-        };
+        # MEM: latch into WB (a LD reads the current memory), then do the store.
+        # A MEM instruction is a load or a store, not both, so reading before
+        # storing is equivalent -- and it keeps w_val a function of the current
+        # (pre-clock) memory, as required for RTL.
         w_ir := m_ir;
         w_valid := m_valid;
         w_val := (mem(m_addr) if m_opcode = 4 else m_res);
+        if m_valid & (m_opcode = 5) {
+            mem(m_addr) := m_store
+        };
 
         # EX: if stalled, bubble MEM; else execute and move to MEM.
         if ex_stall {
