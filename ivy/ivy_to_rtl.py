@@ -20,6 +20,7 @@ from . import logic as lg
 from . import ivy_transrel as tr
 from . import ivy_compiler as ic
 from . import ivy_isolate as iso
+from . import ivy_logic_utils as ilu
 import sys
 import re
 
@@ -689,18 +690,73 @@ class Translator(object):
             meminit(self.eval_const(addr), 1, self.eval_const(data))
             prio += 1
 
+    def inline_array_def(self, sym, actual):
+        """If `sym` is a defined (derived) function of one argument, return its
+        body with the formal parameter substituted by `actual`; else None."""
+        for ldf in self.mod.definitions:
+            lhs = ldf.formula.args[0]
+            if (lhs.rep == sym and len(lhs.args) == 1
+                    and il.is_variable(lhs.args[0])):
+                return ilu.substitute_ast(ldf.formula.args[1],
+                                          {lhs.args[0].rep: actual})
+        return None
+
+    def occurs_elsewhere(self, sym):
+        """True if `sym` is referenced by the translated (non-init) logic: any
+        wire definition RHS, or any clock update. Uses in `init` actions do not
+        count -- those are exactly what we are deciding whether to drop."""
+        name = sym.name
+        # symbols_ast yields applied function heads (ast.rep) as well as leaf
+        # constants, so a memory-valued symbol used as f(x) is detected.
+        for rhs in self.wire_defs.values():
+            if any(s.name == name for s in ilu.symbols_ast(rhs)):
+                return True
+        for obj in self.objects:
+            for clk in self.clocks:
+                upd = self.get_update(obj, clk)
+                if upd is None:
+                    continue
+                for d in upd[1].defs:
+                    if any(s.name == name for s in ilu.symbols_ast(d.args[1])):
+                        return True
+                for f in upd[1].fmlas:
+                    if any(s.name == name for s in ilu.symbols_ast(f)):
+                        return True
+        return False
+
     def collect_init(self, expr, arr, var, defidx, out):
         """Like collect_writes but for the unconditional 'init' action, chasing
         the transition relation's mid-state array copies. Returns a constant
         broadcast-fill term (or None), appending (addr, data) point writes."""
         if (il.is_app(expr) and not il.is_constant(expr) and len(expr.args) == 1
                 and expr.args[0] == var and is_array_sort(expr.rep.sort)):
-            # a read of arr or one of the transition relation's mid-state
-            # copies of it. Mid-states are defined in defidx (chase them); the
-            # original memory is not (it is the uninitialized base).
-            if expr.rep.name in defidx:
-                return self.collect_init(defidx[expr.rep.name].args[1],
+            sym = expr.rep
+            # A read of arr, a transition-relation mid-state copy of it, or
+            # another array-valued symbol used as the initializer.
+            if sym.name in defidx:
+                # a mid-state copy: chase its definition
+                return self.collect_init(defidx[sym.name].args[1],
                                          arr, var, defidx, out)
+            if sym.name == arr.name:
+                # the uninitialized base memory itself
+                return None
+            body = self.inline_array_def(sym, var)
+            if body is not None:
+                # the initializer is a *defined* function: inline it
+                return self.collect_init(body, arr, var, defidx, out)
+            # The initializer is an undefined symbol. Dropping it (leaving the
+            # memory uninitialized) is sound only if the symbol occurs nowhere
+            # else -- then "mem = arbitrary" is observationally the same as
+            # "mem = the arbitrary symbol". Otherwise the initialization
+            # constrains the memory relative to something observable, and
+            # silently dropping it would be unsound, so we refuse.
+            inputs = set(s.name for s in self.mod.input_wires)
+            if sym.name not in inputs and self.occurs_elsewhere(sym):
+                raise iu.IvyError(None,
+                    "cannot translate initialization of array '{}' from '{}': "
+                    "'{}' is undefined (not an input) and is referenced "
+                    "elsewhere in the design, so the initialization cannot be "
+                    "dropped soundly".format(arr.name, sym.name, sym.name))
             return None
         if il.is_ite(expr):
             cond, then, els = expr.args
