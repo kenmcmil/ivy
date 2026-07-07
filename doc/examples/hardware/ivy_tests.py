@@ -8,6 +8,7 @@ tests = [
     # The pipelined-CPU reference-tagging proofs.
     {'type': 'check', 'name': 'pipe_cpu_ref', 'expect': 'OK', 'timeout': 300},
     {'type': 'check', 'name': '5stage_cpu_ref', 'expect': 'OK', 'timeout': 300},
+    {'type': 'check', 'name': '5stage_bp_cpu_ref', 'expect': 'OK', 'timeout': 300},
 
     # A wire's post-state value must appear in a counterexample trace: the
     # invariant w ~= 5 fails when x reaches 4 (w = x+1 = 5), and the trace must
