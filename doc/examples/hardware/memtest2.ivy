@@ -1,0 +1,36 @@
+#lang ivy1.8
+
+# Probe: mem is initialized from an *uninterpreted* function init_mem (not
+# defined, not a wire), and init_mem is itself exposed as an output. The
+# design outputs both mem(read_addr) and init_mem(read_addr); they are equal
+# because mem is initialized to init_mem and never written. What does
+# ivy_to_rtl do with the initialization of mem from init_mem here?
+
+type addr
+interpret addr -> bv[4]
+type word
+interpret word -> bv[8]
+
+export action posedge
+
+isolate top = {
+
+    import wire read_addr : addr
+    export wire out_val : word
+    export wire out_val_alt : word
+
+    # An uninterpreted function: arbitrary but fixed initial memory contents.
+    function init_mem(A:addr) : word
+
+    var mem(A:addr) : word
+
+    after init {
+        mem(A) := init_mem(A)
+    }
+
+    definition out_val = mem(read_addr)
+    definition out_val_alt = init_mem(read_addr)
+
+    invariant mem(A) = init_mem(A)      # auxiliary invariant
+    invariant out_val = out_val_alt
+}

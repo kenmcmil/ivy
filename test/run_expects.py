@@ -9,12 +9,17 @@
 # dict `defaults` whose entries are applied to every test in that file unless
 # the test overrides them. Each test dictionary has:
 #
-#     type     one of: check, test, repl, to_cpp, ivyc_test, ivyc_repl, ivyc
+#     type     one of: check, test, repl, to_cpp, ivyc_test, ivyc_repl, ivyc,
+#              to_rtl
 #     name     the base name of the .ivy file (no extension)
 #     args     (optional) list of command-line options passed to the tool
 #     expect   the pattern (regex) expected in the output; for the repl
 #              types it is instead the name of the expect module, or omitted
 #              (None) to use "<name>_expect"
+#     validate (to_rtl only, optional) a shell command run after a successful
+#              translation; the test passes iff it exits 0. The token {name}
+#              is replaced by the test's base name (so it can refer to
+#              <name>.il).
 #     timeout  (optional) seconds allowed for the test (default 100)
 #     group    (optional) a label for selecting the test (default 'normal').
 #              For example, 'long' for a slow test or 'unreliable' for one
@@ -157,6 +162,52 @@ class Ivyc(Test):
         return 'ivyc {} {}.ivy'.format(' '.join(self.opts), self.name)
 
 
+# --- ivy_to_rtl tests: translate a hardware design to RTLIL and validate it.
+#
+# A 'to_rtl' test runs `ivy_to_rtl <args> <name>.ivy`. If `expect` is given, it
+# is matched against the tool's output (used for tests that expect a specific
+# error, e.g. an unsound initialization). If `validate` is given, it is an
+# arbitrary shell command run after a successful translation; the test passes
+# iff that command exits 0. In `validate`, the token {name} is replaced by the
+# test's base name, so a validation can refer to <name>.il (e.g. read it with
+# yosys). ---
+
+class IvyToRtl(Test):
+    def __init__(self, dir, spec):
+        Test.__init__(self, dir, spec)
+        self.validate = spec.get('validate')
+
+    def run_expect(self):
+        cmd = 'ivy_to_rtl {} {}.ivy'.format(' '.join(self.opts), self.name)
+        print(cmd)
+        child = spawn(cmd, timeout=self.timeout)
+        child.logfile = sys.stdout
+        try:
+            if self.res is not None:
+                child.expect(self.res)      # e.g. an expected error message
+            child.expect(pexpect.EOF)
+        except (pexpect.EOF, pexpect.TIMEOUT):
+            print(child.before)
+            return False
+        child.close()
+        if self.validate is None:
+            # pass if the expected output matched, or (no `expect` given) the
+            # translation exited cleanly
+            return self.res is not None or child.exitstatus == 0
+        # a validation command was given: the translation must have succeeded,
+        # and then the validation command must exit 0
+        if child.exitstatus != 0:
+            print('translation failed (exit status {})'.format(child.exitstatus))
+            return False
+        vcmd = self.validate.replace('{name}', self.name)
+        print('validating: {}'.format(vcmd))
+        vchild = spawn('/bin/bash', ['-c', vcmd], timeout=self.timeout)
+        vchild.logfile = sys.stdout
+        vchild.expect(pexpect.EOF)
+        vchild.close()
+        return vchild.exitstatus == 0
+
+
 TEST_TYPES = {
     'check': IvyCheck,
     'test': IvyTest,
@@ -165,6 +216,7 @@ TEST_TYPES = {
     'ivyc_test': IvycTest,
     'ivyc_repl': IvycRepl,
     'ivyc': Ivyc,
+    'to_rtl': IvyToRtl,
 }
 
 

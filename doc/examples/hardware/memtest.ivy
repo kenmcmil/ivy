@@ -1,0 +1,35 @@
+#lang ivy1.8
+
+# Probe: does ivy_to_rtl preserve a memory initialized from a *defined*
+# function? mem is initialized so every location holds 5; the design reads
+# mem at an input address and outputs it. If ivy_to_rtl drops the
+# `mem := init_mem` init (as it does for an uninterpreted init_imem), the RTL
+# would have arbitrary mem and out_val = 5 would NOT hold -- an unsoundness.
+
+type addr
+interpret addr -> bv[4]
+type word
+interpret word -> bv[8]
+
+export action posedge
+
+isolate top = {
+
+    import wire read_addr : addr
+    export wire out_val : word
+
+    var mem(A:addr) : word
+
+    # A defined function: every address maps to 5.
+    function init_mem(A:addr) : word
+    definition init_mem(A) = 5
+
+    after init {
+        mem(A) := init_mem(A)
+    }
+
+    definition out_val = mem(read_addr)
+
+    invariant mem(A) = 5           # auxiliary invariant (memory holds 5 everywhere)
+    invariant out_val = 5
+}
