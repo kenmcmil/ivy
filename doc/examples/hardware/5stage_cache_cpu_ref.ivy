@@ -141,12 +141,8 @@ module isa_model(init_mem) = {
 
     after step {
 
-        # M1/M2 scaffold: for now the ISA never executes a FLUSH. The
-        # implementation does not yet make writes visible to fetch (no FLUSH
-        # datapath), so a flushed-then-refetched address would diverge without
-        # driving the ISA to `error`. This assumption is removed in M3, once the
-        # FLUSH datapath (cache eviction / write-back + IF stall) is in place.
-        assume opcode ~= 7;
+        # (The M1/M2 no-FLUSH scaffold `assume opcode ~= 7` is removed here in M3,
+        # now that the FLUSH datapath below makes writes visible to fetch.)
 
         # Fetch coherence: executing an instruction at an address written since
         # its last flush reads a stale instruction. The ISA records this by
@@ -334,13 +330,12 @@ isolate trace = {
         invariant (tag.succ(T,U) & U <= now) ->
                       st(U).error = (st(T).error | st(T).ddirty(st(T).pc))
 
-        # ddirty(A): set by a ST to A, else unchanged. (In M1/M2 the FLUSH that
-        # would clear it is assumed away, so this mirrors the mem step relation
-        # exactly; the FLUSH-clearing clause is added in M3.)
+        # ddirty(A): set by a ST to A, cleared by a FLUSH of A, else unchanged.
         invariant (tag.succ(T,U) & U <= now) ->
                       st(U).ddirty(A) =
-                          (true if (st(T).opcode = 5 & A = st(T).mem_addr)
-                           else st(T).ddirty(A))
+                          (true  if (st(T).opcode = 5 & A = st(T).mem_addr) else
+                          (false if (st(T).opcode = 7 & A = st(T).mem_addr) else
+                           st(T).ddirty(A)))
         invariant (tag.succ(T,U) & U <= now) ->
                       st(U).mem(A) = (st(T).b_val if (st(T).opcode = 5 & A = st(T).mem_addr)
                                       else st(T).mem(A))
@@ -496,9 +491,17 @@ object cpu = {
         # at m_index = bfe[0][3](m_addr)). Without this the solver can place an
         # address at the wrong line and write a stale victim back to it.
         invariant dcf(I) -> bfe[0][3](dct(I)) = I
+        invariant icf(I) -> bfe[0][3](ict(I)) = I
         invariant ~trace.st(trace.now).error -> (dc_dirty(A) -> trace.st(mcommit).ddirty(A))
         invariant ~trace.st(trace.now).error -> (dc_present(A) -> dc_val(A) = trace.st(mcommit).mem(A))
         invariant ~trace.st(trace.now).error -> (~dc_dirty(A) -> mem(A) = trace.st(mcommit).mem(A))
+
+        # (3) an I-cache line whose address is not dirty at the MEM stage holds
+        # the reference's MEM-stage value. (A dirty address may have a stale
+        # I-cache line; that only matters once it is fetched, which drives the
+        # reference to error.)
+        invariant ~trace.st(trace.now).error ->
+                      ((ic_present(A) & ~trace.st(mcommit).ddirty(A)) -> ic_val(A) = trace.st(mcommit).mem(A))
 
         # ---- the PC is the (correct) fetch address unless mispredicting ---
 
@@ -550,12 +553,18 @@ object cpu = {
                 } else {
                     if old d_valid & ~d_shadow { dcommit := dcommit.next };
                     e_shadow := d_shadow;
-                    d_shadow := spec_wrong;
-                    if ~spec_wrong {
-                        if f_ptaken ~= trace.st(trace.now).take_branch {
-                            spec_wrong := true
-                        };
-                        trace.step
+                    if flush_in_pipe {
+                        # IF stalled: a bubble enters ID, no instruction is issued
+                        # to the trace, and `now` does not advance.
+                        d_shadow := false
+                    } else {
+                        d_shadow := spec_wrong;
+                        if ~spec_wrong {
+                            if f_ptaken ~= trace.st(trace.now).take_branch {
+                                spec_wrong := true
+                            };
+                            trace.step
+                        }
                     }
                 }
             }
@@ -594,6 +603,16 @@ object cpu = {
                                   #   hi_addr nibble avoids a concat and is the same
                                   #   direct-mapped cache)
     var dcw(I:nib) : word         # data word
+
+    # ---- I-cache (direct-mapped, read-only, 16 lines x 1 word) ----
+    # Instruction fetch reads this cache; it is filled from main memory on a miss
+    # and never written by the CPU (so no dirty bit). FLUSH invalidates a line
+    # (M3b). Being filled from possibly-stale main memory, it can hold a stale
+    # instruction; the ISA's ddirty/error accounts for that.
+
+    var icf(I:nib) : bool         # full (valid)
+    var ict(I:nib) : addr         # tag: the full address cached in this line
+    var icw(I:nib) : word         # cached instruction word
 
     # ---- pipeline latches ----
 
@@ -665,10 +684,28 @@ object cpu = {
     wire mispredict : bool
     definition mispredict = e_valid & ~ex_stall & (e_opcode = 6) & (e_pred ~= e_take)
 
-    # ---- fetch and prediction ----
+    # ---- fetch stall on a pending FLUSH ----
+    # While a FLUSH is in ID/EX/MEM, instruction fetch stalls so that no
+    # instruction behind the FLUSH is fetched until the FLUSH has (in MEM) made
+    # prior writes to its address visible (write-back + cache invalidation).
 
+    wire flush_in_pipe : bool
+    definition flush_in_pipe = (d_valid & d_opcode = 7)
+                             | (e_valid & e_opcode = 7)
+                             | (m_valid & m_opcode = 7)
+
+    # ---- fetch and prediction ----
+    # Instruction fetch goes through the I-cache: a hit returns the cached word,
+    # a miss returns (and, in the datapath below, installs) the main-memory word.
+    # Because main memory can be stale w.r.t. a not-yet-flushed store, a fetched
+    # instruction can be stale -- accounted for by the ISA's ddirty/error.
+
+    wire f_index : nib
+    definition f_index = bfe[0][3](pc)
+    wire f_ihit : bool
+    definition f_ihit = icf(f_index) & (ict(f_index) = pc)
     wire fetched : word
-    definition fetched = mem(pc)
+    definition fetched = (icw(f_index) if f_ihit else mem(pc))
 
     wire f_is_branch : bool
     definition f_is_branch = ((bfe[13][15](fetched):opc) = 6)
@@ -696,6 +733,8 @@ object cpu = {
     definition m_line_data = dcw(m_index)
     wire m_hit : bool
     definition m_hit = m_line_full & (m_line_addr = m_addr)
+    wire m_ihit : bool                 # I-cache holds the (flush) address m_addr
+    definition m_ihit = icf(m_index) & (ict(m_index) = m_addr)
     wire m_victim_addr : addr          # address to write the victim back to
     definition m_victim_addr = m_line_addr
     wire m_fill_data : word            # main-memory word for m_addr (pre-clock)
@@ -710,6 +749,11 @@ object cpu = {
     function dc_val(A:addr) : word
     definition dc_val(A) = dcw(bfe[0][3](A))
 
+    function ic_present(A:addr) : bool
+    definition ic_present(A) = icf(bfe[0][3](A)) & (ict(bfe[0][3](A)) = A)
+    function ic_val(A:addr) : word
+    definition ic_val(A) = icw(bfe[0][3](A))
+
     # ---- reset ----
 
     after init {
@@ -720,7 +764,8 @@ object cpu = {
         w_valid := false;
         rf(R) := 0;
         mem(A) := init_mem(A);
-        dcf(I) := false;        # all lines empty
+        dcf(I) := false;        # all D-cache lines empty
+        icf(I) := false;        # all I-cache lines empty
     }
 
     # ---- clock edge ----
@@ -762,6 +807,16 @@ object cpu = {
                 dcw(m_index) := m_fill_data
             }
         };
+        # FLUSH m_addr: write the D-cache line back if it is present and dirty,
+        # then evict m_addr from both caches, so a later fetch of m_addr misses
+        # and refills from the (now up-to-date) main memory.
+        if m_valid & (m_opcode = 7) {
+            if m_hit & m_line_dirty {
+                mem(m_addr) := m_line_data
+            };
+            if m_hit  { dcf(m_index) := false };
+            if m_ihit { icf(m_index) := false }
+        };
 
         # EX: if stalled, bubble MEM; else execute and move to MEM.
         if ex_stall {
@@ -790,12 +845,24 @@ object cpu = {
                 e_pred := d_pred;
                 e_pc := d_pc;
 
-                # IF -> ID: speculative fetch.
-                d_ir := fetched;
-                d_valid := true;
-                d_pred := f_ptaken;
-                d_pc := pc;
-                pc := pred_next_pc
+                if flush_in_pipe {
+                    # IF stalled behind a pending FLUSH: insert a bubble into ID
+                    # and hold the PC (no fetch this cycle).
+                    d_valid := false
+                } else {
+                    # IF -> ID: speculative fetch. On an I-cache miss, install the
+                    # fetched line (filled from main memory, bypassed above).
+                    d_ir := fetched;
+                    d_valid := true;
+                    d_pred := f_ptaken;
+                    d_pc := pc;
+                    if ~f_ihit {
+                        icf(f_index) := true;
+                        ict(f_index) := pc;
+                        icw(f_index) := fetched
+                    };
+                    pc := pred_next_pc
+                }
             }
         }
     }
