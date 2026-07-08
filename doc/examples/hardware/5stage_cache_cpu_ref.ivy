@@ -543,6 +543,12 @@ object cpu = {
 
         after posedge {
             if old w_valid { commit := commit.next };
+            if dmem_stall {
+                # MEM stalls for a D-fill: WB drains (commit advanced above) and
+                # bubbles; MEM and everything behind hold, so no other tag moves
+                # and no instruction is issued to the trace.
+                w_shadow := false
+            } else {
             if old m_valid { mcommit := mcommit.next };
             w_shadow := m_shadow;
             if ~ex_stall {
@@ -553,9 +559,10 @@ object cpu = {
                 } else {
                     if old d_valid & ~d_shadow { dcommit := dcommit.next };
                     e_shadow := d_shadow;
-                    if flush_in_pipe {
-                        # IF stalled: a bubble enters ID, no instruction is issued
-                        # to the trace, and `now` does not advance.
+                    if flush_in_pipe | ifetch_stall {
+                        # IF stalled (pending FLUSH or awaiting an I-cache fill):
+                        # a bubble enters ID, no instruction is issued to the
+                        # trace, and `now` does not advance.
                         d_shadow := false
                     } else {
                         d_shadow := spec_wrong;
@@ -567,6 +574,7 @@ object cpu = {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -613,6 +621,18 @@ object cpu = {
     var icf(I:nib) : bool         # full (valid)
     var ict(I:nib) : addr         # tag: the full address cached in this line
     var icw(I:nib) : word         # cached instruction word
+
+    # ---- main-memory read-fill controller (multi-cycle) ----
+    # Read fills take two cycles: an initiating cycle (memory free) and a busy
+    # cycle in which the read completes and the value is available (bypassed).
+    # Write-backs are modelled as instant, so only read fills use this port.
+    # A D-fill (from MEM) freezes IF, so at most one fill is ever in progress
+    # and the D-over-I arbitration is automatic. mbusy marks the busy cycle;
+    # mfa is the fill address; mfi says whether it is an I-fill (else a D-fill).
+
+    var mbusy : bool
+    var mfa : addr
+    var mfi : bool
 
     # ---- pipeline latches ----
 
@@ -719,6 +739,17 @@ object cpu = {
     wire pred_next_pc : addr         # the predicted next fetch address
     definition pred_next_pc = (f_target if f_ptaken else pc + 1)
 
+    # ---- instruction-fetch fill stall ----
+    # IF actually attempts a fetch when it is not held for another reason:
+    wire fetch_active : bool
+    definition fetch_active = ~ex_stall & ~mispredict & ~flush_in_pipe
+    # An I-fill for the current PC completes this cycle (busy cycle of the fill):
+    wire i_fill_go : bool
+    definition i_fill_go = mbusy & mfi & (mfa = pc)
+    # Fetch cannot complete this cycle: I-cache miss and no fill result ready.
+    wire ifetch_stall : bool
+    definition ifetch_stall = ~f_ihit & ~i_fill_go
+
     # ---- MEM-stage D-cache access (for the address m_addr) ----
 
     wire m_index : nib
@@ -739,6 +770,17 @@ object cpu = {
     definition m_victim_addr = m_line_addr
     wire m_fill_data : word            # main-memory word for m_addr (pre-clock)
     definition m_fill_data = mem(m_addr)
+
+    # ---- D-cache read-fill stall ----
+    # Only a load miss needs a memory read (a store miss installs a dirty line
+    # with no fetch; write-backs are instant). A load miss stalls MEM (and the
+    # stages behind it) until the fill's busy cycle, when the value is bypassed.
+    wire d_miss : bool
+    definition d_miss = m_valid & (m_opcode = 4) & ~m_hit
+    wire d_fill_go : bool              # D-fill for m_addr completes this cycle
+    definition d_fill_go = mbusy & ~mfi & (mfa = m_addr)
+    wire dmem_stall : bool
+    definition dmem_stall = d_miss & ~d_fill_go
 
     # ---- D-cache query helpers (used by the invariants, for any address A) ----
 
@@ -766,6 +808,7 @@ object cpu = {
         mem(A) := init_mem(A);
         dcf(I) := false;        # all D-cache lines empty
         icf(I) := false;        # all I-cache lines empty
+        mbusy := false;         # no memory fill in progress
     }
 
     # ---- clock edge ----
@@ -777,17 +820,17 @@ object cpu = {
             rf(w_rd) := w_val
         };
 
-        # MEM: access the write-back D-cache. A LD/ST hits if the indexed line
-        # is valid and its tag matches; on a miss we fill from main memory,
-        # first writing the dirty victim back. Main memory is single-cycle here
-        # (M2), so the fill word m_fill_data is a combinational (pre-clock) read
-        # bypassed to the load result. All reads are via wires (pre-clock), so
-        # the only main-memory write below is the write-back.
+        # MEM: access the write-back D-cache. A LD/ST hits if the indexed line is
+        # valid and its tag matches. A load miss is served by a two-cycle memory
+        # read: while it is outstanding (dmem_stall) MEM and the stages behind it
+        # hold and a bubble goes to WB; in the fill's busy cycle the value arrives
+        # (bypassed as m_fill_data) and the completion below runs. Store misses and
+        # write-backs are instant. All reads are via wires (pre-clock).
         w_ir := m_ir;
-        w_valid := m_valid;
+        w_valid := m_valid & ~dmem_stall;
         w_val := (m_res if m_opcode ~= 4 else
                  (m_line_data if m_hit else m_fill_data));
-        if m_valid & (m_opcode = 4 | m_opcode = 5) {
+        if ~dmem_stall & m_valid & (m_opcode = 4 | m_opcode = 5) {
             # On a miss, write the dirty victim back before reinstalling.
             if ~m_hit & m_line_full & m_line_dirty {
                 mem(m_victim_addr) := m_line_data
@@ -810,7 +853,7 @@ object cpu = {
         # FLUSH m_addr: write the D-cache line back if it is present and dirty,
         # then evict m_addr from both caches, so a later fetch of m_addr misses
         # and refills from the (now up-to-date) main memory.
-        if m_valid & (m_opcode = 7) {
+        if ~dmem_stall & m_valid & (m_opcode = 7) {
             if m_hit & m_line_dirty {
                 mem(m_addr) := m_line_data
             };
@@ -818,8 +861,10 @@ object cpu = {
             if m_ihit { icf(m_index) := false }
         };
 
-        # EX: if stalled, bubble MEM; else execute and move to MEM.
-        if ex_stall {
+        # EX: held while MEM stalls for a D-fill; bubbled on a data hazard;
+        # otherwise executes and moves to MEM.
+        if dmem_stall {
+        } else if ex_stall {
             m_valid := false
         } else {
             m_ir := e_ir;
@@ -831,8 +876,8 @@ object cpu = {
             m_store := e_b
         };
 
-        # ID -> EX and IF -> ID, unless EX is stalled (then everything holds).
-        if ~ex_stall {
+        # ID -> EX and IF -> ID, unless EX or MEM is stalled (then all hold).
+        if ~dmem_stall & ~ex_stall {
             if mispredict {
                 # Squash the younger, wrong-path instructions and redirect.
                 e_valid := false;                              # squash the ID instruction
@@ -845,13 +890,14 @@ object cpu = {
                 e_pred := d_pred;
                 e_pc := d_pc;
 
-                if flush_in_pipe {
-                    # IF stalled behind a pending FLUSH: insert a bubble into ID
-                    # and hold the PC (no fetch this cycle).
+                if flush_in_pipe | ifetch_stall {
+                    # IF stalled behind a pending FLUSH, or waiting for an I-cache
+                    # fill: insert a bubble into ID and hold the PC.
                     d_valid := false
                 } else {
-                    # IF -> ID: speculative fetch. On an I-cache miss, install the
-                    # fetched line (filled from main memory, bypassed above).
+                    # IF -> ID: speculative fetch. On an I-cache miss (only reached
+                    # in the fill's busy cycle, i_fill_go), install the fetched line
+                    # (bypassed fill word from main memory).
                     d_ir := fetched;
                     d_valid := true;
                     d_pred := f_ptaken;
@@ -864,6 +910,25 @@ object cpu = {
                     pc := pred_next_pc
                 }
             }
+        };
+
+        # ---- main-memory read-fill controller ----
+        # Two-cycle read fill: when the fetch (or, in M4b, a load) misses and the
+        # memory is free, initiate a fill (go busy); in the busy cycle the read
+        # completes (value bypassed above) and the fill ends. An in-flight fill
+        # is held (mfa/mfi unchanged) until it completes.
+        if mbusy {
+            mbusy := false
+        } else if d_miss {
+            # D-fill has priority over I-fill (it is an older instruction, and a
+            # D-fill freezes IF anyway, so the two never actually contend).
+            mbusy := true;
+            mfi := false;
+            mfa := m_addr
+        } else if fetch_active & ifetch_stall {
+            mbusy := true;
+            mfi := true;
+            mfa := pc
         }
     }
 }
