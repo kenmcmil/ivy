@@ -63,6 +63,11 @@ interpret reg -> bv[3]
 type opc
 interpret opc -> bv[3]
 
+# Cache index / hi_addr field type (4 bits): a line is at index bfe[0][3](A)
+# and stores hi_addr = bfe[4][7](A).
+type nib
+interpret nib -> bv[4]
+
 # The clock: one exported action driven by the environment.
 
 export action posedge
@@ -477,7 +482,23 @@ object cpu = {
         # ---- committed architectural state matches the trace -------------
 
         invariant ~trace.st(trace.now).error -> rf(R) = trace.st(commit).rf(R)
-        invariant ~trace.st(trace.now).error -> mem(A) = trace.st(mcommit).mem(A)
+
+        # ---- write-back D-cache coherence (relative to the trace at MEM) ----
+        # The effective memory (D-cache line where present-and-dirty, else main
+        # memory) equals the reference memory at the MEM stage, st(mcommit).mem:
+        #   (1) a dirty cache line's address is dirty in the reference;
+        #   (2) a present cache line holds the reference's MEM-stage value;
+        #   (4) a not-dirty address holds the reference value in main memory.
+        # ((3), the I-cache, arrives in M3.)
+        #
+        # Direct-mapped structural invariant: a valid line at index I caches an
+        # address whose index is I (maintained by every install, since we install
+        # at m_index = bfe[0][3](m_addr)). Without this the solver can place an
+        # address at the wrong line and write a stale victim back to it.
+        invariant dcf(I) -> bfe[0][3](dct(I)) = I
+        invariant ~trace.st(trace.now).error -> (dc_dirty(A) -> trace.st(mcommit).ddirty(A))
+        invariant ~trace.st(trace.now).error -> (dc_present(A) -> dc_val(A) = trace.st(mcommit).mem(A))
+        invariant ~trace.st(trace.now).error -> (~dc_dirty(A) -> mem(A) = trace.st(mcommit).mem(A))
 
         # ---- the PC is the (correct) fetch address unless mispredicting ---
 
@@ -552,7 +573,27 @@ object cpu = {
 
     var pc : addr
     var rf(R:reg) : word
-    var mem(A:addr) : word         # unified memory (instructions and data)
+    var mem(A:addr) : word         # unified main memory (instructions and data)
+
+    # ---- D-cache (direct-mapped, write-back, 16 lines x 1 word) ----
+    # The specified line format is a 22-bit vector
+    #     [21] full  [20] dirty  [19:16] hi_addr  [15:0] data
+    # We store the fields as parallel arrays sharing the index bfe[0][3](A); this
+    # is the same direct-mapped cache (in RTL, parallel narrow memories with a
+    # shared index) but avoids bit-packing plumbing. hi_addr = bfe[4][7](A).
+    # Data accesses (LD/ST) go through this cache; instruction fetch in M2 still
+    # reads main memory directly (the I-cache arrives in M3), so a store that is
+    # only in the D-cache leaves a stale instruction in main memory -- which is
+    # exactly the incoherence the ISA's ddirty/error mechanism accounts for.
+
+    var dcf(I:nib) : bool         # full (valid)
+    var dcd(I:nib) : bool         # dirty
+    var dct(I:nib) : addr         # tag: the full address cached in this line
+                                  #   (its low nibble is always the line index I;
+                                  #   storing the full address rather than just the
+                                  #   hi_addr nibble avoids a concat and is the same
+                                  #   direct-mapped cache)
+    var dcw(I:nib) : word         # data word
 
     # ---- pipeline latches ----
 
@@ -641,6 +682,34 @@ object cpu = {
     wire pred_next_pc : addr         # the predicted next fetch address
     definition pred_next_pc = (f_target if f_ptaken else pc + 1)
 
+    # ---- MEM-stage D-cache access (for the address m_addr) ----
+
+    wire m_index : nib
+    definition m_index = bfe[0][3](m_addr)
+    wire m_line_full : bool
+    definition m_line_full = dcf(m_index)
+    wire m_line_dirty : bool
+    definition m_line_dirty = dcd(m_index)
+    wire m_line_addr : addr            # full address currently cached in this line
+    definition m_line_addr = dct(m_index)
+    wire m_line_data : word
+    definition m_line_data = dcw(m_index)
+    wire m_hit : bool
+    definition m_hit = m_line_full & (m_line_addr = m_addr)
+    wire m_victim_addr : addr          # address to write the victim back to
+    definition m_victim_addr = m_line_addr
+    wire m_fill_data : word            # main-memory word for m_addr (pre-clock)
+    definition m_fill_data = mem(m_addr)
+
+    # ---- D-cache query helpers (used by the invariants, for any address A) ----
+
+    function dc_present(A:addr) : bool
+    definition dc_present(A) = dcf(bfe[0][3](A)) & (dct(bfe[0][3](A)) = A)
+    function dc_dirty(A:addr) : bool
+    definition dc_dirty(A) = dc_present(A) & dcd(bfe[0][3](A))
+    function dc_val(A:addr) : word
+    definition dc_val(A) = dcw(bfe[0][3](A))
+
     # ---- reset ----
 
     after init {
@@ -651,6 +720,7 @@ object cpu = {
         w_valid := false;
         rf(R) := 0;
         mem(A) := init_mem(A);
+        dcf(I) := false;        # all lines empty
     }
 
     # ---- clock edge ----
@@ -662,15 +732,35 @@ object cpu = {
             rf(w_rd) := w_val
         };
 
-        # MEM: latch into WB (a LD reads the current memory), then do the store.
-        # A MEM instruction is a load or a store, not both, so reading before
-        # storing is equivalent -- and it keeps w_val a function of the current
-        # (pre-clock) memory, as required for RTL.
+        # MEM: access the write-back D-cache. A LD/ST hits if the indexed line
+        # is valid and its tag matches; on a miss we fill from main memory,
+        # first writing the dirty victim back. Main memory is single-cycle here
+        # (M2), so the fill word m_fill_data is a combinational (pre-clock) read
+        # bypassed to the load result. All reads are via wires (pre-clock), so
+        # the only main-memory write below is the write-back.
         w_ir := m_ir;
         w_valid := m_valid;
-        w_val := (mem(m_addr) if m_opcode = 4 else m_res);
-        if m_valid & (m_opcode = 5) {
-            mem(m_addr) := m_store
+        w_val := (m_res if m_opcode ~= 4 else
+                 (m_line_data if m_hit else m_fill_data));
+        if m_valid & (m_opcode = 4 | m_opcode = 5) {
+            # On a miss, write the dirty victim back before reinstalling.
+            if ~m_hit & m_line_full & m_line_dirty {
+                mem(m_victim_addr) := m_line_data
+            };
+            if m_opcode = 5 {
+                # ST: install a dirty line holding the stored word. A 1-word line
+                # is fully overwritten, so a write miss needs no fetch.
+                dcf(m_index) := true;
+                dcd(m_index) := true;
+                dct(m_index) := m_addr;
+                dcw(m_index) := m_store
+            } else if ~m_hit {
+                # LD miss: install a clean line with the fetched word.
+                dcf(m_index) := true;
+                dcd(m_index) := false;
+                dct(m_index) := m_addr;
+                dcw(m_index) := m_fill_data
+            }
         };
 
         # EX: if stalled, bubble MEM; else execute and move to MEM.
