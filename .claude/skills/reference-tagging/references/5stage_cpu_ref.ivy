@@ -1,0 +1,567 @@
+#lang ivy1.8
+
+# A very simple two-stage pipelined processor.
+#
+# In this version, we create an unpipelined reference model
+# (essentially an ISA defininition) and show the our simple two-stage
+# pipelined version implementes it. This would be be easy to do in a
+# direct way using invariants and simple auxiliary variables. However,
+# we will do the specification and verification in a more general way
+# that we cn apply to mode complex processor designs.
+#
+# This example is intended to illustrate a design pattern we will call
+# 'reference tagging' that lets us break down the proof of large designs
+# into isolated proofs of its components. 
+
+# Instruction encoding (16 bits):
+#
+#     [15:13] opcode   [12:10] rd   [9:7] ra   [6:4] rb   [7:0] imm/target
+#
+#   opcode 0  NOP
+#          1  ADD  rd, ra, rb     rf[rd] := rf[ra] + rf[rb]
+#          2  SUB  rd, ra, rb     rf[rd] := rf[ra] - rf[rb]
+#          3  LI   rd, imm        rf[rd] := zero_extend(imm8)
+#          4  LD   rd, [ra]       rf[rd] := mem[ rf[ra] ]
+#          5  ST   [ra], rb       mem[ rf[ra] ] := rf[rb]
+#          6  BEQZ ra, target     if rf[ra] == 0 then pc := target
+
+# The implementation:
+#
+# Pipeline stages:
+#   F (fetch)   : read the instruction at PC from instruction memory.
+#   X (execute) : decode and execute the instruction fetched last cycle,
+#                 reading/writing the register file and data memory and
+#                 redirecting the PC on a taken branch.
+#
+# The pipeline register between F and X is (ir, ir_valid). Operands are read
+# and results written in the same stage (X), so there are no data hazards. A
+# taken conditional branch is resolved in X, so the instruction fetched in its
+# shadow must be squashed -- a one-cycle bubble. That is the classic control
+# hazard.
+#
+
+include order   # ordered abstract types
+
+# Word (data / instruction), address (PC / memory), and register-index types.
+
+type word
+interpret word -> bv[16]
+type addr
+interpret addr -> bv[8]
+type reg
+interpret reg -> bv[3]
+type opc
+interpret opc -> bv[3]
+
+# The clock: one exported action driven by the environment.
+
+export action posedge
+
+# Initial memory contents. These are immutable, uninterpreted functions (they
+# are never assigned), so they represent an arbitrary-but-fixed initial memory
+# image. Both the implementation (cpu) and the reference model (trace.arch)
+# initialize their memories from this shared source. Sharing the source (rather
+# than having the reference read the cpu's memory at init) is what lets the two
+# start in the same state without a spurious interference: because posedge
+# writes cpu.mem, having trace's initializer observe cpu.mem would make Ivy
+# report that posedge can interfere with trace's initialization -- even though
+# initialization always completes before any posedge.
+
+function init_mem(A:addr) : word     # initial data memory contents
+function init_imem(A:addr) : word    # initial instruction memory (the program)
+
+# This is the isa model. It is a specification-only isolate that
+# provides a single action `step`. It has a number of functions
+# that reflect intermediate values in the instruction execution.
+# These can be used as references in verifying implmentations
+# compositionally. The isa model is written as a module so we can
+# re-use it if needed. 
+
+module isa_model(init_mem,init_imem) = {
+
+    var pc : addr                 # program counter
+    var rf(R:reg) : word          # register file
+    var mem(A:addr) : word        # data memory
+    var imem(A:addr) : word       # instruction memory (ROM; never written)
+
+    function fetched = imem(pc)
+
+    # ---- decode of the X-stage instruction (combinational) ----
+
+    function opcode = bfe[13][15](fetched) : opc
+    function rd = bfe[10][12](fetched) : reg
+    function ra = bfe[7][9](fetched) : reg
+    function rb = bfe[4][6](fetched) : reg
+    function target = bfe[0][7](fetched) : addr            # low 8 bits: branch target or immediate
+
+    # ---- operand fetch (combinational) ----
+
+    function a_val = rf(ra) : word
+    function b_val = rf(rb) : word
+    function mem_addr  = bfe[0][7](a_val) : addr          # address for LD/ST: low 8 bits of rf[ra]
+
+    # ---- branch decision (BEQZ) ----
+
+    function take_branch = (opcode = 6) & (a_val = 0) : bool
+
+    # ---- reset ----
+
+    after init {
+        pc := 0;
+        rf(R) := 0;            # zero the register file
+        mem(A) := init_mem(A);
+        imem(A) := init_imem(A);
+    }
+
+    # One step
+
+    action step
+
+    after step {
+
+        # Execute / write back 
+        if opcode = 1 {                          # ADD
+            rf(rd) := a_val + b_val
+        } else if opcode = 2 {                   # SUB
+            rf(rd) := a_val - b_val
+        } else if opcode = 3 {                   # LI
+            rf(rd) := concat(0:addr, target)
+        } else if opcode = 4 {                   # LD
+            rf(rd) := mem(mem_addr)
+        } else if opcode = 5 {                   # ST
+            mem(mem_addr) := b_val
+        }
+
+        # Advance the PC
+        if old take_branch {
+            pc := target;          # redirect to the branch target
+        } else {
+            pc := pc + 1;
+        }
+    }
+}
+
+# The 'trace' is a reference model that stores the sequence of isa
+# states resulting from program execution. It is a specification-only
+# isolate. The trace model is a bit of boilerplate we need to write to
+# help with specificaiton and verification. Probably this can be
+# generated from the isa model using AI. 
+
+isolate trace = {
+
+    specification {
+        
+        # This is the isa model
+
+        instance arch : isa_model(init_mem,init_imem)
+
+        # This is the index type of the instruction sequence
+        instance tag : unbounded_sequence
+
+        # The value type of the instruction sequence
+
+        type state_t = struct {
+
+            # The architectural state
+
+            pc : addr,                 # program counter
+            rf(R:reg) : word,          # register file
+            mem(A:addr) : word,        # data memory
+            imem(A:addr) : word,       # instruction memory (ROM; never written)
+
+            # The intermediate values
+
+            fetched : word, 
+            opcode : opc,
+            rd : reg,
+            ra : reg,
+            rb : reg,
+            target : addr,            # low 8 bits: branch target or immediate
+            a_val : word,
+            b_val : word,
+            mem_addr  : addr,          # address for LD/ST: low 8 bits of rf[ra]
+            take_branch : bool
+        }
+            
+        var now : tag   # the current length of the trace
+        var st(T:tag) : state_t 
+
+        # This internal procedure captures the current arch state 
+
+        action current returns(res:state_t) = {
+            res.pc := arch.pc;
+            res.rf(R:reg) := arch.rf(R:reg);
+            res.mem(A:addr) := arch.mem(A:addr);
+            res.imem(A:addr) := arch.imem(A:addr);
+
+            # The intermediate values
+
+            res.fetched := arch.fetched;
+            res.opcode := arch.opcode;
+            res.rd := arch.rd;
+            res.ra := arch.ra;
+            res.rb := arch.rb;
+            res.target := arch.target;
+            res.a_val := arch.a_val;
+            res.b_val := arch.b_val;
+            res.mem_addr  := arch.mem_addr ;
+            res.take_branch := arch.take_branch;
+        }
+
+        # This internal procedure records the current state in the
+        # trace Notice that tag is an abstract sequence type that
+        # defines only zero and next, so we write `now.next` instead
+        # of `now + 1`.
+        
+        action record = {
+        }
+        
+        after init {
+            now := 0;
+            st(now) := current;
+        }
+        
+        # This externally called procedure steps the isa and records
+        # the new state.
+
+        action step = {
+            arch.step;
+            now := now.next;
+            st(now) := current;
+        }
+
+        invariant st(now).pc = arch.pc
+        invariant st(now).rf(R:reg) = arch.rf(R:reg)
+        invariant st(now).mem(A:addr) = arch.mem(A:addr)
+        invariant st(now).imem(A:addr) = arch.imem(A:addr)
+        
+        # The intermediate values
+        
+        invariant st(now).fetched = arch.fetched
+        invariant st(now).opcode = arch.opcode
+        invariant st(now).rd = arch.rd
+        invariant st(now).ra = arch.ra
+        invariant st(now).rb = arch.rb
+        invariant st(now).target = arch.target
+        invariant st(now).a_val = arch.a_val
+        invariant st(now).b_val = arch.b_val
+        invariant st(now).mem_addr  = arch.mem_addr
+        invariant st(now).take_branch = arch.take_branch
+
+        # The invariants above only pin the *most recent* recorded state,
+        # st(now). But the pipeline implementation compares a lagging stage
+        # against an *earlier* trace entry (st(now-1)). So we must also specify
+        # that every recorded entry is a faithful ISA state, and that
+        # consecutive entries are related by one ISA step. This is the "trace
+        # is a valid execution history" boilerplate.
+
+        # (a) Every recorded state's intermediate values are the correct decode
+        #     of its own architectural state. (For st(now) this follows from the
+        #     invariants above and arch's definitions; here we extend it to all
+        #     recorded entries, which never change once written.)
+
+        invariant T <= now -> st(T).fetched = st(T).imem(st(T).pc)
+        invariant T <= now -> st(T).opcode = bfe[13][15](st(T).fetched)
+        invariant T <= now -> st(T).rd = bfe[10][12](st(T).fetched)
+        invariant T <= now -> st(T).ra = bfe[7][9](st(T).fetched)
+        invariant T <= now -> st(T).rb = bfe[4][6](st(T).fetched)
+        invariant T <= now -> st(T).target = bfe[0][7](st(T).fetched)
+        invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
+        invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
+        invariant T <= now -> st(T).mem_addr = bfe[0][7](st(T).a_val)
+        invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
+
+        # (b) Consecutive recorded states are related by one step of the ISA.
+        #     If st(T) precedes st(U) (U = T+1, U <= now), then st(U) is the
+        #     result of executing st(T)'s instruction. This mirrors arch.step.
+
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).imem(A) = st(T).imem(A)
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).pc = (st(T).target if st(T).take_branch else st(T).pc + 1)
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).mem(A) = (st(T).b_val if (st(T).opcode = 5 & A = st(T).mem_addr)
+                                      else st(T).mem(A))
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).rf(R) = (st(T).a_val + st(T).b_val
+                                         if (st(T).opcode = 1 & R = st(T).rd) else
+                                     (st(T).a_val - st(T).b_val
+                                         if (st(T).opcode = 2 & R = st(T).rd) else
+                                     (concat(0:addr, st(T).target)
+                                         if (st(T).opcode = 3 & R = st(T).rd) else
+                                     (st(T).mem(st(T).mem_addr)
+                                         if (st(T).opcode = 4 & R = st(T).rd) else
+                                     st(T).rf(R)))))
+
+    }
+}  with addr,opc
+
+# ============================================================================
+# A standard 5-stage pipeline: IF, ID, EX, MEM, WB.
+#
+#   IF  : fetch imem(pc)
+#   ID  : latch the instruction (decode is combinational, via wires)
+#   EX  : read operands from rf, do the ALU op / branch decision / addr calc
+#   MEM : data-memory access (LD reads, ST writes)
+#   WB  : write the result to rf
+#
+# Operands are read in EX and results written in WB (no forwarding yet), so a
+# RAW dependency on an instruction still in MEM or WB is a data hazard; we
+# detect it and STALL the EX stage (holding EX/ID/IF, bubbling MEM) until the
+# producer commits.
+#
+# The operand of a branch is likewise read in EX, so a branch resolves in EX.
+# To keep the trace (which records instructions at issue, in program order)
+# free of wrong-path instructions, we do NOT speculate: fetch stalls while a
+# branch is unresolved (in ID or EX), and the PC is redirected from EX. (A
+# branch predictor will replace this later.)
+#
+# This version is monolithic (one object). A later version will split each
+# stage into its own isolate for a truly compositional proof.
+# ============================================================================
+
+object cpu = {
+
+    specification {
+
+        # ---- reference tags (ghost) --------------------------------------
+        # commit / mcommit / ecommit / dcommit count how many instructions
+        # have passed the WB / MEM / EX / ID boundary. Since the pipeline is
+        # in-order, the instruction currently in a stage is the next one to
+        # pass that stage's boundary, so its trace tag is the corresponding
+        # count. trace.now is the number issued (fetched into the pipe).
+
+        var commit  : trace.tag   # instructions past WB   (== tag in WB)
+        var mcommit : trace.tag   # instructions past MEM  (== tag in MEM)
+        var ecommit : trace.tag   # instructions past EX   (== tag in EX)
+        var dcommit : trace.tag   # instructions past ID   (== tag in ID)
+
+        after init {
+            commit := 0; mcommit := 0; ecommit := 0; dcommit := 0;
+        }
+
+        # ---- the pipeline is a contiguous run of tags ---------------------
+        # Each boundary count is the next one plus 1 if the intervening stage
+        # holds a valid instruction.
+
+        invariant w_valid -> commit.succ(mcommit)
+        invariant ~w_valid -> mcommit = commit
+        invariant m_valid -> mcommit.succ(ecommit)
+        invariant ~m_valid -> ecommit = mcommit
+        invariant e_valid -> ecommit.succ(dcommit)
+        invariant ~e_valid -> dcommit = ecommit
+        invariant d_valid -> dcommit.succ(trace.now)
+        invariant ~d_valid -> dcommit = trace.now
+
+        # No speculation past a branch: fetch stalls while a branch is in ID or
+        # EX, so nothing is fetched into the shadow. Hence when a branch is in
+        # EX, the ID slot behind it is empty. (Rules out states that fetched
+        # past an unresolved branch.)
+        invariant (e_valid & e_opcode = 6) -> ~d_valid
+
+        # ---- committed architectural state matches the trace -------------
+
+        invariant rf(R) = trace.st(commit).rf(R)
+        invariant mem(A) = trace.st(mcommit).mem(A)
+        invariant imem(A) = trace.st(commit).imem(A)
+
+        # ---- the PC is the fetch address, when fetch is not blocked -------
+        # When no branch is pending, pc is the address of the next instruction
+        # to fetch, st(now).pc. While a branch is pending (fetch_stall), pc
+        # holds the branch's fall-through address: the branch is the youngest
+        # issued instruction (tag now-1), and pc was set to st(now-1).pc + 1
+        # when it was fetched. It is redirected to the target only when the
+        # branch resolves in EX (which also clears fetch_stall).
+
+        invariant ~fetch_stall -> pc = trace.st(trace.now).pc
+        invariant (fetch_stall & trace.tag.succ(X,trace.now)) -> pc = trace.st(X).pc + 1
+
+        # ---- each in-flight instruction word matches the trace -----------
+
+        invariant d_valid -> d_ir = trace.st(dcommit).fetched
+        invariant e_valid -> e_ir = trace.st(ecommit).fetched
+        invariant m_valid -> m_ir = trace.st(mcommit).fetched
+        invariant w_valid -> w_ir = trace.st(commit).fetched
+
+        # ---- the MEM latch's computed values match the trace -------------
+
+        invariant m_valid -> m_addr = trace.st(mcommit).mem_addr
+        invariant m_valid -> m_store = trace.st(mcommit).b_val
+        invariant (m_valid & m_opcode = 1) -> m_res = trace.st(mcommit).a_val + trace.st(mcommit).b_val
+        invariant (m_valid & m_opcode = 2) -> m_res = trace.st(mcommit).a_val - trace.st(mcommit).b_val
+        invariant (m_valid & m_opcode = 3) -> m_res = concat(0:addr, trace.st(mcommit).target)
+
+        # ---- the WB latch's writeback value matches the trace ------------
+
+        invariant (w_valid & w_opcode = 1) -> w_val = trace.st(commit).a_val + trace.st(commit).b_val
+        invariant (w_valid & w_opcode = 2) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
+        invariant (w_valid & w_opcode = 3) -> w_val = concat(0:addr, trace.st(commit).target)
+        invariant (w_valid & w_opcode = 4) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
+
+        # ---- ghost bookkeeping ------------------------------------------
+        # The reference tags and the trace step are ghost state. We update
+        # them here, in the specification, rather than in the datapath
+        # `after posedge` below, so that the datapath is free of ghost state
+        # and can be translated to RTL. This mirrors the datapath's stage
+        # movement, reading the pre-state of the real signals (validity bits
+        # via `old`; ex_stall / fetch_stall are frozen wires).
+
+        after posedge {
+            if old w_valid { commit := commit.next };
+            if old m_valid { mcommit := mcommit.next };
+            if ~ex_stall {
+                if old e_valid { ecommit := ecommit.next };
+                if old d_valid { dcommit := dcommit.next };
+                if ~fetch_stall { trace.step }
+            }
+        }
+    }
+
+    # ---- architectural state ----
+
+    var pc : addr
+    var rf(R:reg) : word
+    var mem(A:addr) : word
+    var imem(A:addr) : word
+
+    # ---- pipeline latches ----
+
+    var d_ir : word                 # IF/ID
+    var d_valid : bool
+    var e_ir : word                 # ID/EX
+    var e_valid : bool
+    var m_ir : word                 # EX/MEM
+    var m_valid : bool
+    var m_res : word                #   ALU/LI result
+    var m_addr : addr               #   memory address (LD/ST)
+    var m_store : word              #   store data (ST)
+    var w_ir : word                 # MEM/WB
+    var w_valid : bool
+    var w_val : word                #   value to write to rf
+
+    # ---- decode wires ----
+
+    wire d_opcode : opc
+    definition d_opcode = bfe[13][15](d_ir)
+
+    wire e_opcode : opc
+    wire e_rd : reg
+    wire e_ra : reg
+    wire e_rb : reg
+    wire e_target : addr
+    definition e_opcode = bfe[13][15](e_ir)
+    definition e_rd = bfe[10][12](e_ir)
+    definition e_ra = bfe[7][9](e_ir)
+    definition e_rb = bfe[4][6](e_ir)
+    definition e_target = bfe[0][7](e_ir)
+
+    wire m_opcode : opc
+    wire m_rd : reg
+    definition m_opcode = bfe[13][15](m_ir)
+    definition m_rd = bfe[10][12](m_ir)
+
+    wire w_opcode : opc
+    wire w_rd : reg
+    definition w_opcode = bfe[13][15](w_ir)
+    definition w_rd = bfe[10][12](w_ir)
+
+    # ---- EX operands (read from the register file in EX) ----
+
+    wire e_a : word
+    wire e_b : word
+    definition e_a = rf(e_ra)
+    definition e_b = rf(e_rb)
+
+    # ---- branch decision (BEQZ), resolved in EX ----
+
+    wire e_take : bool
+    definition e_take = e_valid & (e_opcode = 6) & (e_a = 0)
+
+    # ---- data-hazard detection: stall EX if a source register matches the
+    #      destination of a register-writing instruction still in MEM or WB.
+
+    wire ex_stall : bool
+    definition ex_stall = e_valid & (
+        (m_valid & (m_opcode = 1 | m_opcode = 2 | m_opcode = 3 | m_opcode = 4)
+                 & (m_rd = e_ra | m_rd = e_rb)) |
+        (w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
+                 & (w_rd = e_ra | w_rd = e_rb)))
+
+    # ---- control-hazard handling: don't fetch past an unresolved branch ----
+
+    wire fetch_stall : bool
+    definition fetch_stall = (d_valid & d_opcode = 6) | (e_valid & e_opcode = 6)
+
+    # ---- fetch ----
+
+    wire fetched : word
+    definition fetched = imem(pc)
+
+    # ---- reset ----
+
+    after init {
+        pc := 0;
+        d_valid := false;
+        e_valid := false;
+        m_valid := false;
+        w_valid := false;
+        rf(R) := 0;
+        mem(A) := init_mem(A);
+        imem(A) := init_imem(A);
+    }
+
+    # ---- clock edge ----
+
+    after posedge {
+
+        # WB: retire the instruction in WB (write the register file).
+        if w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4) {
+            rf(w_rd) := w_val
+        };
+
+        # MEM: latch into WB (a LD reads the current memory), then do the store.
+        # A MEM instruction is a load or a store, not both, so reading before
+        # storing is equivalent -- and it keeps w_val a function of the current
+        # (pre-clock) memory, as required for RTL.
+        w_ir := m_ir;
+        w_valid := m_valid;
+        w_val := (mem(m_addr) if m_opcode = 4 else m_res);   # LD loads; else ALU/LI result
+        if m_valid & (m_opcode = 5) {          # ST
+            mem(m_addr) := m_store
+        };
+
+        # EX: if stalled, bubble MEM; else execute and move to MEM.
+        if ex_stall {
+            m_valid := false
+        } else {
+            m_ir := e_ir;
+            m_valid := e_valid;
+            m_res := (e_a + e_b if e_opcode = 1 else
+                     (e_a - e_b if e_opcode = 2 else
+                     (concat(0:addr, e_target) if e_opcode = 3 else 0)));
+            m_addr := bfe[0][7](e_a);
+            m_store := e_b
+        };
+
+        # ID -> EX (unless EX is stalled, in which case EX holds).
+        if ~ex_stall {
+            e_ir := d_ir;
+            e_valid := d_valid;
+
+            # IF -> ID: fetch a new instruction, unless a branch is pending
+            # (fetch_stall), in which case ID gets a bubble.
+            if fetch_stall {
+                d_valid := false
+            } else {
+                d_ir := fetched;
+                d_valid := true;
+                pc := pc + 1             # fall-through address
+            };
+
+            # Branch resolution: redirect the PC on a taken branch.
+            if e_take {
+                pc := e_target
+            }
+        }
+    }
+}
