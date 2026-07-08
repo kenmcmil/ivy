@@ -22,7 +22,7 @@ is working on, then prove, per element, that its contents equal the trace value
 latch / register file / memory, and the *same trace model is reused unchanged*
 as the microarchitecture grows.
 
-`references/` contains three worked, fully-verified examples that this skill is
+`references/` contains four worked, fully-verified examples that this skill is
 distilled from — read the one closest to your target before writing code:
 
 - `pipe_cpu_ref.ivy` — 2-stage pipeline (the tutorial base case).
@@ -30,6 +30,9 @@ distilled from — read the one closest to your target before writing code:
   stalls and non-speculative branches.
 - `5stage_bp_cpu_ref.ivy` — 5-stage with a speculative branch predictor (shadow
   bits).
+- `5stage_cache_cpu_ref.ivy` — adds I/D caches, a `FLUSH` instruction, and a
+  multi-cycle memory; the reference is extended with `ddirty`/`error` to model
+  cache incoherence (see "Caches, incoherence, multi-cycle memory" below).
 - `reference_tagging.md` — the prose writeup of the method.
 
 ## The three ingredients
@@ -140,6 +143,29 @@ distilled from — read the one closest to your target before writing code:
   alone leave `st(T)` for `T<now` free; the consistency + step-relation
   invariants (step 4) are what make lagging-stage comparisons sound.
 
+- **With unified memory, decoded fields depend on `mem`, so use `old`.** If
+  instructions are fetched from the same `mem` as data (no separate `imem`),
+  then `fetched`, and everything decoded from it (`mem_addr`, `target`, ...),
+  is a function of `mem`. A store mutates `mem` mid-`step`, so a self-modifying
+  store re-derives a *different* `mem_addr`/`target` afterward. Read them via
+  `old`: `ddirty(old mem_addr) := true`, `pc := old target`.
+
+- **Ivy won't interpret `concat` of two named bit-vector subtypes into an
+  address.** `concat(hi:nib, lo:nib) : addr` came out unconstrained (the solver
+  picked garbage — a bogus write-back address). Store the *full* address in a
+  cache's tag field instead of just the hi bits; the index bits are redundant in
+  a direct-mapped cache, so it is the same cache with no `concat`. Also, nested
+  `concat` can't infer intermediate widths — represent a packed line as parallel
+  field arrays (valid/dirty/tag/data) sharing an index rather than one wide
+  bit-vector.
+
+- **Debugging CTIs: use `shrink=false`.** Counterexample generation can be very
+  slow; `shrink=false` skips minimization. `trace_dir=<dir>` dumps a CTI for
+  *every* failing check at once; `ivy replay <file>.a2g` prints it. A CTI whose
+  state is impossible (e.g. `st(0).error = true`, or a cache line at the wrong
+  index) means a missing *structural* invariant — add the fact that rules it
+  out, don't weaken the property.
+
 ## Data hazards, control hazards, speculation
 
 - **Data hazard → stall.** Detect when an operand register matches an older
@@ -166,6 +192,48 @@ distilled from — read the one closest to your target before writing code:
   unconstrained external input** (`import wire predicted_taken : bool`);
   correctness is independent of the prediction values.
 
+## Caches, incoherence, multi-cycle memory
+
+The `5stage_cache_cpu_ref` example goes further: unified memory (fetch from the
+same `mem` as load/store), separate non-coherent I- and D-caches, a `FLUSH`
+instruction, and a two-cycle memory. This is the one design where the
+**reference model itself changes** — worth studying if your target has caches,
+weak memory, or any "software must synchronize" contract.
+
+- **Model the incoherence in the ISA, then relax.** Add architectural state that
+  captures the hazard: here `ddirty(A)` (set by store, cleared by `FLUSH`) and a
+  sticky `error` set when an instruction is fetched from a dirty address. Then
+  guard *every* implementation-vs-reference invariant by `~st(now).error`: once
+  the program executes stale code, you no longer require the CPU to match. This
+  `~error` relaxation is the correctness statement for an incoherent machine.
+
+- **Caches are pinned by local invariants, relative to the trace at the stage
+  that owns them** (`st(mcommit)` for the D-cache in MEM): dirty line ⇒ dirty in
+  the reference; present line ⇒ holds the reference value; not-dirty address ⇒
+  main memory holds the reference value; I-line not dirty ⇒ holds the reference
+  value. Same reference-tagging style, one fact per cache property.
+
+- **State the direct-mapped geometry.** `valid(I) -> bfe[0][3](tag(I)) = I` (a
+  line at index `I` caches an address whose index is `I`). Without it the prover
+  imagines a line filed under the wrong index and writes a victim back to a bogus
+  address — a classic spurious CTI.
+
+- **`FLUSH` + fetch stall re-establish coherence.** `FLUSH A` writes back the
+  dirty D-line and evicts `A` from both caches; fetch stalls while a `FLUSH` is
+  in ID/EX/MEM so nothing behind it is fetched until it has taken effect. The
+  "visibility" lemma you might expect to need (dirty@MEM & clean@IF ⇒ FLUSH in
+  flight) turned out *not* to be needed as an explicit invariant — the prover
+  derived fetch-correctness from the trace step relations + cache invariants +
+  the stall. Try without it first.
+
+- **Multi-cycle memory costs no new invariants.** A fill that takes extra cycles
+  is just a longer stall, and the "stall ⇒ tag holds" discipline already covers
+  it: the stalled stage's tag stops advancing, no `trace.step` is issued, and
+  every per-element invariant is preserved across the stall for free. Model the
+  memory latency as additional stall conditions folded into the existing
+  stage-stall/bubble logic; don't try to verify the memory's own timing (leave
+  that to a downstream timing tool).
+
 ## Preparing the model for ivy_to_rtl
 
 The datapath must be free of ghost/abstract constructs:
@@ -186,6 +254,14 @@ The datapath must be free of ghost/abstract constructs:
 - **No uninterpreted functions in the datapath.** An arbitrary function used in
   hardware logic (a branch predictor `predict(pc)`) has no RTL realization;
   expose it as an `import wire` input instead.
+
+- **State arrays must be point-written.** Cache/memory arrays translate to RTLIL
+  memories, so every write must be to a single index (`dcache(idx) := ...`),
+  never a whole-array assignment in the clock logic (that has no single-cycle RTL
+  form). Power-on `after init` may assign the whole array a constant
+  (`valid(I) := false`) or a per-index function — that becomes a `$meminit`.
+  Writing an array in several sequential branches of one clock action is fine
+  (each is a point write); it composes to the memory's write port.
 
 - Translate with `ivy_to_rtl <file>.ivy` and sanity-check the RTLIL with
   `yosys -q -p "read_rtlil <file>.il"`.
