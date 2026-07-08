@@ -11,6 +11,9 @@ tests = [
     {'type': 'check', 'name': 'pipe_cpu_ref', 'expect': 'OK', 'timeout': 300},
     {'type': 'check', 'name': '5stage_cpu_ref', 'expect': 'OK', 'timeout': 300},
     {'type': 'check', 'name': '5stage_bp_cpu_ref', 'expect': 'OK', 'timeout': 300},
+    # The cache CPU: I/D caches, FLUSH, and a multi-cycle memory (see
+    # add_cache_to_cpu.md). Larger, so a longer timeout.
+    {'type': 'check', 'name': '5stage_cache_cpu_ref', 'expect': 'OK', 'timeout': 600},
 
     # A wire's post-state value must appear in a counterexample trace: the
     # invariant w ~= 5 fails when x reaches 4 (w = x+1 = 5), and the trace must
@@ -35,6 +38,7 @@ tests = [
     {'type': 'to_rtl', 'name': 'pipe_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': '5stage_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': '5stage_bp_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
+    {'type': 'to_rtl', 'name': '5stage_cache_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
 
     # memtest: mem is initialized from a *defined* function init_mem(A)=5, so
     # the translation must emit a $meminit of 5 (DATA = repeated 0x05).

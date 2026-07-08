@@ -260,3 +260,103 @@ predictor produces: a good predictor improves performance, but any prediction
 whatsoever yields a correct execution. (Later we can implement a predictor as a
 separate isolate that drives this input, and Ivy will not need to look at its
 logic when verifying the CPU.)
+
+Caches and memory incoherence
+-----------------------------
+
+Our last design adds instruction and data caches
+([5stage_cache_cpu_ref.ivy](5stage_cache_cpu_ref.ivy)). This is a bigger step,
+because it changes the *reference model* -- the first time we have had to do so.
+
+Memory is now *unified*: there is a single `mem`, and instructions are fetched
+from the same memory that loads and stores use. The implementation keeps an
+instruction cache and a data cache that are *not* kept coherent -- a
+direct-mapped, write-back D-cache for loads and stores, and a read-only I-cache
+for fetch. So a store can leave a new value in the D-cache (or, after a
+write-back, in main memory) while the I-cache and the fetch path still see the
+old bytes. Real machines expose exactly this, and require software to issue an
+explicit synchronization (here, a `FLUSH` instruction) before executing
+freshly written code.
+
+We reflect this in the ISA with two new pieces of architectural state: a
+per-address dirty bit `ddirty(A)`, set by a store to `A` and cleared by a
+`FLUSH` of `A`, and a sticky `error` bit, set when an instruction is fetched
+from an address that is currently dirty. `error` models "the program did
+something whose result is not guaranteed" -- it executed stale code. The trace
+model carries these like any other field, with the boilerplate step-relation
+invariants (a store sets the bit, a flush clears it, a dirty fetch latches
+`error`). One subtlety: because memory is now unified, the decoded fields --
+including the store address `mem_addr` and the branch `target` -- are functions
+of `mem`, so a self-modifying store can change them mid-step. The ISA therefore
+computes them with `old` (`ddirty(old mem_addr) := true`, `pc := old target`),
+reading the pre-store values.
+
+The key move in the specification is a *relaxation*: every invariant relating
+the implementation to the reference is guarded by `~trace.st(trace.now).error`.
+Once the reference has executed a stale fetch, we no longer require the CPU to
+match it. Since `error` is sticky and `now` is the largest recorded tag,
+`st(now).error` holds exactly when *some* instruction in the executed prefix has
+erred, so the guard says "as long as the program has not yet gone wrong, the CPU
+implements the ISA." This is the substance of the correctness statement for an
+incoherent machine.
+
+The caches themselves are pinned to the reference by *local* invariants, in the
+same reference-tagging style, all relative to the trace state at the MEM stage
+(`st(mcommit)`):
+
+* a dirty D-cache line's address is dirty in the reference;
+* a present D-cache line holds the reference's value;
+* an address that is not dirty in the D-cache has the reference's value in main
+  memory;
+* an I-cache line whose address is not dirty holds the reference's value.
+
+Together these say the *effective* memory -- D-cache where present-and-dirty,
+else main memory -- always equals the reference memory (until an error), and the
+I-cache agrees wherever it has not gone stale. One structural invariant is
+needed to make the direct-mapped geometry sound: a valid line at index `I`
+caches an address whose index is `I` (`bfe[0][3](tag) = I`). Without it the
+prover can imagine a line filed under the wrong index and write a victim back to
+a bogus address.
+
+`FLUSH A` is what re-establishes coherence: in the MEM stage it writes the
+D-cache line for `A` back to main memory if it is dirty, then evicts `A` from
+*both* caches, so the next fetch of `A` misses and refills from up-to-date
+memory. For that to be enough, no instruction behind a `FLUSH` may be fetched
+until the `FLUSH` has done its work, so fetch stalls while a `FLUSH` occupies
+ID, EX or MEM. Interestingly, the "visibility" property one might expect to need
+as an explicit invariant -- *if an address is dirty at MEM but clean at IF then
+a `FLUSH` of it is in flight* -- did not have to be stated: the prover derives
+the fetch-correctness obligation from the trace step relations, the cache
+invariants, and the fetch-stall discipline. The coherence argument stays
+entirely in the local per-element invariants.
+
+Multi-cycle memory
+------------------
+
+Finally, main memory is made multi-cycle: a read fill takes two clock cycles (an
+initiating cycle and a busy cycle in which the value arrives and is bypassed),
+and write-backs are instant. A fill controller (a `busy` bit plus the fill
+address) serves one fill at a time, giving data-cache fills priority over
+instruction-cache fills. An I-cache miss stalls the fetch stage; a load miss
+stalls the memory stage and the stages behind it, draining a bubble to
+write-back.
+
+What is notable for verification is how *little* this costs. The proof needs no
+new invariants at all: the reference-tagging discipline already has each stage's
+tag hold when the stage stalls, so the extra fill-stall cycles are just more of
+the same -- the tags stop advancing, no `trace.step` is issued, and every
+per-element invariant is trivially preserved across the stall. The memory's own
+timing (the two-cycle handshake) is deliberately *not* verified here; the intent
+is that a downstream timing tool checks it, while Ivy checks that the pipeline
+computes the right architectural result regardless of how many cycles a fill
+takes.
+
+RTL
+---
+
+All four designs translate to RTL with `ivy_to_rtl`, because the datapath is
+kept free of ghost state (tags, shadow and dirty bits used only in the proof
+live in `specification` blocks) and uses only point writes to the state arrays.
+The caches are stored as parallel field arrays (valid / dirty / tag / data)
+sharing one index -- in RTL, narrow memories addressed in lockstep, i.e. a
+direct-mapped cache.
