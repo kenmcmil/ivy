@@ -22,6 +22,7 @@
   docs:
   - examples/hardware/basics
   - examples/hardware/pipe_cpu
+  - examples/hardware/reference_tagging
 - title: Sharded Hash Table
   docs:
   - examples/sht/sharded_hash_table
