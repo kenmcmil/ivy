@@ -618,7 +618,7 @@ class Translator(object):
                 d = upd[2][newsym.name]
                 var = d.args[0].args[0]
                 wctx = Ctx(self, m, obj, upd[2])
-                self.collect_writes(d.args[1], arr, var, None, writes)
+                self.collect_writes(d.args[1], arr, var, None, upd[2], writes)
         if not writes:
             return   # a ROM: declared and read, never written
 
@@ -640,11 +640,21 @@ class Translator(object):
                [('\\ADDR', addr), ('\\DATA', data), ('\\EN', en_wide),
                 ('\\CLK', pub_id(clk_used))])
 
-    def collect_writes(self, expr, arr, var, enable, out):
+    def collect_writes(self, expr, arr, var, enable, defidx, out):
         """Decompose a functional array-update body new_arr(var) = expr into a
         list of (enable, addr, data) point writes, appended to `out`. enable is
         an Ivy bool term (None means unconditional)."""
         if self.is_base_read(expr, arr, var):
+            return
+        # When the array is written in several sequential statements, the
+        # composed update body ends in a transition-relation mid-state copy
+        # (__m_arr(var)) rather than the base array; chase it, as collect_init
+        # does, so the accumulated point writes are all recovered.
+        if (il.is_app(expr) and not il.is_constant(expr) and len(expr.args) == 1
+                and expr.args[0] == var and is_array_sort(expr.rep.sort)
+                and expr.rep.name in defidx):
+            self.collect_writes(defidx[expr.rep.name].args[1], arr, var,
+                                enable, defidx, out)
             return
         if il.is_ite(expr):
             cond, then, els = expr.args
@@ -654,11 +664,11 @@ class Translator(object):
                     raise iu.IvyError(None,
                         "unsupported array index expression: {}".format(cond))
                 out.append((enable, addr, then))
-                self.collect_writes(els, arr, var, enable, out)
+                self.collect_writes(els, arr, var, enable, defidx, out)
             else:
-                self.collect_writes(then, arr, var, conj(enable, cond), out)
+                self.collect_writes(then, arr, var, conj(enable, cond), defidx, out)
                 self.collect_writes(els, arr, var,
-                                    conj(enable, il.Not(cond)), out)
+                                    conj(enable, il.Not(cond)), defidx, out)
             return
         raise iu.IvyError(None,
             "unsupported array update (not a point write): {}".format(expr))
@@ -778,6 +788,10 @@ class Translator(object):
         if il.is_numeral(term):
             name = term.name
             return int(name, 16) if name.startswith('0x') else int(name)
+        if il.is_true(term):
+            return 1
+        if il.is_false(term):
+            return 0
         raise iu.IvyError(None,
             "array initializer must be a constant: {}".format(term))
 
