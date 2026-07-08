@@ -445,7 +445,8 @@ class AssertAction(Action):
         aname = None
         if isinstance(fmla,ivy_ast.LabeledFormula):
             unprovable = fmla.unprovable
-            aname = fmla.name
+            if fmla.label is not None:
+                aname = fmla.name
             fmla = fmla.formula
         type_check(domain,fmla)
         if check_unprovable.get() != unprovable:

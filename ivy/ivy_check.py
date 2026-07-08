@@ -257,7 +257,7 @@ def guarantee_name(sub):
     """The name of a program assertion (guarantee), or None if it is
     unlabeled. Used by the "check=" name filter."""
     args = getattr(sub,'args',None)
-    if args and isinstance(args[0],ivy_ast.LabeledFormula):
+    if args and isinstance(args[0],ivy_ast.LabeledFormula) and args[0].args[0] is not None:
         return args[0].name
     return None
 
