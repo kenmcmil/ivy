@@ -39,8 +39,10 @@ distilled from — read the one closest to your target before writing code:
 
 1. **ISA model** (`module isa_model(init_mem, init_imem)`): the architectural
    state (`pc`, `rf`, `mem`, `imem`) as `var`s, the per-instruction
-   intermediate values as **defined functions**, and one `action step` that
-   executes a single instruction.
+   intermediate values as **temporary variables** (`var`s holding no
+   architectural state) computed by an `action prepare`, and one `action step`
+   that consumes them to advance the architectural state. One instruction is
+   `prepare; step`.
 
 2. **`trace` isolate**: instantiates the ISA as `arch` and an abstract sequence
    type `tag`; stores an array `st(T:tag) : state_t` of recorded states and a
@@ -62,19 +64,25 @@ distilled from — read the one closest to your target before writing code:
    from the same functions, so the proof holds for any program. (See "Memory
    init" below for why this must be shared and uninterpreted.)
 
-2. **Write `isa_model`.** State as `var`s. Intermediate values as `function`s
-   (`function opcode = bfe[13][15](fetched) : opc`, `function a_val = rf(ra) :
-   word`, `function take_branch = (opcode=6)&(a_val=0) : bool`, ...). `after
-   init` sets `pc`, zeroes `rf`, and loads `mem(A) := init_mem(A)`,
-   `imem(A) := init_imem(A)`. `action step` / `after step` executes one
-   instruction and updates the PC using `old take_branch` (see gotchas).
+2. **Write `isa_model`.** State as `var`s. Intermediate values as **temporary
+   `var`s** (`var opcode : opc`, `var a_val : word`, `var take_branch : bool`,
+   ...), *computed* by an `action prepare` (`opcode := bfe[13][15](fetched);
+   a_val := rf(ra); take_branch := (opcode=6)&(a_val=0); ...`). `after init` sets
+   `pc`, zeroes `rf`, and loads `mem(A) := init_mem(A)`, `imem(A) :=
+   init_imem(A)`. `action step` executes one instruction, reading the temporary
+   `var`s directly (they already hold the pre-state values, so no `old` is
+   needed — see gotchas) and advancing the PC with `if take_branch { ... }`.
 
 3. **Write the `trace` isolate.** `instance arch : isa_model(init_mem,
    init_imem)`; `instance tag : unbounded_sequence`; a `state_t` struct with the
    architectural state *and every intermediate value*; `var now`, `var st`; an
    `action current` that snapshots `arch` into a `state_t`; `action step = {
-   arch.step; now := now.next; st(now) := current }`; `after init { now := 0;
-   st(now) := current }`. Close the isolate with `with addr,opc` (see gotchas).
+   arch.step; arch.prepare; now := now.next; st(now) := current }`; `after init
+   { now := 0; arch.prepare; st(now) := current }`. The `arch.prepare` call
+   after each `arch.step` (and in the initializer) recomputes the temporaries in
+   the new state before it is recorded, so every trace entry's intermediate
+   values are the correct decode of *its own* architectural state. Close the
+   isolate with `with addr,opc` (see gotchas).
 
 4. **Trace auxiliary invariants** (boilerplate — mirror the ISA transition over
    recorded entries; an LLM can generate these from `isa_model`):
@@ -114,14 +122,21 @@ distilled from — read the one closest to your target before writing code:
 
 ## Gotchas (each cost real debugging time)
 
-- **Abstract models use defined functions, not wires; use `old`.** A `wire` is
-  frozen at its pre-clock value for the whole action, which is wrong for the
-  ISA, where intermediate values must track the state as `step` mutates it. Use
-  `function` (re-evaluated on each state change). Consequently a defined
-  function can change *mid-action*: to read its start-of-action value (e.g. the
-  branch decision before the writeback), use `old` — the PC update must be
-  `if old take_branch { ... }`. Getting this wrong makes `take_branch` read the
-  post-writeback value and breaks the proof.
+- **Compute the ISA's intermediate values in `prepare`, not as defined
+  functions.** Do *not* model the intermediate values as `wire`s (a wire is
+  frozen for the whole action) nor as `function`s. A defined `function` is
+  re-evaluated whenever its dependencies change, so its value shifts *mid-action*
+  as `step` writes `rf`/`mem`; reading the start-of-action value then requires
+  the `old` operator on *every* such use (`if old take_branch`, `pc := old
+  target`, `ddirty(old mem_addr) := true`), and a single forgotten `old` silently
+  reads a post-writeback value and breaks the proof. Instead make the
+  intermediate values plain `var`s, set them once in `action prepare` from the
+  current state, and have `step` read them directly — no `old` anywhere. The
+  `trace` runs `arch.prepare` after every `arch.step` (and in `after init`)
+  before recording, so each entry's temporaries decode its own architectural
+  state. (This is the current pattern in all four reference examples; earlier
+  versions used the `function`+`old` style and repeatedly hit the forgotten-`old`
+  bug — which is exactly why the examples were changed.)
 
 - **`bfe` result sort must be pinned.** `bfe[i][j]` is fully polymorphic in its
   result; when compared to a numeric literal, ascribe it: `(bfe[13][15](x):opc)
@@ -143,12 +158,15 @@ distilled from — read the one closest to your target before writing code:
   alone leave `st(T)` for `T<now` free; the consistency + step-relation
   invariants (step 4) are what make lagging-stage comparisons sound.
 
-- **With unified memory, decoded fields depend on `mem`, so use `old`.** If
+- **Unified memory makes the `prepare` pattern especially valuable.** If
   instructions are fetched from the same `mem` as data (no separate `imem`),
-  then `fetched`, and everything decoded from it (`mem_addr`, `target`, ...),
-  is a function of `mem`. A store mutates `mem` mid-`step`, so a self-modifying
-  store re-derives a *different* `mem_addr`/`target` afterward. Read them via
-  `old`: `ddirty(old mem_addr) := true`, `pc := old target`.
+  then `fetched` and everything decoded from it (`mem_addr`, `target`, ...)
+  depends on `mem`, which a store mutates mid-`step`. With the intermediate
+  values as `var`s set in `prepare` *before* `step` runs, a self-modifying store
+  cannot re-derive them: `step` reads the pre-state `mem_addr`/`target`/`pc`
+  directly (`ddirty(mem_addr) := true`, `pc := target`). (With the older
+  `function` style these had to be read as `old mem_addr` / `old target`, and
+  this is where the forgotten-`old` bugs were most common.)
 
 - **Packing with `concat`.** `concat` is variadic, so a packed cache line is
   built in one shot: `concat(full, dirty, hi_addr, data) : cline` (assign to a

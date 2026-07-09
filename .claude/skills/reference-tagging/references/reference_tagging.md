@@ -56,40 +56,51 @@ memory, and (read-only) instruction memory:
 
 The intermediate values that arise while executing one instruction -- the
 fetched word, the decoded fields, the operand values read from the register
-file, the branch decision -- are written as *defined functions* of the state:
+file, the branch decision -- are held in *temporary variables*: ordinary `var`s
+that hold no architectural state and are computed from the current state by a
+separate `prepare` action.
 
-    function fetched = imem(pc)
-    function opcode  = bfe[13][15](fetched) : opc
-    function a_val   = rf(ra) : word
-    function take_branch = (opcode = 6) & (a_val = 0) : bool
+    var fetched : word
+    var opcode  : opc
+    var a_val   : word
+    var take_branch : bool
+    # ...
+
+    action prepare = {
+        fetched := imem(pc);
+        opcode  := bfe[13][15](fetched);
+        a_val   := rf(ra);
+        take_branch := (opcode = 6) & (a_val = 0);
+        # ...
+    }
 
 These intermediate values will be important later: they are exactly the
 quantities the hardware computes in its combinational logic, so recording them
 in the trace lets us specify the hardware's internal signals directly.
 
-A note on why these are *defined functions* rather than *wires*. In the
-hardware we model combinational signals with wires, whose value is frozen at
-the start of a clock cycle and cannot change while the registers update. That
-is the wrong behavior for an abstract model. The abstract `step` action is
-synchronized to a hardware clock edge, but *within* that action we want the
-intermediate quantities to track the state as it changes -- for instance, after
-`step` writes the register file, `a_val = rf(ra)` should reflect the new
-contents. Defined functions do exactly this: they are re-evaluated whenever the
-state they depend on changes. The flip side is that a defined function can
-change value in the middle of an action, so when we need the value it had at
-the *beginning* of the action we use the `old` operator. In `isa_model`, the
-program-counter update reads `old take_branch`, the branch decision as computed
-*before* the writeback, so that a load or ALU result written this step cannot
-retroactively change whether the branch was taken:
+Executing one ISA instruction is thus the two-step sequence `prepare; step`:
+`prepare` computes the temporaries from the current architectural state, and
+`step` consumes them to produce the next state. Because the temporaries are
+captured *before* `step` mutates anything, `step` reads them as plain variables,
+with no need for the `old` operator:
 
-    after step {
-        # ... execute / writeback, updating rf or mem ...
-        if old take_branch {
+    action step = {
+        # ... execute / writeback, using the temporaries a_val, target, ... ...
+        if take_branch {
             pc := target            # redirect to the branch target
         } else {
             pc := pc + 1
         }
     }
+
+(Earlier versions of these examples wrote the intermediate values as *defined
+functions* instead. A defined function is re-evaluated whenever the state it
+depends on changes, so its value can shift in the middle of `step` as the
+register file or memory is written; reading the start-of-action value then
+required the `old` operator on every such use -- `if old take_branch`, `pc :=
+old target`, and so on. A forgotten `old` was a recurring source of subtle bugs.
+Computing the temporaries once, explicitly, in `prepare`, and storing them in
+variables that `step` reads directly, removes that hazard entirely.)
 
 Finally, note that the initial contents of the instruction and data memories
 are *parameters* of the ISA model (`isa_model(init_mem, init_imem)`). This lets
@@ -114,15 +125,21 @@ called from the hardware model when the hardware issues an instruction:
 
     action step = {
         arch.step;                # advance the ISA by one instruction
+        arch.prepare;             # recompute the temporaries in the new state
         now := now.next;          # extend the trace
         st(now) := current        # record the new architectural state
     }
 
 `step` executes one ISA instruction and appends the resulting state to the
 trace, advancing `now`, which always points at the state reached after all
-instructions issued so far. Like the shared memory initialization, `step` is
-there purely to align the abstract and concrete models: it lets us prove that
-every hardware execution can be read off as a legal ISA trace.
+instructions issued so far. The call to `arch.prepare` after `arch.step` (and
+likewise in the trace's initializer, before the first state is recorded) ensures
+that the temporary values stored in every trace entry are the correct decode of
+*that entry's* architectural state -- so a lagging pipeline stage can be compared
+against the recorded temporaries directly. Like the shared memory
+initialization, `step` is there purely to align the abstract and concrete
+models: it lets us prove that every hardware execution can be read off as a
+legal ISA trace.
 
 To prove properties of the hardware, the trace needs a number of *auxiliary
 invariants* about itself. It is not enough that the most recently recorded
@@ -293,11 +310,12 @@ from an address that is currently dirty. `error` models "the program did
 something whose result is not guaranteed" -- it executed stale code. The trace
 model carries these like any other field, with the boilerplate step-relation
 invariants (a store sets the bit, a flush clears it, a dirty fetch latches
-`error`). One subtlety: because memory is now unified, the decoded fields --
-including the store address `mem_addr` and the branch `target` -- are functions
-of `mem`, so a self-modifying store can change them mid-step. The ISA therefore
-computes them with `old` (`ddirty(old mem_addr) := true`, `pc := old target`),
-reading the pre-store values.
+`error`). Unified memory is where the `prepare`/temporary-variable discipline
+earns its keep: the decoded fields -- including the store address `mem_addr` and
+the branch `target` -- are derived from `mem`, which a self-modifying store
+mutates mid-step. Because `prepare` computes them into variables *before* `step`
+runs, `step` simply reads the pre-store values (`ddirty(mem_addr) := true`,
+`pc := target`); there is no need to reach back for them with `old`.
 
 The key move in the specification is a *relaxation*: every invariant relating
 the implementation to the reference is guarded by `~trace.st(trace.now).error`.

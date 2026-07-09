@@ -110,25 +110,27 @@ module isa_model(init_mem) = {
     var ddirty(A:addr) : bool     # A has been written since the last FLUSH of A
     var error : bool              # an instruction was fetched from a dirty address
 
-    function fetched = mem(pc)
+    # Temporary variables computed during execution, but not holding state
+
+    var fetched : word
 
     # ---- decode of the X-stage instruction (combinational) ----
 
-    function opcode = bfe[13][15](fetched) : opc
-    function rd = bfe[10][12](fetched) : reg
-    function ra = bfe[7][9](fetched) : reg
-    function rb = bfe[4][6](fetched) : reg
-    function target = bfe[0][7](fetched) : addr            # low 8 bits: branch target or immediate
+    var opcode : opc
+    var rd : reg
+    var ra : reg
+    var rb : reg
+    var target : addr            # low 8 bits: branch target or immediate
 
     # ---- operand fetch (combinational) ----
 
-    function a_val = rf(ra) : word
-    function b_val = rf(rb) : word
-    function mem_addr  = bfe[0][7](a_val) : addr          # address for LD/ST: low 8 bits of rf[ra]
+    var a_val : word
+    var b_val : word
+    var mem_addr : addr          # address for LD/ST: low 8 bits of rf[ra]
 
     # ---- branch decision (BEQZ) ----
 
-    function take_branch = (opcode = 6) & (a_val = 0) : bool
+    var take_branch : bool
 
     # ---- reset ----
 
@@ -140,21 +142,43 @@ module isa_model(init_mem) = {
         error := false;
     }
 
-    # One step
+    # Compute the temporary variables
 
-    action step
+    action prepare = {
+        fetched := mem(pc);
 
-    after step {
+        # ---- decode of the X-stage instruction (combinational) ----
 
-        # (The M1/M2 no-FLUSH scaffold `assume opcode ~= 7` is removed here in M3,
-        # now that the FLUSH datapath below makes writes visible to fetch.)
+        opcode := bfe[13][15](fetched);
+        rd := bfe[10][12](fetched);
+        ra := bfe[7][9](fetched);
+        rb := bfe[4][6](fetched);
+        target := bfe[0][7](fetched);     # low 8 bits: branch target or immediate
+
+        # ---- operand fetch ----
+
+        a_val := rf(ra);
+        b_val := rf(rb);
+        mem_addr  := bfe[0][7](a_val);    # address for LD/ST: low 8 bits of rf[ra]
+
+        # ---- branch decision (BEQZ) ----
+
+        take_branch := (opcode = 6) & (a_val = 0);
+    }
+
+    # Update the architectural state. The temporary variables were computed by
+    # `prepare` in the pre-state, so unlike the earlier defined-function version
+    # this needs no `old`: `mem_addr`, `target` and `take_branch` are plain
+    # variables holding the pre-state values, unaffected by the stores below.
+
+    action step = {
 
         # Fetch coherence: executing an instruction at an address written since
         # its last flush reads a stale instruction. The ISA records this by
-        # entering a sticky error state (it is never cleared once set). We read
-        # the *pre-state* dirty bit at the *pre-state* pc: the fetch conceptually
-        # precedes the execute/writeback that may itself dirty an address.
-        if old ddirty(pc) {
+        # entering a sticky error state (it is never cleared once set). This runs
+        # before any store below, and `pc`/`ddirty` are untouched, so it reads
+        # the pre-state dirty bit at the pre-state pc, as intended.
+        if ddirty(pc) {
             error := true;
         }
 
@@ -169,21 +193,14 @@ module isa_model(init_mem) = {
             rf(rd) := mem(mem_addr)
         } else if opcode = 5 {                   # ST
             mem(mem_addr) := b_val;
-            # mem_addr depends on mem (mem_addr <- a_val <- ra <- fetched <-
-            # mem(pc)), and the store above just mutated mem, so a self-modifying
-            # store would re-derive a *different* mem_addr here. Use `old mem_addr`
-            # to mark dirty the address that was actually written.
-            ddirty(old mem_addr) := true;        # the written line is now dirty
+            ddirty(mem_addr) := true;            # the written line is now dirty
         } else if opcode = 7 {                   # FLUSH
-            ddirty(old mem_addr) := false;       # writes to this line are now visible
+            ddirty(mem_addr) := false;           # writes to this line are now visible
         }
 
-        # Advance the PC. `target`, like mem_addr, is a mem-dependent defined
-        # function (target <- fetched <- mem(pc)) and the execute block above may
-        # have mutated mem, so we redirect to `old target` -- the branch target
-        # computed from the pre-state.
-        if old take_branch {
-            pc := old target;      # redirect to the branch target
+        # Advance the PC
+        if take_branch {
+            pc := target;          # redirect to the branch target
         } else {
             pc := pc + 1;
         }
@@ -259,24 +276,25 @@ isolate trace = {
             res.take_branch := arch.take_branch;
         }
 
-        # This internal procedure records the current state in the
-        # trace Notice that tag is an abstract sequence type that
-        # defines only zero and next, so we write `now.next` instead
-        # of `now + 1`.
-        
-        action record = {
-        }
-        
+        # Initalization computes the temporary variable values in the initial ISA
+        # state and records this state in the trace.
+
         after init {
             now := 0;
+            arch.prepare;
             st(now) := current;
         }
-        
-        # This externally called procedure steps the isa and records
-        # the new state.
+
+        # This externally called procedure steps the isa and records the new
+        # state. Notice that tag is an abstract sequence type that defines only
+        # zero and next, so we write `now.next` instead of `now + 1`. After
+        # stepping we compute the temporary variables in the new state, before
+        # adding it to the trace, so the temporary values in every trace entry
+        # correspond correctly to that entry's architectural state.
 
         action step = {
             arch.step;
+            arch.prepare;
             now := now.next;
             st(now) := current;
         }

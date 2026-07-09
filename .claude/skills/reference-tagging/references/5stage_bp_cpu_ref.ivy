@@ -85,30 +85,34 @@ function init_imem(A:addr) : word    # initial instruction memory (the program)
 
 module isa_model(init_mem,init_imem) = {
 
+    # The architectural state
+
     var pc : addr                 # program counter
     var rf(R:reg) : word          # register file
     var mem(A:addr) : word        # data memory
     var imem(A:addr) : word       # instruction memory (ROM; never written)
 
-    function fetched = imem(pc)
+    # Temporary variables computed during execution, but not holding state
+
+    var fetched : word
 
     # ---- decode of the X-stage instruction (combinational) ----
 
-    function opcode = bfe[13][15](fetched) : opc
-    function rd = bfe[10][12](fetched) : reg
-    function ra = bfe[7][9](fetched) : reg
-    function rb = bfe[4][6](fetched) : reg
-    function target = bfe[0][7](fetched) : addr            # low 8 bits: branch target or immediate
+    var opcode : opc
+    var rd : reg
+    var ra : reg
+    var rb : reg
+    var target : addr            # low 8 bits: branch target or immediate
 
     # ---- operand fetch (combinational) ----
 
-    function a_val = rf(ra) : word
-    function b_val = rf(rb) : word
-    function mem_addr  = bfe[0][7](a_val) : addr          # address for LD/ST: low 8 bits of rf[ra]
+    var a_val : word
+    var b_val : word
+    var mem_addr : addr          # address for LD/ST: low 8 bits of rf[ra]
 
     # ---- branch decision (BEQZ) ----
 
-    function take_branch = (opcode = 6) & (a_val = 0) : bool
+    var take_branch : bool
 
     # ---- reset ----
 
@@ -119,11 +123,33 @@ module isa_model(init_mem,init_imem) = {
         imem(A) := init_imem(A);
     }
 
-    # One step
+    # Compute the temporary variables
 
-    action step
+    action prepare = {
+        fetched := imem(pc);
 
-    after step {
+        # ---- decode of the X-stage instruction (combinational) ----
+
+        opcode := bfe[13][15](fetched);
+        rd := bfe[10][12](fetched);
+        ra := bfe[7][9](fetched);
+        rb := bfe[4][6](fetched);
+        target := bfe[0][7](fetched);     # low 8 bits: branch target or immediate
+
+        # ---- operand fetch ----
+
+        a_val := rf(ra);
+        b_val := rf(rb);
+        mem_addr  := bfe[0][7](a_val);    # address for LD/ST: low 8 bits of rf[ra]
+
+        # ---- branch decision (BEQZ) ----
+
+        take_branch := (opcode = 6) & (a_val = 0); 
+    }
+
+    # Update the architectural state
+
+    action step = {
 
         # Execute / write back 
         if opcode = 1 {                          # ADD
@@ -139,7 +165,7 @@ module isa_model(init_mem,init_imem) = {
         }
 
         # Advance the PC
-        if old take_branch {
+        if take_branch {
             pc := target;          # redirect to the branch target
         } else {
             pc := pc + 1;
@@ -214,24 +240,26 @@ isolate trace = {
             res.take_branch := arch.take_branch;
         }
 
-        # This internal procedure records the current state in the
-        # trace Notice that tag is an abstract sequence type that
-        # defines only zero and next, so we write `now.next` instead
-        # of `now + 1`.
-        
-        action record = {
-        }
+        # Initalization computes the temporary variable values in the initial ISA state
+        # and records this state in the trace. 
         
         after init {
             now := 0;
+            arch.prepare;
             st(now) := current;
         }
         
         # This externally called procedure steps the isa and records
-        # the new state.
-
+        # the new state. Notice that tag is an abstract sequence type that
+        # defines only zero and next, so we write `now.next` instead
+        # of `now + 1`. After stepping we compute the temporary
+        # variables in the new state, before adding it to the trace.
+        # In this way the values of the temporary variables in every trace
+        # entry correspond correctly to the architectural state variables.
+        
         action step = {
             arch.step;
+            arch.prepare;
             now := now.next;
             st(now) := current;
         }
