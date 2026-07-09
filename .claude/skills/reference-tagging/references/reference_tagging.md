@@ -312,11 +312,12 @@ same reference-tagging style, all relative to the trace state at the MEM stage
 
 Together these say the *effective* memory -- D-cache where present-and-dirty,
 else main memory -- always equals the reference memory (until an error), and the
-I-cache agrees wherever it has not gone stale. One structural invariant is
-needed to make the direct-mapped geometry sound: a valid line at index `I`
-caches an address whose index is `I` (`bfe[0][3](tag) = I`). Without it the
-prover can imagine a line filed under the wrong index and write a victim back to
-a bogus address.
+I-cache agrees wherever it has not gone stale. Each line is a packed bit-vector
+`[21] full | [20] dirty | [19:16] hi_addr | [15:0] data`, built with `concat` and
+decoded with `bfe`. Because the tag holds only `hi_addr` (not the full address),
+the address a line caches is structurally `concat(hi_addr, index)`, so it is
+always at its own index -- no extra "line is filed at the right index" invariant
+is needed.
 
 `FLUSH A` is what re-establishes coherence: in the MEM stage it writes the
 D-cache line for `A` back to main memory if it is dirty, then evicts `A` from
@@ -357,6 +358,9 @@ RTL
 All four designs translate to RTL with `ivy_to_rtl`, because the datapath is
 kept free of ghost state (tags, shadow and dirty bits used only in the proof
 live in `specification` blocks) and uses only point writes to the state arrays.
-The caches are stored as parallel field arrays (valid / dirty / tag / data)
-sharing one index -- in RTL, narrow memories addressed in lockstep, i.e. a
-direct-mapped cache.
+Each cache is a single memory of packed 22-bit lines; a line is assembled with
+`concat` and its fields read with `bfe`, so in RTL it is one narrow memory per
+cache -- a direct-mapped cache. (This uses `concat`'s variadic form,
+`concat(full, dirty, hi_addr, data)`; a `concat` is given bit-vector semantics
+only when every argument and the result are bit-vectors and the argument widths
+sum to the result width, and is otherwise treated as uninterpreted.)

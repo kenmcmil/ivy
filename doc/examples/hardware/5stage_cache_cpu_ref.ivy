@@ -63,10 +63,15 @@ interpret reg -> bv[3]
 type opc
 interpret opc -> bv[3]
 
-# Cache index / hi_addr field type (4 bits): a line is at index bfe[0][3](A)
-# and stores hi_addr = bfe[4][7](A).
+# Cache line and its field types. A line is a bv[22]:
+#     [21] full  [20] dirty  [19:16] hi_addr  [15:0] data
+# Address A maps to line index bfe[0][3](A); the hi_addr field is bfe[4][7](A).
+type cline
+interpret cline -> bv[22]
 type nib
 interpret nib -> bv[4]
+type bit
+interpret bit -> bv[1]
 
 # The clock: one exported action driven by the environment.
 
@@ -484,14 +489,11 @@ object cpu = {
         #   (1) a dirty cache line's address is dirty in the reference;
         #   (2) a present cache line holds the reference's MEM-stage value;
         #   (4) a not-dirty address holds the reference value in main memory.
-        # ((3), the I-cache, arrives in M3.)
+        # ((3), the I-cache, is below.)
         #
-        # Direct-mapped structural invariant: a valid line at index I caches an
-        # address whose index is I (maintained by every install, since we install
-        # at m_index = bfe[0][3](m_addr)). Without this the solver can place an
-        # address at the wrong line and write a stale victim back to it.
-        invariant dcf(I) -> bfe[0][3](dct(I)) = I
-        invariant icf(I) -> bfe[0][3](ict(I)) = I
+        # (With a packed line the tag holds only hi_addr, so the address cached at
+        # index I is structurally concat(hi_addr, I), whose index is I -- no
+        # separate "line is at the right index" invariant is needed.)
         invariant ~trace.st(trace.now).error -> (dc_dirty(A) -> trace.st(mcommit).ddirty(A))
         invariant ~trace.st(trace.now).error -> (dc_present(A) -> dc_val(A) = trace.st(mcommit).mem(A))
         invariant ~trace.st(trace.now).error -> (~dc_dirty(A) -> mem(A) = trace.st(mcommit).mem(A))
@@ -593,34 +595,32 @@ object cpu = {
     var mem(A:addr) : word         # unified main memory (instructions and data)
 
     # ---- D-cache (direct-mapped, write-back, 16 lines x 1 word) ----
-    # The specified line format is a 22-bit vector
-    #     [21] full  [20] dirty  [19:16] hi_addr  [15:0] data
-    # We store the fields as parallel arrays sharing the index bfe[0][3](A); this
-    # is the same direct-mapped cache (in RTL, parallel narrow memories with a
-    # shared index) but avoids bit-packing plumbing. hi_addr = bfe[4][7](A).
-    # Data accesses (LD/ST) go through this cache; instruction fetch in M2 still
-    # reads main memory directly (the I-cache arrives in M3), so a store that is
-    # only in the D-cache leaves a stale instruction in main memory -- which is
-    # exactly the incoherence the ISA's ddirty/error mechanism accounts for.
+    # Each line is a packed bv[22] as described at the top: [21] full, [20] dirty,
+    # [19:16] hi_addr, [15:0] data. Lines are built with `concat` and their fields
+    # read with `bfe` (see the ln_* accessors below). Data accesses (LD/ST) go
+    # through this cache; instruction fetch reads the separate I-cache. A store
+    # that lives only in the (write-back) D-cache leaves a stale value in main
+    # memory -- the incoherence the ISA's ddirty/error mechanism accounts for.
 
-    var dcf(I:nib) : bool         # full (valid)
-    var dcd(I:nib) : bool         # dirty
-    var dct(I:nib) : addr         # tag: the full address cached in this line
-                                  #   (its low nibble is always the line index I;
-                                  #   storing the full address rather than just the
-                                  #   hi_addr nibble avoids a concat and is the same
-                                  #   direct-mapped cache)
-    var dcw(I:nib) : word         # data word
+    var dcache(I:nib) : cline
 
     # ---- I-cache (direct-mapped, read-only, 16 lines x 1 word) ----
     # Instruction fetch reads this cache; it is filled from main memory on a miss
-    # and never written by the CPU (so no dirty bit). FLUSH invalidates a line
-    # (M3b). Being filled from possibly-stale main memory, it can hold a stale
+    # and never written (so its dirty bit is always 0). FLUSH invalidates a line.
+    # Being filled from possibly-stale main memory, it can hold a stale
     # instruction; the ISA's ddirty/error accounts for that.
 
-    var icf(I:nib) : bool         # full (valid)
-    var ict(I:nib) : addr         # tag: the full address cached in this line
-    var icw(I:nib) : word         # cached instruction word
+    var icache(I:nib) : cline
+
+    # ---- packed-line field accessors (used by both datapath and invariants) ----
+    function ln_full(L:cline) : bool
+    definition ln_full(L) = (bfe[21][21](L):bit) = 1
+    function ln_dirty(L:cline) : bool
+    definition ln_dirty(L) = (bfe[20][20](L):bit) = 1
+    function ln_hi(L:cline) : nib
+    definition ln_hi(L) = bfe[16][19](L)
+    function ln_data(L:cline) : word
+    definition ln_data(L) = bfe[0][15](L)
 
     # ---- main-memory read-fill controller (multi-cycle) ----
     # Read fills take two cycles: an initiating cycle (memory free) and a busy
@@ -722,10 +722,12 @@ object cpu = {
 
     wire f_index : nib
     definition f_index = bfe[0][3](pc)
+    wire f_iline : cline              # the I-cache line at the fetch index
+    definition f_iline = icache(f_index)
     wire f_ihit : bool
-    definition f_ihit = icf(f_index) & (ict(f_index) = pc)
+    definition f_ihit = ln_full(f_iline) & (ln_hi(f_iline) = bfe[4][7](pc))
     wire fetched : word
-    definition fetched = (icw(f_index) if f_ihit else mem(pc))
+    definition fetched = (ln_data(f_iline) if f_ihit else mem(pc))
 
     wire f_is_branch : bool
     definition f_is_branch = ((bfe[13][15](fetched):opc) = 6)
@@ -754,20 +756,26 @@ object cpu = {
 
     wire m_index : nib
     definition m_index = bfe[0][3](m_addr)
+    wire m_hi : nib                    # hi_addr of the accessed address
+    definition m_hi = bfe[4][7](m_addr)
+    wire m_line : cline                # the D-cache line at this index
+    definition m_line = dcache(m_index)
     wire m_line_full : bool
-    definition m_line_full = dcf(m_index)
+    definition m_line_full = ln_full(m_line)
     wire m_line_dirty : bool
-    definition m_line_dirty = dcd(m_index)
-    wire m_line_addr : addr            # full address currently cached in this line
-    definition m_line_addr = dct(m_index)
+    definition m_line_dirty = ln_dirty(m_line)
+    wire m_line_hi : nib               # hi_addr currently cached in this line
+    definition m_line_hi = ln_hi(m_line)
     wire m_line_data : word
-    definition m_line_data = dcw(m_index)
+    definition m_line_data = ln_data(m_line)
     wire m_hit : bool
-    definition m_hit = m_line_full & (m_line_addr = m_addr)
+    definition m_hit = m_line_full & (m_line_hi = m_hi)
+    wire m_iline : cline               # the I-cache line at this index
+    definition m_iline = icache(m_index)
     wire m_ihit : bool                 # I-cache holds the (flush) address m_addr
-    definition m_ihit = icf(m_index) & (ict(m_index) = m_addr)
+    definition m_ihit = ln_full(m_iline) & (ln_hi(m_iline) = m_hi)
     wire m_victim_addr : addr          # address to write the victim back to
-    definition m_victim_addr = m_line_addr
+    definition m_victim_addr = concat(m_line_hi, m_index)
     wire m_fill_data : word            # main-memory word for m_addr (pre-clock)
     definition m_fill_data = mem(m_addr)
 
@@ -782,19 +790,27 @@ object cpu = {
     wire dmem_stall : bool
     definition dmem_stall = d_miss & ~d_fill_go
 
-    # ---- D-cache query helpers (used by the invariants, for any address A) ----
+    # ---- cache query helpers (used by the invariants, for any address A) ----
+    # A is present in a cache iff the line at its index is full and its hi_addr
+    # field matches A's hi_addr; the cached address is then structurally
+    # concat(hi_addr, index(A)) = A, so no separate "right index" invariant is
+    # needed (unlike a full-address tag).
 
+    function dc_line(A:addr) : cline
+    definition dc_line(A) = dcache(bfe[0][3](A))
     function dc_present(A:addr) : bool
-    definition dc_present(A) = dcf(bfe[0][3](A)) & (dct(bfe[0][3](A)) = A)
+    definition dc_present(A) = ln_full(dc_line(A)) & (ln_hi(dc_line(A)) = bfe[4][7](A))
     function dc_dirty(A:addr) : bool
-    definition dc_dirty(A) = dc_present(A) & dcd(bfe[0][3](A))
+    definition dc_dirty(A) = dc_present(A) & ln_dirty(dc_line(A))
     function dc_val(A:addr) : word
-    definition dc_val(A) = dcw(bfe[0][3](A))
+    definition dc_val(A) = ln_data(dc_line(A))
 
+    function ic_line(A:addr) : cline
+    definition ic_line(A) = icache(bfe[0][3](A))
     function ic_present(A:addr) : bool
-    definition ic_present(A) = icf(bfe[0][3](A)) & (ict(bfe[0][3](A)) = A)
+    definition ic_present(A) = ln_full(ic_line(A)) & (ln_hi(ic_line(A)) = bfe[4][7](A))
     function ic_val(A:addr) : word
-    definition ic_val(A) = icw(bfe[0][3](A))
+    definition ic_val(A) = ln_data(ic_line(A))
 
     # ---- reset ----
 
@@ -806,8 +822,8 @@ object cpu = {
         w_valid := false;
         rf(R) := 0;
         mem(A) := init_mem(A);
-        dcf(I) := false;        # all D-cache lines empty
-        icf(I) := false;        # all I-cache lines empty
+        dcache(I) := 0;         # all D-cache lines empty (full bit = 0)
+        icache(I) := 0;         # all I-cache lines empty
         mbusy := false;         # no memory fill in progress
     }
 
@@ -836,29 +852,24 @@ object cpu = {
                 mem(m_victim_addr) := m_line_data
             };
             if m_opcode = 5 {
-                # ST: install a dirty line holding the stored word. A 1-word line
-                # is fully overwritten, so a write miss needs no fetch.
-                dcf(m_index) := true;
-                dcd(m_index) := true;
-                dct(m_index) := m_addr;
-                dcw(m_index) := m_store
+                # ST: install a dirty line holding the stored word (full, dirty,
+                # hi_addr, data). A 1-word line is fully overwritten, so a write
+                # miss needs no fetch.
+                dcache(m_index) := (concat(1:bit, 1:bit, m_hi, m_store) : cline)
             } else if ~m_hit {
                 # LD miss: install a clean line with the fetched word.
-                dcf(m_index) := true;
-                dcd(m_index) := false;
-                dct(m_index) := m_addr;
-                dcw(m_index) := m_fill_data
+                dcache(m_index) := (concat(1:bit, 0:bit, m_hi, m_fill_data) : cline)
             }
         };
         # FLUSH m_addr: write the D-cache line back if it is present and dirty,
-        # then evict m_addr from both caches, so a later fetch of m_addr misses
-        # and refills from the (now up-to-date) main memory.
+        # then evict m_addr from both caches (full bit -> 0), so a later fetch of
+        # m_addr misses and refills from the (now up-to-date) main memory.
         if ~dmem_stall & m_valid & (m_opcode = 7) {
             if m_hit & m_line_dirty {
                 mem(m_addr) := m_line_data
             };
-            if m_hit  { dcf(m_index) := false };
-            if m_ihit { icf(m_index) := false }
+            if m_hit  { dcache(m_index) := 0 };
+            if m_ihit { icache(m_index) := 0 }
         };
 
         # EX: held while MEM stalls for a D-fill; bubbled on a data hazard;
@@ -903,9 +914,8 @@ object cpu = {
                     d_pred := f_ptaken;
                     d_pc := pc;
                     if ~f_ihit {
-                        icf(f_index) := true;
-                        ict(f_index) := pc;
-                        icw(f_index) := fetched
+                        # install a clean I-cache line (dirty bit unused = 0)
+                        icache(f_index) := (concat(1:bit, 0:bit, (bfe[4][7](pc):nib), fetched) : cline)
                     };
                     pc := pred_next_pc
                 }

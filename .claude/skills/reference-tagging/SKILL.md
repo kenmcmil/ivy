@@ -150,14 +150,19 @@ distilled from — read the one closest to your target before writing code:
   store re-derives a *different* `mem_addr`/`target` afterward. Read them via
   `old`: `ddirty(old mem_addr) := true`, `pc := old target`.
 
-- **Ivy won't interpret `concat` of two named bit-vector subtypes into an
-  address.** `concat(hi:nib, lo:nib) : addr` came out unconstrained (the solver
-  picked garbage — a bogus write-back address). Store the *full* address in a
-  cache's tag field instead of just the hi bits; the index bits are redundant in
-  a direct-mapped cache, so it is the same cache with no `concat`. Also, nested
-  `concat` can't infer intermediate widths — represent a packed line as parallel
-  field arrays (valid/dirty/tag/data) sharing an index rather than one wide
-  bit-vector.
+- **Packing with `concat`.** `concat` is variadic, so a packed cache line is
+  built in one shot: `concat(full, dirty, hi_addr, data) : cline` (assign to a
+  `cline`/`bv[22]`-interpreted type; ascribe the result). Decode fields with
+  `bfe`. A `concat` is given bit-vector semantics only when every argument sort
+  *and* the result sort is a bit-vector and the argument widths sum to the result
+  width; otherwise it is uninterpreted (still sound by congruence) and a width
+  mismatch warns rather than crashing. Two consequences: (1) each `concat`
+  argument's sort must be pinned — a bare `bfe[...]` inside a `concat` needs an
+  ascription like `(bfe[4][7](pc):nib)`, since the `:cline` on the whole `concat`
+  does not constrain the argument widths; (2) inside an isolate closed
+  `with addr,opc` (so `word` is not interpreted there), a `concat` returning
+  `word` is left uninterpreted — which is exactly what you want for the trace's
+  recorded values.
 
 - **Debugging CTIs: use `shrink=false`.** Counterexample generation can be very
   slow; `shrink=false` skips minimization. `trace_dir=<dir>` dumps a CTI for
@@ -213,10 +218,13 @@ weak memory, or any "software must synchronize" contract.
   main memory holds the reference value; I-line not dirty ⇒ holds the reference
   value. Same reference-tagging style, one fact per cache property.
 
-- **State the direct-mapped geometry.** `valid(I) -> bfe[0][3](tag(I)) = I` (a
-  line at index `I` caches an address whose index is `I`). Without it the prover
-  imagines a line filed under the wrong index and writes a victim back to a bogus
-  address — a classic spurious CTI.
+- **Direct-mapped geometry: keep only `hi_addr` in the tag.** If a line stores
+  only the high address bits (not the full address), the address it caches is
+  structurally `concat(hi_addr, index)`, always at its own index, so no "line is
+  filed at the right index" invariant is needed. (If you instead store a full
+  address in the tag — e.g. to dodge a `concat` — you *do* need the structural
+  invariant `valid(I) -> bfe[0][3](tag(I)) = I`, or the prover imagines a line
+  under the wrong index and writes a victim back to a bogus address.)
 
 - **`FLUSH` + fetch stall re-establish coherence.** `FLUSH A` writes back the
   dirty D-line and evicts `A` from both caches; fetch stalls while a `FLUSH` is
