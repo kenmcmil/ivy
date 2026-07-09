@@ -577,12 +577,10 @@ object cpu = {
         }
     }
 
-    # ---- branch-predictor input ----
-    # The predicted "taken" bit for the instruction being fetched this cycle,
-    # driven by an external branch predictor. Left unconstrained: correctness
-    # holds for any prediction.
-
-    import wire predicted_taken : bool
+    # The branch predictor is the sub-isolate `bp`, declared further down (after
+    # the datapath signals it consumes). It drives bp.predicted_taken, which the
+    # fetch stage reads via f_ptaken. Since bp's logic is hidden in its own
+    # isolate, the CPU is verified with the prediction left arbitrary.
 
     # ---- architectural state ----
 
@@ -723,6 +721,61 @@ object cpu = {
     wire mispredict : bool
     definition mispredict = e_valid & ~ex_stall & (e_opcode = 6) & (e_pred ~= e_take)
 
+    # ---- the branch predictor, as a sub-isolate `bp` ----
+    # `bp` declares its own input/output wires and its logic uses only those; it
+    # never reaches into the CPU. Here, in the parent, we connect it: its inputs
+    # are driven from the CPU's fetch PC and branch resolution, and the CPU's
+    # prediction (f_ptaken, below) reads its output. Because bp's logic lives in
+    # its (hidden) implementation, Ivy verifies the CPU with bp.predicted_taken
+    # left arbitrary -- correctness holds for any prediction.
+
+    isolate bp = {
+        wire fetch_pc : addr          # input: PC being fetched (to predict)
+        wire br_valid : bool          # input: a conditional branch resolves this cycle
+        wire br_pc : addr             # input: the resolving branch's PC
+        wire br_taken : bool          # input: its true outcome
+        wire predicted_taken : bool   # output: the prediction for fetch_pc
+
+        implementation {
+            type bhtidx
+            interpret bhtidx -> bv[4]  # 16-entry branch history table
+            type ctr
+            interpret ctr -> bv[2]     # 2-bit saturating counter, states 0..3
+
+            var bht(I:bhtidx) : ctr
+
+            wire pred_idx : bhtidx
+            definition pred_idx = bfe[0][3](fetch_pc)
+            wire upd_idx : bhtidx
+            definition upd_idx = bfe[0][3](br_pc)
+
+            # predict taken when the indexed counter is in a taken state (2 or 3)
+            definition predicted_taken = (bht(pred_idx) = 2) | (bht(pred_idx) = 3)
+
+            after init {
+                bht(I) := 1            # weakly not-taken
+            }
+
+            # on a resolved branch, nudge its counter toward the outcome,
+            # saturating at 0 and 3
+            after posedge {
+                if br_valid {
+                    if br_taken {
+                        if bht(upd_idx) ~= 3 { bht(upd_idx) := bht(upd_idx) + 1 }
+                    } else {
+                        if bht(upd_idx) ~= 0 { bht(upd_idx) := bht(upd_idx) - 1 }
+                    }
+                }
+            }
+        }
+    }
+
+    # connect the predictor's inputs to the CPU (in the parent)
+    definition bp.fetch_pc = pc
+    definition bp.br_valid = e_valid & (e_opcode = 6) & ~ex_stall
+    definition bp.br_pc = e_pc
+    definition bp.br_taken = e_take
+
     # ---- fetch stall on a pending FLUSH ----
     # While a FLUSH is in ID/EX/MEM, instruction fetch stalls so that no
     # instruction behind the FLUSH is fetched until the FLUSH has (in MEM) made
@@ -752,7 +805,7 @@ object cpu = {
     definition f_is_branch = ((bfe[13][15](fetched):opc) = 6)
 
     wire f_ptaken : bool             # predicted-taken for the fetched instruction
-    definition f_ptaken = f_is_branch & predicted_taken
+    definition f_ptaken = f_is_branch & bp.predicted_taken
 
     wire f_target : addr
     definition f_target = bfe[0][7](fetched)

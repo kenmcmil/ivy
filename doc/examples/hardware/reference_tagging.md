@@ -252,14 +252,22 @@ a valid shadowed instruction can only ever sit in the ID stage (everything
 further down has been squashed), so nothing shadowed reaches the register file
 or memory.
 
-Finally, note that we have not actually implemented the branch predictor. We
-treat it as an external input to the CPU -- a `predicted_taken` wire the
-pipeline reads each cycle -- and leave it completely unconstrained. This works
-because the correctness of the CPU does not depend on the *values* the
-predictor produces: a good predictor improves performance, but any prediction
-whatsoever yields a correct execution. (Later we can implement a predictor as a
-separate isolate that drives this input, and Ivy will not need to look at its
-logic when verifying the CPU.)
+The predictor itself lives in a separate isolate, `bp`. It declares its own
+input and output wires -- the fetch PC and the branch resolution as inputs, the
+predicted-taken bit as output -- and its logic (a table of 2-bit saturating
+counters, a classic bimodal predictor) sits in its `implementation` block. The
+CPU, in the parent, *connects* it: it drives `bp`'s inputs from the fetch PC and
+the EX-stage branch outcome, and reads `bp.predicted_taken` in the fetch stage.
+
+The point of the isolate boundary is that Ivy verifies the CPU with
+`bp.predicted_taken` left *arbitrary* -- it never looks inside the predictor.
+This is sound precisely because CPU correctness does not depend on the *values*
+the predictor produces: a good predictor improves performance, but any
+prediction whatsoever yields a correct execution. The predictor, in turn, has
+no correctness obligation of its own, so its isolate carries no invariants; it
+is simply a well-formed hardware component. This is assume-guarantee reasoning
+at its most convenient: the interface the CPU assumes of the predictor (an
+arbitrary boolean) is so weak that the predictor discharges it for free.
 
 Caches and memory incoherence
 -----------------------------
@@ -377,7 +385,9 @@ this directory support that:
   and its combinational wires. Its register and memory names (`pc`, the pipeline
   latches, `mbusy`/`mfa`/`mfi`, and the `rf`/`mem`/`dcache`/`icache` memories)
   are chosen to match the Ivy model exactly, and it contains no ghost/trace
-  state -- only the hardware.
+  state -- only the hardware. It is hierarchical in the same way the Ivy model
+  is: a `cpu` module instantiates a `bp` submodule (the branch predictor, with
+  its `bht` memory), mirroring the `cpu.bp` sub-isolate.
 
 * [cpu_equiv.ys](cpu_equiv.ys) is a [yosys](https://yosyshq.net/yosys/) script
   that checks the two for *combinational equivalence*. After translating the Ivy
@@ -387,12 +397,15 @@ this directory support that:
         yosys cpu_equiv.ys
 
   it reads the emitted `5stage_cache_cpu_ref.il` (the "gold" design) and
-  `cpu_golden.sv` (the "gate"), pairs their registers and memories by name with
+  `cpu_golden.sv` (the "gate"). Both are hierarchical, so it `flatten`s each
+  (the shared `bp` instance name makes the predictor's inlined names, e.g.
+  `bp.bht`, line up), pairs their registers and memories by name with
   `equiv_make`, expands the memories to flop arrays, and proves by one-step
   induction (`equiv_induct`) that from any equal state the two compute the same
   next state for every register and memory. yosys reports every matched cell as
-  proven (the 20 scalar registers, all four memories, and the internal wires),
-  so the generated RTL and the golden model are equivalent per clock cycle. The
-  reset input `rst` is tied to 0, so the comparison is of the datapath in normal
-  operation (the emitted RTL's synchronous reset is a per-register mux that the
-  golden model does not reproduce). The `rtl` regression group runs this check.
+  proven (the scalar registers, all five memories including the predictor's
+  `bp.bht`, and the internal wires), so the generated RTL and the golden model
+  are equivalent per clock cycle. The reset input `rst` is tied to 0, so the
+  comparison is of the datapath in normal operation (the emitted RTL's
+  synchronous reset is a per-register mux that the golden model does not
+  reproduce). The `rtl` regression group runs this check.
