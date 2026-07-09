@@ -3690,15 +3690,27 @@ def parse_int_params(name):
 
 def emit_special_op(self,op,header,code):
     if op == 'concat':
-        sort_name = il.sig.interp[self.args[1].sort.name]
-        sname,sparms = parse_int_params(sort_name)
-        if sname == 'bv' and len(sparms) == 1:
-            code.append('(')
-            self.args[0].emit(header,code)
-            code.append(' << {} | '.format(sparms[0]))
-            self.args[1].emit(header,code)
-            code.append(')')
-            return
+        # concat is variadic: concat(a0,...,a_{n-1}) places a0 in the high bits
+        # and a_{n-1} in the low bits, i.e. sum_i (a_i << (width of the args to
+        # its right)). Each argument must be a single-parameter bit-vector.
+        widths = []
+        for a in self.args:
+            sname,sparms = parse_int_params(il.sig.interp[a.sort.name])
+            if sname != 'bv' or len(sparms) != 1:
+                raise iu.IvyError(self,"concat argument is not a bit-vector")
+            widths.append(sparms[0])
+        code.append('(')
+        for i,a in enumerate(self.args):
+            if i > 0:
+                code.append(' | ')
+            shift = sum(widths[i+1:])
+            if shift:
+                code.append('(')
+            a.emit(header,code)
+            if shift:
+                code.append(' << {})'.format(shift))
+        code.append(')')
+        return
     if op.startswith('bfe['):
         opname,opparms = parse_int_params(op)
         mask = (1 << (opparms[0]-opparms[1]+1)) - 1

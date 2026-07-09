@@ -60,11 +60,54 @@ def set_use_native_enums(t):
 
 z3_builtins = set(["bit0","bit1"])
 
+def bv_interp_width(sort_name):
+    """If `sort_name` is interpreted as a bit-vector (bv/intbv/strbv), return its
+    width; otherwise return None."""
+    itp = ivy_logic.sig.interp.get(sort_name)
+    if isinstance(itp,str) and (itp.startswith('bv[')
+                                or itp.startswith('intbv[')
+                                or itp.startswith('strbv[')):
+        try:
+            return int(itp[itp.rfind('[')+1:-1])
+        except ValueError:
+            return None
+    return None
+
+_concat_width_warned = set()
+
+def concat_is_interpreted(symbol):
+    """concat is encoded as z3's Concat only when *every* argument sort and the
+    result sort is interpreted as a bit-vector AND the result width equals the
+    sum of the argument widths. If any sort is uninterpreted (e.g. in an isolate
+    that does not interpret one of them), or the widths do not add up, concat is
+    left as an uninterpreted function -- still sound by congruence. A width
+    mismatch is a likely modelling error, so we warn (once per signature) rather
+    than silently under-specify or crash z3 with a sort mismatch."""
+    dom_w = [bv_interp_width(s.name) for s in symbol.sort.domain]
+    rng_w = bv_interp_width(symbol.sort.rng.name)
+    if rng_w is None or any(w is None for w in dom_w):
+        return False
+    if sum(dom_w) != rng_w:
+        key = str(symbol.sort)
+        if key not in _concat_width_warned:
+            _concat_width_warned.add(key)
+            iu.warn(None,"concat result width {} does not equal the sum {} of its "
+                    "argument widths (for {}); treating this concat as an "
+                    "uninterpreted function".format(rng_w,sum(dom_w),symbol.sort))
+        return False
+    return True
+
 def solver_name(symbol):
     name = symbol.name
     if name.startswith('bfe['):
         if bfe_to_z3(symbol) is not None:
             return None
+    elif name == 'concat':
+        if concat_is_interpreted(symbol):
+            return None
+        # uninterpreted: distinguish instances by their argument sorts
+        for s in symbol.sort.domain:
+            name += ':' + s.name
     elif name in iu.polymorphic_symbols:
         sort = symbol.sort.domain[0].name if name != 'arrcst' else symbol.sort.rng.name
         if sort in ivy_logic.sig.interp and not isinstance(ivy_logic.sig.interp[sort],ivy_logic.EnumeratedSort):
@@ -166,7 +209,7 @@ functions_dict = {"+":(lambda x,y: x + y),
              "-":my_minus,
              "*":(lambda x,y: x * y),
              "/":(lambda x,y: x / y),
-             "concat":(lambda x,y: z3.Concat(x,y)),
+             "concat":(lambda *args: z3.Concat(*args) if len(args) > 1 else args[0]),
              "bvand":(lambda x,y: x & y),
              "bvor":(lambda x,y: x | y),
              "bvnot":(lambda x: ~x),
@@ -306,6 +349,10 @@ def lookup_native(thing,table,kind):
             sort = thing.sort.rng
             if sort.name in ivy_logic.sig.interp:
                 return lambda x: z3.K(sort.to_z3().domain(),x)
+        if thing.name == 'concat':
+            # interpret as z3 Concat only when all arg sorts and the result sort
+            # are bit-vectors; otherwise leave it uninterpreted (return None)
+            return functions_dict['concat'] if concat_is_interpreted(thing) else None
         if thing.name in iu.polymorphic_symbols:
             sort = thing.sort.domain[0].name
             if sort in ivy_logic.sig.interp and not isinstance(ivy_logic.sig.interp[sort],ivy_logic.EnumeratedSort):

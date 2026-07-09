@@ -341,6 +341,14 @@ def compile_app(self,old=False):
                 ascribed = False
     if sym is not None:
         sym = old_sym(sym,old)
+        # `concat` is variadic: it takes any number (>=1) of bit-vector arguments
+        # and its result sort is fixed by context (an ascription or the target
+        # sort), not computed from the arguments. The polymorphic table carries a
+        # fixed arity-2 template, so rebuild the symbol with a fresh function sort
+        # of the right arity here; HM inference then unifies each argument sort
+        # with a domain and leaves the range to be determined by context.
+        if rep == 'concat':
+            sym = ivy_logic.Symbol(sym.name, ivy_logic.TopFunctionSort(len(args)))
         res = (sym)(*args)
     else:
         res = compile_field_reference(rep,args,self.lineno,old=old)
