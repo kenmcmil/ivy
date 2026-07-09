@@ -38,7 +38,12 @@ tests = [
     {'type': 'to_rtl', 'name': 'pipe_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': '5stage_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': '5stage_bp_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
-    {'type': 'to_rtl', 'name': '5stage_cache_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
+    # For the cache CPU, validation goes further than a yosys read: it proves,
+    # by inductive combinational equivalence (equiv_induct), that the emitted
+    # RTL matches an independent hand-written SystemVerilog golden model
+    # (cpu_golden.sv), register/memory by register/memory. See cpu_equiv.ys.
+    {'type': 'to_rtl', 'name': '5stage_cache_cpu_ref',
+     'validate': _yosys_wf + ' && yosys -q cpu_equiv.ys', 'group': 'rtl'},
 
     # memtest: mem is initialized from a *defined* function init_mem(A)=5, so
     # the translation must emit a $meminit of 5 (DATA = repeated 0x05).
