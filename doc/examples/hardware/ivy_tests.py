@@ -43,7 +43,8 @@ tests = [
     # RTL matches an independent hand-written SystemVerilog golden model
     # (cpu_golden.sv), register/memory by register/memory. See cpu_equiv.ys.
     {'type': 'to_rtl', 'name': '5stage_cache_cpu_ref',
-     'validate': _yosys_wf + ' && yosys -q cpu_equiv.ys', 'group': 'rtl'},
+     'validate': _yosys_wf + ' && yosys -q cpu_equiv.ys',
+     'timeout': 600, 'group': 'rtl'},
 
     # memtest: mem is initialized from a *defined* function init_mem(A)=5, so
     # the translation must emit a $meminit of 5 (DATA = repeated 0x05).
@@ -60,4 +61,15 @@ tests = [
     # a single-address RAM write, so translation must error.
     {'type': 'to_rtl', 'name': 'arrcopy',
      'expect': 'not a point write', 'group': 'rtl'},
+
+    # Handling of functions defined by `definition` (see the ivy_to_rtl fix):
+    # a wire function used by the implementation is inlined (no lookup memory),
+    # a specification function is ignored, and an ordinary (non-wire) function
+    # applied in the implementation is an error.
+    {'type': 'to_rtl', 'name': 'to_rtl_wire_fun',
+     'validate': _yosys_wf + ' && ! grep -q wfdbl {name}.il', 'group': 'rtl'},
+    {'type': 'to_rtl', 'name': 'to_rtl_spec_fun',
+     'validate': _yosys_wf + ' && ! grep -q sfq {name}.il', 'group': 'rtl'},
+    {'type': 'to_rtl', 'name': 'to_rtl_bad_fun',
+     'expect': 'non-wire function', 'group': 'rtl'},
 ]

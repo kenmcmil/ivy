@@ -1,0 +1,23 @@
+#lang ivy1.8
+# ivy_to_rtl: an *implementation* wire function is inlined at its uses (not
+# emitted as a lookup memory). `wfdbl` is a wire function; the datapath uses it,
+# so its body is substituted -- the RTL has no `wfdbl` memory, just the `x+x`
+# adder feeding y.
+
+type word
+interpret word -> bv[16]
+
+export action posedge
+
+object top = {
+    wire wfdbl(X:word) : word
+    definition wfdbl(X) = X + X
+
+    var x : word
+    var y : word
+
+    after posedge {
+        y := wfdbl(x);
+        x := x + 1
+    }
+}

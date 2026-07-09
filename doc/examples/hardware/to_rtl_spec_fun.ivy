@@ -1,0 +1,28 @@
+#lang ivy1.8
+# ivy_to_rtl: a function defined in the specification is ignored when generating
+# RTL. Ivy checks the implementation cannot reference specification functions, so
+# it is safe to drop them. `sfq` is used only by an invariant, so the emitted RTL
+# contains the memory `mem` but no `sfq` lookup memory.
+
+type addr
+interpret addr -> bv[8]
+type word
+interpret word -> bv[16]
+
+export action posedge
+
+object top = {
+    var mem(A:addr) : word
+    var ctr : addr
+
+    specification {
+        function sfq(A:addr) : word
+        definition sfq(A) = mem(A)
+        invariant sfq(ctr) = mem(ctr)
+    }
+
+    after posedge {
+        mem(ctr) := mem(ctr);
+        ctr := ctr + 1
+    }
+}

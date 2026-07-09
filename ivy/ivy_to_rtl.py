@@ -207,16 +207,30 @@ class Translator(object):
     def __init__(self, mod):
         self.mod = mod
         self.modules = []
-        # wire definitions, indexed by the symbol they define
-        self.wire_defs = {}              # symbol -> rhs term
+        # wire definitions, indexed by the symbol they define. wire_defs holds
+        # only *implementation* definitions (specification ones are dropped): a
+        # 0-ary implementation definition is a combinational net, a parameterized
+        # one is inlined at its uses (see emit_expr).
+        self.wire_defs = {}              # symbol -> rhs term (implementation)
+        self.def_formals = {}            # defined symbol name -> formal-arg list
         self.def_owner = {}              # defined symbol name -> owning object
         for ldf in mod.definitions:
             if self.is_spec(str(ldf.label)) if ldf.label is not None else False:
                 continue
-            sym = ldf.formula.args[0].rep
+            lhs = ldf.formula.args[0]
+            sym = lhs.rep
             self.wire_defs[sym] = ldf.formula.args[1]
+            self.def_formals[sym.name] = list(lhs.args)
             if ldf.label is not None:
                 self.def_owner[sym.name] = parent_name(str(ldf.label))
+        # Names of *all* defined symbols, specification ones included. A defined
+        # function is never a memory: an implementation one is inlined where it is
+        # used, and a specification one (used only by invariants -- Ivy checks the
+        # implementation cannot reference it) is simply never emitted. Recording
+        # the spec names here keeps them from being mistaken for memories.
+        self.definition_names = set(ldf.formula.args[0].rep.name
+                                    for ldf in mod.definitions)
+        self.impl_def_names = set(s.name for s in self.wire_defs)
         self.objects = set(mod.hierarchy.keys())
         self.wire_by_name = dict((s.name, s) for s in mod.wires)
         self._update_cache = {}
@@ -371,7 +385,13 @@ class Translator(object):
         actions = [self.mod.actions[name] for name in mixers]
         seq = ia.Sequence(*actions)
         updated, trans, _ = seq.update(self.mod, None)
-        state = [s for s in updated if s not in self.mod.wires]
+        # Real state excludes wires and defined functions. A defined function
+        # appears in `updated` because its value tracks the state it reads, but
+        # it is not itself a register/memory: a wire function is inlined and an
+        # ordinary function is rejected where used (see emit_expr); either way it
+        # must not be emitted as state.
+        state = [s for s in updated if s not in self.mod.wires
+                 and s.name not in self.definition_names]
         # detect interference: a state var updated here owned by another object
         for s in state:
             if self.owning_object(s.name) != obj:
@@ -386,7 +406,11 @@ class Translator(object):
     # -- wire classification ------------------------------------------------
 
     def module_wires(self, obj):
-        return [w for w in self.mod.wires if self.owning_object(w.name) == obj]
+        # Function-typed wires (wire functions) are not hardware signals; they
+        # are combinational functions that get inlined at their applications
+        # (see emit_expr), so they are excluded from the signal classification.
+        return [w for w in self.mod.wires
+                if self.owning_object(w.name) == obj and not is_array_sort(w.sort)]
 
     def references(self, obj):
         """Names of symbols referenced by definitions/updates owned by obj."""
@@ -879,16 +903,43 @@ class Translator(object):
         if isinstance(term, lg.Iff):
             return self.emit_cmp(ctx, '$eq', term.args[0], term.args[1])
         if il.is_app(term):
+            if term.rep.name in self.impl_def_names:
+                # An implementation-defined function. A `wire` function is
+                # combinational (its value is frozen at the clock edge), so we
+                # inline it. An ordinary `function` is re-evaluated as state
+                # changes within an action, so it has no combinational hardware
+                # meaning and cannot be translated.
+                if term.rep.name in self.wire_by_name:
+                    return self.emit_inline_def(ctx, term)
+                raise iu.IvyError(None,
+                    "cannot translate application of non-wire function '{}' to "
+                    "RTL: its value in an action can reflect state updates made "
+                    "earlier in the same action, so it is not combinational. "
+                    "Declare it as a `wire` if it is meant to be a combinational "
+                    "signal.".format(term.rep.name))
             if self.is_array_ref(term):
                 return self.emit_read(ctx, term)
             return self.emit_op(ctx, term)
         raise iu.IvyError(None, "cannot translate expression: {}".format(term))
 
+    def emit_inline_def(self, ctx, term):
+        """Inline an application of a wire function f(a1,..,an): substitute the
+        actual arguments for the formals in f's body and emit that. A wire
+        function is combinational, so it is inlined rather than materialized."""
+        sym = term.rep
+        formals = self.def_formals.get(sym.name, [])
+        body = self.wire_defs[sym]
+        subst = dict((f.rep, a) for f, a in zip(formals, term.args))
+        inlined = ilu.substitute_ast(body, subst) if subst else body
+        return self.emit_expr(ctx, inlined)
+
     def is_array_ref(self, term):
         """True if term is a read of an array-valued state symbol (a memory),
-        as opposed to an interpreted operator application."""
+        as opposed to an interpreted operator application or a (combinational)
+        defined function, which is inlined rather than materialized."""
         return (il.is_app(term) and not il.is_constant(term)
                 and is_array_sort(term.rep.sort)
+                and term.rep.name not in self.definition_names
                 and self.in_design(self.owning_object(term.rep.name)))
 
     def emit_read(self, ctx, term):

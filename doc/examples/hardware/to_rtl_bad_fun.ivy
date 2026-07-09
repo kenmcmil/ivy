@@ -1,0 +1,23 @@
+#lang ivy1.8
+# ivy_to_rtl: applying an ordinary (non-wire) function in the implementation is
+# an error. Unlike a wire, an ordinary function is re-evaluated as state changes
+# within an action, so it has no combinational hardware meaning. `nwf` is such a
+# function used in the datapath, so translation must fail.
+
+type word
+interpret word -> bv[16]
+
+export action posedge
+
+object top = {
+    function nwf(X:word) : word
+    definition nwf(X) = X + X
+
+    var x : word
+    var y : word
+
+    after posedge {
+        y := nwf(x);
+        x := x + 1
+    }
+}
