@@ -364,3 +364,35 @@ cache -- a direct-mapped cache. (This uses `concat`'s variadic form,
 `concat(full, dirty, hi_addr, data)`; a `concat` is given bit-vector semantics
 only when every argument and the result are bit-vectors and the argument widths
 sum to the result width, and is otherwise treated as uninterpreted.)
+
+Equivalence checking against a golden model
+-------------------------------------------
+
+Because the cache CPU's emitted RTL is real hardware, it makes a good subject
+for equivalence checking against an independent implementation. Two files in
+this directory support that:
+
+* [cpu_golden.sv](cpu_golden.sv) is a hand-written SystemVerilog "golden model"
+  of the CPU datapath -- an independent reading of the `after posedge` action
+  and its combinational wires. Its register and memory names (`pc`, the pipeline
+  latches, `mbusy`/`mfa`/`mfi`, and the `rf`/`mem`/`dcache`/`icache` memories)
+  are chosen to match the Ivy model exactly, and it contains no ghost/trace
+  state -- only the hardware.
+
+* [cpu_equiv.ys](cpu_equiv.ys) is a [yosys](https://yosyshq.net/yosys/) script
+  that checks the two for *combinational equivalence*. After translating the Ivy
+  model,
+
+        ivy_to_rtl 5stage_cache_cpu_ref.ivy
+        yosys cpu_equiv.ys
+
+  it reads the emitted `5stage_cache_cpu_ref.il` (the "gold" design) and
+  `cpu_golden.sv` (the "gate"), pairs their registers and memories by name with
+  `equiv_make`, expands the memories to flop arrays, and proves by one-step
+  induction (`equiv_induct`) that from any equal state the two compute the same
+  next state for every register and memory. yosys reports every matched cell as
+  proven (the 20 scalar registers, all four memories, and the internal wires),
+  so the generated RTL and the golden model are equivalent per clock cycle. The
+  reset input `rst` is tied to 0, so the comparison is of the datapath in normal
+  operation (the emitted RTL's synchronous reset is a per-register mux that the
+  golden model does not reproduce). The `rtl` regression group runs this check.

@@ -273,3 +273,14 @@ The datapath must be free of ghost/abstract constructs:
 
 - Translate with `ivy_to_rtl <file>.ivy` and sanity-check the RTLIL with
   `yosys -q -p "read_rtlil <file>.il"`.
+
+- **Equivalence-check against a golden model (optional, strong).** Because the
+  emitted RTL is real hardware, you can cross-check it against an independent
+  hand-written model. `references/cpu_golden.sv` is a SystemVerilog transcription
+  of the cache-CPU datapath with register/memory names matching the Ivy model,
+  and `references/cpu_equiv.ys` proves combinational (per-cycle) equivalence in
+  yosys: `equiv_make` pairs registers/memories by name, `memory_map` expands the
+  memories, and `equiv_induct` proves the two compute the same next state from
+  any equal state. (Tie `rst=0` to compare the datapath, since ivy_to_rtl models
+  `after init` as a per-register synchronous-reset mux the golden model need not
+  reproduce.)

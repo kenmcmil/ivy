@@ -1,0 +1,34 @@
+# Combinational equivalence check: the ivy_to_rtl output for the cache CPU
+# (5stage_cache_cpu_ref.il, "gold") against the hand-written SystemVerilog
+# golden model (cpu_golden.sv, "gate"). Run from doc/examples/hardware after
+#   ivy_to_rtl 5stage_cache_cpu_ref.ivy
+# with:
+#   yosys cpu_equiv.ys
+#
+# Register and memory names match between the two, so equiv_make pairs them up
+# and equiv_induct proves, by one-step induction, that from any equal state the
+# two compute the same next state for every register and memory -- i.e. they are
+# combinationally equivalent per clock. rst is tied to 0 (normal operation): the
+# ivy model's synchronous reset is a per-register mux the golden model does not
+# reproduce, so we compare the datapath.
+
+read_rtlil 5stage_cache_cpu_ref.il
+rename cpu gold
+read_verilog -sv cpu_golden.sv
+rename cpu gate
+proc
+
+# normal operation: tie the synchronous reset off in both designs
+select gold
+connect -set rst 1'b0
+select gate
+connect -set rst 1'b0
+select -clear
+
+# expand memories to name-matched flop arrays so state pairs up by name
+memory_map
+
+equiv_make gold gate equiv
+hierarchy -top equiv
+equiv_induct equiv
+equiv_status -assert
