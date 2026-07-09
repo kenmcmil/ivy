@@ -193,9 +193,25 @@ distilled from — read the one closest to your target before writing code:
   committed*: prove `~(e_valid & e_shadow)`, `~(m_valid & m_shadow)`,
   `~(w_valid & w_shadow)` (a mispredicted branch resolves in EX and squashes
   younger instructions before MEM/WB) and `EX holds a mispredicted branch -> the
-  ID instruction behind it is shadowed`. Treat the **predictor as an
-  unconstrained external input** (`import wire predicted_taken : bool`);
-  correctness is independent of the prediction values.
+  ID instruction behind it is shadowed`. **Correctness is independent of the
+  prediction values**, so the predictor's logic is not part of the proof — the
+  CPU reads `bp.predicted_taken` and Ivy verifies it with that bit left
+  arbitrary (see next bullet for how to package the predictor).
+
+- **The predictor is a separate (sub-)isolate, connected by the parent.** Give
+  the predictor its own I/O *wires* — inputs `fetch_pc`, `br_valid`, `br_pc`,
+  `br_taken`; output `predicted_taken` — and put its logic (e.g. a bimodal
+  `bht` of 2-bit counters) in its `implementation` block so it is hidden. In the
+  parent CPU, *connect* it with definitions of the child's input wires and read
+  its output: `definition bp.fetch_pc = pc`, `definition bp.br_taken = e_take`,
+  ..., `definition f_ptaken = f_is_branch & bp.predicted_taken`. The predictor's
+  hidden implementation means the CPU is verified with `bp.predicted_taken`
+  arbitrary (assume-guarantee); the predictor itself carries no invariants (any
+  prediction is correct), so its isolate is discharged trivially. Do *not* have
+  the predictor reach into CPU state directly — declare its inputs as wires and
+  let the parent drive them (the standard isolate-I/O pattern). This also
+  translates cleanly to RTL: `ivy_to_rtl` emits the predictor as a submodule
+  (`cpu.bp`) with its `bht` memory.
 
 ## Caches, incoherence, multi-cycle memory
 
@@ -260,8 +276,11 @@ The datapath must be free of ghost/abstract constructs:
   — otherwise `w_val` depends on `new_mem`, which has no RTL form.
 
 - **No uninterpreted functions in the datapath.** An arbitrary function used in
-  hardware logic (a branch predictor `predict(pc)`) has no RTL realization;
-  expose it as an `import wire` input instead.
+  hardware logic has no RTL realization. Either expose it as an `import wire`
+  top-level input, or — better when it is a real component like a branch
+  predictor — put it in its own isolate with wire I/O and connect it in the
+  parent (see the predictor bullet under "speculation"); its hidden
+  implementation is what lets the CPU proof treat its output as arbitrary.
 
 - **State arrays must be point-written.** Cache/memory arrays translate to RTLIL
   memories, so every write must be to a single index (`dcache(idx) := ...`),
@@ -283,4 +302,8 @@ The datapath must be free of ghost/abstract constructs:
   memories, and `equiv_induct` proves the two compute the same next state from
   any equal state. (Tie `rst=0` to compare the datapath, since ivy_to_rtl models
   `after init` as a per-register synchronous-reset mux the golden model need not
-  reproduce.)
+  reproduce.) When the design is hierarchical — e.g. the CPU instantiates the
+  predictor submodule `cpu.bp` — make the golden model hierarchical the same way
+  (a `bp` submodule instantiated as `bp`) and `flatten` both designs before
+  `equiv_make`, so the shared instance name lines the inlined names up (e.g. the
+  predictor's `bp.bht` memory pairs by name).

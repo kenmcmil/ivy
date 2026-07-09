@@ -490,10 +490,6 @@ object cpu = {
         #   (2) a present cache line holds the reference's MEM-stage value;
         #   (4) a not-dirty address holds the reference value in main memory.
         # ((3), the I-cache, is below.)
-        #
-        # (With a packed line the tag holds only hi_addr, so the address cached at
-        # index I is structurally concat(hi_addr, I), whose index is I -- no
-        # separate "line is at the right index" invariant is needed.)
         invariant ~trace.st(trace.now).error -> (dc_dirty(A) -> trace.st(mcommit).ddirty(A))
         invariant ~trace.st(trace.now).error -> (dc_present(A) -> dc_val(A) = trace.st(mcommit).mem(A))
         invariant ~trace.st(trace.now).error -> (~dc_dirty(A) -> mem(A) = trace.st(mcommit).mem(A))
@@ -581,12 +577,10 @@ object cpu = {
         }
     }
 
-    # ---- branch-predictor input ----
-    # The predicted "taken" bit for the instruction being fetched this cycle,
-    # driven by an external branch predictor. Left unconstrained: correctness
-    # holds for any prediction.
-
-    import wire predicted_taken : bool
+    # The branch predictor is the sub-isolate `bp`, declared further down (after
+    # the datapath signals it consumes). It drives bp.predicted_taken, which the
+    # fetch stage reads via f_ptaken. Since bp's logic is hidden in its own
+    # isolate, the CPU is verified with the prediction left arbitrary.
 
     # ---- architectural state ----
 
@@ -612,15 +606,38 @@ object cpu = {
 
     var icache(I:nib) : cline
 
-    # ---- packed-line field accessors (used by both datapath and invariants) ----
-    function ln_full(L:cline) : bool
-    definition ln_full(L) = (bfe[21][21](L):bit) = 1
-    function ln_dirty(L:cline) : bool
-    definition ln_dirty(L) = (bfe[20][20](L):bit) = 1
-    function ln_hi(L:cline) : nib
-    definition ln_hi(L) = bfe[16][19](L)
-    function ln_data(L:cline) : word
-    definition ln_data(L) = bfe[0][15](L)
+    # ---- packed-line accessors and cache queries (proof-only) ----
+    # In a `specification` block so ivy_to_rtl does not emit them (they are used
+    # only by the invariants; otherwise they would materialize as spurious lookup
+    # memories). The datapath reads the same fields with bfe inline. A line is
+    # [21] full | [20] dirty | [19:16] hi_addr | [15:0] data.
+    specification {
+        function ln_full(L:cline) : bool
+        definition ln_full(L) = (bfe[21][21](L):bit) = 1
+        function ln_dirty(L:cline) : bool
+        definition ln_dirty(L) = (bfe[20][20](L):bit) = 1
+        function ln_hi(L:cline) : nib
+        definition ln_hi(L) = bfe[16][19](L)
+        function ln_data(L:cline) : word
+        definition ln_data(L) = bfe[0][15](L)
+        # A is present iff its line is full and the hi_addr field matches; the
+        # cached address is then structurally concat(hi_addr, index(A)) = A, so no
+        # separate "line is at the right index" invariant is needed.
+        function dc_line(A:addr) : cline
+        definition dc_line(A) = dcache(bfe[0][3](A))
+        function dc_present(A:addr) : bool
+        definition dc_present(A) = ln_full(dc_line(A)) & (ln_hi(dc_line(A)) = bfe[4][7](A))
+        function dc_dirty(A:addr) : bool
+        definition dc_dirty(A) = dc_present(A) & ln_dirty(dc_line(A))
+        function dc_val(A:addr) : word
+        definition dc_val(A) = ln_data(dc_line(A))
+        function ic_line(A:addr) : cline
+        definition ic_line(A) = icache(bfe[0][3](A))
+        function ic_present(A:addr) : bool
+        definition ic_present(A) = ln_full(ic_line(A)) & (ln_hi(ic_line(A)) = bfe[4][7](A))
+        function ic_val(A:addr) : word
+        definition ic_val(A) = ln_data(ic_line(A))
+    }
 
     # ---- main-memory read-fill controller (multi-cycle) ----
     # Read fills take two cycles: an initiating cycle (memory free) and a busy
@@ -704,6 +721,61 @@ object cpu = {
     wire mispredict : bool
     definition mispredict = e_valid & ~ex_stall & (e_opcode = 6) & (e_pred ~= e_take)
 
+    # ---- the branch predictor, as a sub-isolate `bp` ----
+    # `bp` declares its own input/output wires and its logic uses only those; it
+    # never reaches into the CPU. Here, in the parent, we connect it: its inputs
+    # are driven from the CPU's fetch PC and branch resolution, and the CPU's
+    # prediction (f_ptaken, below) reads its output. Because bp's logic lives in
+    # its (hidden) implementation, Ivy verifies the CPU with bp.predicted_taken
+    # left arbitrary -- correctness holds for any prediction.
+
+    isolate bp = {
+        wire fetch_pc : addr          # input: PC being fetched (to predict)
+        wire br_valid : bool          # input: a conditional branch resolves this cycle
+        wire br_pc : addr             # input: the resolving branch's PC
+        wire br_taken : bool          # input: its true outcome
+        wire predicted_taken : bool   # output: the prediction for fetch_pc
+
+        implementation {
+            type bhtidx
+            interpret bhtidx -> bv[4]  # 16-entry branch history table
+            type ctr
+            interpret ctr -> bv[2]     # 2-bit saturating counter, states 0..3
+
+            var bht(I:bhtidx) : ctr
+
+            wire pred_idx : bhtidx
+            definition pred_idx = bfe[0][3](fetch_pc)
+            wire upd_idx : bhtidx
+            definition upd_idx = bfe[0][3](br_pc)
+
+            # predict taken when the indexed counter is in a taken state (2 or 3)
+            definition predicted_taken = (bht(pred_idx) = 2) | (bht(pred_idx) = 3)
+
+            after init {
+                bht(I) := 1            # weakly not-taken
+            }
+
+            # on a resolved branch, nudge its counter toward the outcome,
+            # saturating at 0 and 3
+            after posedge {
+                if br_valid {
+                    if br_taken {
+                        if bht(upd_idx) ~= 3 { bht(upd_idx) := bht(upd_idx) + 1 }
+                    } else {
+                        if bht(upd_idx) ~= 0 { bht(upd_idx) := bht(upd_idx) - 1 }
+                    }
+                }
+            }
+        }
+    }
+
+    # connect the predictor's inputs to the CPU (in the parent)
+    definition bp.fetch_pc = pc
+    definition bp.br_valid = e_valid & (e_opcode = 6) & ~ex_stall
+    definition bp.br_pc = e_pc
+    definition bp.br_taken = e_take
+
     # ---- fetch stall on a pending FLUSH ----
     # While a FLUSH is in ID/EX/MEM, instruction fetch stalls so that no
     # instruction behind the FLUSH is fetched until the FLUSH has (in MEM) made
@@ -725,15 +797,15 @@ object cpu = {
     wire f_iline : cline              # the I-cache line at the fetch index
     definition f_iline = icache(f_index)
     wire f_ihit : bool
-    definition f_ihit = ln_full(f_iline) & (ln_hi(f_iline) = bfe[4][7](pc))
+    definition f_ihit = ((bfe[21][21](f_iline):bit) = 1) & ((bfe[16][19](f_iline):nib) = bfe[4][7](pc))
     wire fetched : word
-    definition fetched = (ln_data(f_iline) if f_ihit else mem(pc))
+    definition fetched = ((bfe[0][15](f_iline):word) if f_ihit else mem(pc))
 
     wire f_is_branch : bool
     definition f_is_branch = ((bfe[13][15](fetched):opc) = 6)
 
     wire f_ptaken : bool             # predicted-taken for the fetched instruction
-    definition f_ptaken = f_is_branch & predicted_taken
+    definition f_ptaken = f_is_branch & bp.predicted_taken
 
     wire f_target : addr
     definition f_target = bfe[0][7](fetched)
@@ -761,19 +833,19 @@ object cpu = {
     wire m_line : cline                # the D-cache line at this index
     definition m_line = dcache(m_index)
     wire m_line_full : bool
-    definition m_line_full = ln_full(m_line)
+    definition m_line_full = (bfe[21][21](m_line):bit) = 1
     wire m_line_dirty : bool
-    definition m_line_dirty = ln_dirty(m_line)
+    definition m_line_dirty = (bfe[20][20](m_line):bit) = 1
     wire m_line_hi : nib               # hi_addr currently cached in this line
-    definition m_line_hi = ln_hi(m_line)
+    definition m_line_hi = bfe[16][19](m_line)
     wire m_line_data : word
-    definition m_line_data = ln_data(m_line)
+    definition m_line_data = bfe[0][15](m_line)
     wire m_hit : bool
     definition m_hit = m_line_full & (m_line_hi = m_hi)
     wire m_iline : cline               # the I-cache line at this index
     definition m_iline = icache(m_index)
     wire m_ihit : bool                 # I-cache holds the (flush) address m_addr
-    definition m_ihit = ln_full(m_iline) & (ln_hi(m_iline) = m_hi)
+    definition m_ihit = ((bfe[21][21](m_iline):bit) = 1) & ((bfe[16][19](m_iline):nib) = m_hi)
     wire m_victim_addr : addr          # address to write the victim back to
     definition m_victim_addr = concat(m_line_hi, m_index)
     wire m_fill_data : word            # main-memory word for m_addr (pre-clock)
@@ -789,28 +861,6 @@ object cpu = {
     definition d_fill_go = mbusy & ~mfi & (mfa = m_addr)
     wire dmem_stall : bool
     definition dmem_stall = d_miss & ~d_fill_go
-
-    # ---- cache query helpers (used by the invariants, for any address A) ----
-    # A is present in a cache iff the line at its index is full and its hi_addr
-    # field matches A's hi_addr; the cached address is then structurally
-    # concat(hi_addr, index(A)) = A, so no separate "right index" invariant is
-    # needed (unlike a full-address tag).
-
-    function dc_line(A:addr) : cline
-    definition dc_line(A) = dcache(bfe[0][3](A))
-    function dc_present(A:addr) : bool
-    definition dc_present(A) = ln_full(dc_line(A)) & (ln_hi(dc_line(A)) = bfe[4][7](A))
-    function dc_dirty(A:addr) : bool
-    definition dc_dirty(A) = dc_present(A) & ln_dirty(dc_line(A))
-    function dc_val(A:addr) : word
-    definition dc_val(A) = ln_data(dc_line(A))
-
-    function ic_line(A:addr) : cline
-    definition ic_line(A) = icache(bfe[0][3](A))
-    function ic_present(A:addr) : bool
-    definition ic_present(A) = ln_full(ic_line(A)) & (ln_hi(ic_line(A)) = bfe[4][7](A))
-    function ic_val(A:addr) : word
-    definition ic_val(A) = ln_data(ic_line(A))
 
     # ---- reset ----
 

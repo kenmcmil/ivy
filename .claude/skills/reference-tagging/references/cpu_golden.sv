@@ -12,15 +12,17 @@
 // The clock is the Ivy "posedge" net; `rst` is Ivy's synchronous reset (a mux
 // select on every register's D input). Equivalence is checked with rst tied to
 // 0 (normal operation), so the reset init values are not modelled here.
+//
+// The branch predictor is the sub-module `bp` (mirroring the Ivy sub-isolate
+// cpu.bp), instantiated as `bp`. cpu_equiv.ys flattens both designs, so the
+// predictor's bht memory pairs up by the flattened name bp.bht.
 
 module cpu (
     \posedge ,          // clock (Ivy's exported `posedge` action)
-    rst,                // synchronous reset (unused here; tied to 0 for the check)
-    predicted_taken     // branch-predictor input
+    rst                 // synchronous reset (unused here; tied to 0 for the check)
 );
     input \posedge ;
     input rst;
-    input predicted_taken;
 
     // ---- architectural state / pipeline latches (names match the Ivy model) --
     reg [7:0]  pc;
@@ -62,6 +64,19 @@ module cpu (
 
     // ---- misprediction ----
     wire mispredict = e_valid & ~ex_stall & (e_opcode==3'd6) & (e_pred != e_take);
+
+    // ---- branch predictor (sub-module, mirrors the Ivy sub-isolate cpu.bp) ----
+    wire br_valid = e_valid & (e_opcode==3'd6) & ~ex_stall;
+    wire predicted_taken;
+    bp bp (
+        .\posedge (\posedge ),
+        .rst      (rst),
+        .fetch_pc (pc),
+        .br_valid (br_valid),
+        .br_pc    (e_pc),
+        .br_taken (e_take),
+        .predicted_taken (predicted_taken)
+    );
 
     // ---- fetch stall on a pending FLUSH ----
     wire flush_in_pipe = (d_valid & d_opcode==3'd7)
@@ -189,6 +204,47 @@ module cpu (
             mbusy <= 1'b1; mfi <= 1'b0; mfa <= m_addr;   // D-fill (priority)
         end else if (fetch_active & ifetch_stall) begin
             mbusy <= 1'b1; mfi <= 1'b1; mfa <= pc;       // I-fill
+        end
+    end
+endmodule
+
+// Branch predictor: a table of 2-bit saturating counters indexed by the low
+// bits of the PC (a bimodal predictor). Mirrors the Ivy sub-isolate cpu.bp.
+// Predicts taken when the indexed counter is in a taken state (2 or 3); on a
+// resolved branch it nudges the counter toward the outcome, saturating at 0/3.
+// The bht has no reset (init-only in Ivy), which is irrelevant to the inductive
+// equivalence check.
+module bp (
+    \posedge ,
+    rst,
+    fetch_pc,
+    br_valid,
+    br_pc,
+    br_taken,
+    predicted_taken
+);
+    input \posedge ;
+    input rst;
+    input [7:0] fetch_pc;      // PC being fetched (to predict)
+    input br_valid;            // a conditional branch resolves this cycle
+    input [7:0] br_pc;         // the resolving branch's PC
+    input br_taken;            // its true outcome
+    output predicted_taken;    // the prediction for fetch_pc
+
+    reg [1:0] bht [0:15];
+
+    wire [3:0] pred_idx = fetch_pc[3:0];
+    wire [3:0] upd_idx  = br_pc[3:0];
+
+    assign predicted_taken = (bht[pred_idx]==2'd2) | (bht[pred_idx]==2'd3);
+
+    always @(posedge \posedge ) begin
+        if (br_valid) begin
+            if (br_taken) begin
+                if (bht[upd_idx] != 2'd3) bht[upd_idx] <= bht[upd_idx] + 2'd1;
+            end else begin
+                if (bht[upd_idx] != 2'd0) bht[upd_idx] <= bht[upd_idx] - 2'd1;
+            end
         end
     end
 endmodule

@@ -18,6 +18,13 @@ read_verilog -sv cpu_golden.sv
 rename cpu gate
 proc
 
+# Both designs are hierarchical: cpu instantiates the branch predictor as a
+# submodule (gold: cell \bp of module cpu.bp; gate: instance bp of module bp).
+# Flatten each so the predictor's bht memory and logic are inlined; the shared
+# instance name `bp` makes the flattened names (e.g. bp.bht) line up.
+flatten gold
+flatten gate
+
 # normal operation: tie the synchronous reset off in both designs
 select gold
 connect -set rst 1'b0
