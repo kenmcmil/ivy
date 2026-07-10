@@ -1,0 +1,54 @@
+#lang ivy1.8
+
+# The same design as bfe_concat.ivy, written with the ivy1.8 bit-field /
+# concatenation *sugar*:
+#
+#   a<<i:j>>       desugars to   bfe[j][i](a)     (Verilog-style high:low select)
+#   a1 :: ... :: an desugars to  concat(a1,...,an)
+#
+# It must translate to exactly the same RTL as bfe_concat.ivy; the regression
+# test checks that the two emitted netlists are identical.
+
+type byte
+interpret byte -> bv[8]
+type nibble
+interpret nibble -> bv[4]
+
+export action posedge
+
+isolate top = {
+
+    import wire inp : byte
+    export wire out : byte
+
+    # Combinational nibble swap. inp<<3:0>> is the low nibble and inp<<7:4>>
+    # the high nibble; `lo :: hi` concatenates them (first operand = high bits),
+    # swapping the halves. lo/hi are typed wires, so no sort ascription is needed.
+    isolate swap = {
+        wire inp : byte
+        wire lo : nibble
+        wire hi : nibble
+        wire out : byte
+        definition lo = inp<<3:0>>
+        definition hi = inp<<7:4>>
+        definition out = lo :: hi
+    }
+
+    # Register the swapped value.
+    isolate delay = {
+        wire inp : byte
+        wire out : byte
+        var val : byte
+        after init {
+            val := 0;
+        }
+        after posedge {
+            val := inp;
+        }
+        definition out = val
+    }
+
+    definition swap.inp = inp
+    definition delay.inp = swap.out
+    definition out = delay.out
+}

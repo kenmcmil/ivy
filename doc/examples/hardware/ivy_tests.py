@@ -34,6 +34,16 @@ tests = [
     {'type': 'to_rtl', 'name': 'test_to_rtl', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': 'refinement3', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': 'bfe_concat', 'validate': _yosys_wf, 'group': 'rtl'},
+    # The ivy1.8 sugar `a<<i:j>>` (bfe) and `a::b` (concat) must desugar to the
+    # same design as the explicit bfe_concat.ivy: validate that the two emitted
+    # netlists have the same set of lines (ignoring the generated-from-source
+    # comment; sorted, since ivy_to_rtl's wire/connect emission order is not
+    # stable across separate runs).
+    {'type': 'to_rtl', 'name': 'bfe_concat_sugar',
+     'validate': _yosys_wf + ' && ivy_to_rtl bfe_concat.ivy'
+                 + ' && diff <(grep -v "^# Generated" {name}.il | sort)'
+                 + ' <(grep -v "^# Generated" bfe_concat.il | sort)',
+     'group': 'rtl'},
     {'type': 'to_rtl', 'name': 'pipe_cpu', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': 'pipe_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},
     {'type': 'to_rtl', 'name': '5stage_cpu_ref', 'validate': _yosys_wf, 'group': 'rtl'},

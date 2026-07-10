@@ -28,11 +28,13 @@ if not (iu.get_numeric_version() <= [1,2]):
             ('left', 'IF'),
             ('left', 'ELSE'),
             ('left', 'COLON'),
+            ('left', 'DCOLON'),          # concat sugar '::' (tighter than sort ':')
             ('left', 'PLUS','MINUS'),
             ('left', 'TIMES','DIV'),
             ('left', 'DOLLAR'),
             ('left', 'OLD'),
-            ('left', 'DOT')
+            ('left', 'DOT'),
+            ('left', 'DLT','DGT')        # bfe sugar 'a<<i:j>>' (binds tightest)
         )
 
     else:

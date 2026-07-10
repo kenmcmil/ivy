@@ -57,6 +57,14 @@ The interpreted operators available on bit vectors are:
 - the concatenation operator `concat`, whose first argument becomes the
   high-order bits of the result.
 
+For readers used to Verilog, the last two have infix sugar (in language version
+1.8 and later): `w<<j:i>>` is `bfe[i][j](w)` (note the Verilog-style high-index
+first, low-index second), and `a1 :: a2 :: ... :: an` is
+`concat(a1, a2, ..., an)`. So a nibble swap can be written `x<<3:0>> ::
+x<<7:4>>`. The sugar is purely notational -- it desugars to `bfe`/`concat` in
+the parser -- so, like `concat`, a concatenation still needs a sort annotation
+where its width cannot otherwise be inferred.
+
 Arrays are read by application, `mem(a)`, and updated element-wise,
 `mem(a) := v`. Using any other type in the implementation of a hardware
 block is reported as an error during translation.

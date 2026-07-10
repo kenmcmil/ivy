@@ -655,5 +655,36 @@ if not (iu.get_numeric_version() <= [1,6]):
         tp.lineno = get_lineno(p,2)
         p[0] = Isa(p[1],tp)
         p[0].lineno = get_lineno(p,2)
-    
+
+if not (iu.get_numeric_version() <= [1,7]):
+
+    # ivy1.8+ syntactic sugar for bit-field extraction and concatenation. These
+    # rules produce the *desugared* AST directly (an application of `bfe` or
+    # `concat`), so no other part of Ivy needs to know about the surface syntax
+    # and no new AST classes are introduced.
+
+    def p_term_term_bfe(p):
+        'term : term DLT SYMBOL COLON SYMBOL DGT'
+        # a<<i:j>> desugars to bfe[j][i](a). The index order is reversed (high
+        # first, then low) so it reads like a Verilog part-select a[i:j], while
+        # bfe itself takes its arguments low-index first.
+        name = 'bfe[' + p[5] + '][' + p[3] + ']'
+        p[0] = App(name,[p[1]])
+        p[0].lineno = get_lineno(p,2)
+
+    def p_term_term_dcolon_term(p):
+        'term : term DCOLON term'
+        # a1 :: a2 :: ... :: an desugars to concat(a1,a2,...,an). We flatten a
+        # non-parenthesized `concat` on either side so a chain of `::` becomes a
+        # single variadic concat (concat's bit-vector semantics require the flat
+        # form); an explicitly parenthesized concat is left as one argument.
+        args = []
+        for t in (p[1],p[3]):
+            if isinstance(t,App) and t.rep == 'concat' and not getattr(t,'parenthesized',False):
+                args.extend(t.args)
+            else:
+                args.append(t)
+        p[0] = App('concat',args)
+        p[0].lineno = get_lineno(p,2)
+
 # TODO: should the above rules create formulas also or only for terms

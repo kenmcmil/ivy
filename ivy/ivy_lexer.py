@@ -38,6 +38,9 @@ tokens = (
    'PTO',
    'DOLLAR',
    'CARET',
+    'DLT',
+    'DGT',
+    'DCOLON',
     'LB',
     'RB',
     'WHENFIRST',
@@ -205,6 +208,14 @@ t_DOTS = r'\.\.'
 t_DOTDOTDOT = r'\.\.\.'
 t_DOLLAR = r'\$'
 t_CARET = r'\^'
+# ivy1.8+ syntactic sugar: a<<i:j>> for bfe[j][i](a) and a::b for concat(a,b).
+# These are longer than the single-character '<'/'>'/'::' vs ':' tokens, and PLY
+# orders string-defined tokens by decreasing pattern length, so they win the
+# match; the triple-angle native-quote (<<<...>>>) is a function token, tried
+# earlier still.
+t_DLT = r'\<\<'
+t_DGT = r'\>\>'
+t_DCOLON = r'::'
 t_LB  = r'\['
 t_RB  = r'\]'
 
