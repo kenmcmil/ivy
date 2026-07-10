@@ -130,17 +130,17 @@ module isa_model(init_mem,init_imem) = {
 
         # ---- decode of the X-stage instruction (combinational) ----
 
-        opcode := bfe[13][15](fetched);
-        rd := bfe[10][12](fetched);
-        ra := bfe[7][9](fetched);
-        rb := bfe[4][6](fetched);
-        target := bfe[0][7](fetched);     # low 8 bits: branch target or immediate
+        opcode := fetched<<15:13>>;
+        rd := fetched<<12:10>>;
+        ra := fetched<<9:7>>;
+        rb := fetched<<6:4>>;
+        target := fetched<<7:0>>;     # low 8 bits: branch target or immediate
 
         # ---- operand fetch ----
 
         a_val := rf(ra);
         b_val := rf(rb);
-        mem_addr  := bfe[0][7](a_val);    # address for LD/ST: low 8 bits of rf[ra]
+        mem_addr  := a_val<<7:0>>;    # address for LD/ST: low 8 bits of rf[ra]
 
         # ---- branch decision (BEQZ) ----
 
@@ -157,7 +157,7 @@ module isa_model(init_mem,init_imem) = {
         } else if opcode = 2 {                   # SUB
             rf(rd) := a_val - b_val
         } else if opcode = 3 {                   # LI
-            rf(rd) := concat(0:addr, target)
+            rf(rd) := (0:addr) :: target
         } else if opcode = 4 {                   # LD
             rf(rd) := mem(mem_addr)
         } else if opcode = 5 {                   # ST
@@ -295,14 +295,14 @@ isolate trace = {
         #     recorded entries, which never change once written.)
 
         invariant T <= now -> st(T).fetched = st(T).imem(st(T).pc)
-        invariant T <= now -> st(T).opcode = bfe[13][15](st(T).fetched)
-        invariant T <= now -> st(T).rd = bfe[10][12](st(T).fetched)
-        invariant T <= now -> st(T).ra = bfe[7][9](st(T).fetched)
-        invariant T <= now -> st(T).rb = bfe[4][6](st(T).fetched)
-        invariant T <= now -> st(T).target = bfe[0][7](st(T).fetched)
+        invariant T <= now -> st(T).opcode = (st(T).fetched)<<15:13>>
+        invariant T <= now -> st(T).rd = (st(T).fetched)<<12:10>>
+        invariant T <= now -> st(T).ra = (st(T).fetched)<<9:7>>
+        invariant T <= now -> st(T).rb = (st(T).fetched)<<6:4>>
+        invariant T <= now -> st(T).target = (st(T).fetched)<<7:0>>
         invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
         invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
-        invariant T <= now -> st(T).mem_addr = bfe[0][7](st(T).a_val)
+        invariant T <= now -> st(T).mem_addr = (st(T).a_val)<<7:0>>
         invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
 
         # (b) Consecutive recorded states are related by one step of the ISA.
@@ -321,7 +321,7 @@ isolate trace = {
                                          if (st(T).opcode = 1 & R = st(T).rd) else
                                      (st(T).a_val - st(T).b_val
                                          if (st(T).opcode = 2 & R = st(T).rd) else
-                                     (concat(0:addr, st(T).target)
+                                     ((0:addr) :: st(T).target
                                          if (st(T).opcode = 3 & R = st(T).rd) else
                                      (st(T).mem(st(T).mem_addr)
                                          if (st(T).opcode = 4 & R = st(T).rd) else
@@ -453,13 +453,13 @@ object cpu = {
         invariant m_valid -> m_store = trace.st(mcommit).b_val
         invariant (m_valid & m_opcode = 1) -> m_res = trace.st(mcommit).a_val + trace.st(mcommit).b_val
         invariant (m_valid & m_opcode = 2) -> m_res = trace.st(mcommit).a_val - trace.st(mcommit).b_val
-        invariant (m_valid & m_opcode = 3) -> m_res = concat(0:addr, trace.st(mcommit).target)
+        invariant (m_valid & m_opcode = 3) -> m_res = (0:addr) :: trace.st(mcommit).target
 
         # ---- WB latch writeback value matches the trace ------------------
 
         invariant (w_valid & w_opcode = 1) -> w_val = trace.st(commit).a_val + trace.st(commit).b_val
         invariant (w_valid & w_opcode = 2) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
-        invariant (w_valid & w_opcode = 3) -> w_val = concat(0:addr, trace.st(commit).target)
+        invariant (w_valid & w_opcode = 3) -> w_val = (0:addr) :: trace.st(commit).target
         invariant (w_valid & w_opcode = 4) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
 
         # ---- ghost bookkeeping ------------------------------------------
@@ -528,28 +528,28 @@ object cpu = {
     # ---- decode wires ----
 
     wire d_opcode : opc
-    definition d_opcode = bfe[13][15](d_ir)
+    definition d_opcode = d_ir<<15:13>>
 
     wire e_opcode : opc
     wire e_rd : reg
     wire e_ra : reg
     wire e_rb : reg
     wire e_target : addr
-    definition e_opcode = bfe[13][15](e_ir)
-    definition e_rd = bfe[10][12](e_ir)
-    definition e_ra = bfe[7][9](e_ir)
-    definition e_rb = bfe[4][6](e_ir)
-    definition e_target = bfe[0][7](e_ir)
+    definition e_opcode = e_ir<<15:13>>
+    definition e_rd = e_ir<<12:10>>
+    definition e_ra = e_ir<<9:7>>
+    definition e_rb = e_ir<<6:4>>
+    definition e_target = e_ir<<7:0>>
 
     wire m_opcode : opc
     wire m_rd : reg
-    definition m_opcode = bfe[13][15](m_ir)
-    definition m_rd = bfe[10][12](m_ir)
+    definition m_opcode = m_ir<<15:13>>
+    definition m_rd = m_ir<<12:10>>
 
     wire w_opcode : opc
     wire w_rd : reg
-    definition w_opcode = bfe[13][15](w_ir)
-    definition w_rd = bfe[10][12](w_ir)
+    definition w_opcode = w_ir<<15:13>>
+    definition w_rd = w_ir<<12:10>>
 
     # ---- EX operands and the true branch decision ----
 
@@ -600,9 +600,9 @@ object cpu = {
             var bht(I:bhtidx) : ctr
 
             wire pred_idx : bhtidx
-            definition pred_idx = bfe[0][3](fetch_pc)
+            definition pred_idx = fetch_pc<<3:0>>
             wire upd_idx : bhtidx
-            definition upd_idx = bfe[0][3](br_pc)
+            definition upd_idx = br_pc<<3:0>>
 
             # predict taken when the indexed counter is in a taken state (2 or 3)
             definition predicted_taken = (bht(pred_idx) = 2) | (bht(pred_idx) = 3)
@@ -637,13 +637,13 @@ object cpu = {
     definition fetched = imem(pc)
 
     wire f_is_branch : bool
-    definition f_is_branch = ((bfe[13][15](fetched):opc) = 6)
+    definition f_is_branch = ((fetched<<15:13>>:opc) = 6)
 
     wire f_ptaken : bool             # predicted-taken for the fetched instruction
     definition f_ptaken = f_is_branch & bp.predicted_taken
 
     wire f_target : addr
-    definition f_target = bfe[0][7](fetched)
+    definition f_target = fetched<<7:0>>
 
     wire pred_next_pc : addr         # the predicted next fetch address
     definition pred_next_pc = (f_target if f_ptaken else pc + 1)
@@ -689,8 +689,8 @@ object cpu = {
             m_valid := e_valid;
             m_res := (e_a + e_b if e_opcode = 1 else
                      (e_a - e_b if e_opcode = 2 else
-                     (concat(0:addr, e_target) if e_opcode = 3 else 0)));
-            m_addr := bfe[0][7](e_a);
+                     ((0:addr) :: e_target if e_opcode = 3 else 0)));
+            m_addr := e_a<<7:0>>;
             m_store := e_b
         };
 

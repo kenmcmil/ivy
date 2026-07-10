@@ -27,6 +27,7 @@ global `rst` is the reset.
 | `test_to_rtl.ivy` | one-stage pipeline: registers `inp + 1` (a combinational `inc` submodule feeding a `delay` register). |
 | `refinement3.ivy` | a 2-bit counter built by cascading two 1-bit counters `c0`, `c1`; the abstract model `abs` is a specification-only isolate (ignored by the translator). The top module is the global scope. |
 | `bfe_concat.ivy` | registers a nibble-swap of the input, `out := old(concat(inp[3:0], inp[7:4]))`, exercising the `bfe` and `concat` operators. |
+| `bfe_concat_sugar.ivy` | the same design written with the ivy1.8 sugar (`inp<<3:0>>` for `bfe`, `lo :: hi` for `concat`); the regression test checks it emits the same RTL as `bfe_concat.ivy`. |
 | `pipe_cpu.ivy` | a two-stage (fetch/execute) pipelined processor with a register file, data memory, and instruction ROM (all array state → RTLIL memories) and a conditional branch resolved in execute (a control hazard). Exposes the PC as `pc_out`. |
 | `refinement1.ivy`, `refinement2.ivy` | earlier compositional-proof examples. `refinement3.ivy` is the version written in the intended hierarchical style. |
 

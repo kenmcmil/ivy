@@ -65,7 +65,7 @@ interpret opc -> bv[3]
 
 # Cache line and its field types. A line is a bv[22]:
 #     [21] full  [20] dirty  [19:16] hi_addr  [15:0] data
-# Address A maps to line index bfe[0][3](A); the hi_addr field is bfe[4][7](A).
+# Address A maps to line index A<<3:0>>; the hi_addr field is A<<7:4>>.
 type cline
 interpret cline -> bv[22]
 type nib
@@ -149,17 +149,17 @@ module isa_model(init_mem) = {
 
         # ---- decode of the X-stage instruction (combinational) ----
 
-        opcode := bfe[13][15](fetched);
-        rd := bfe[10][12](fetched);
-        ra := bfe[7][9](fetched);
-        rb := bfe[4][6](fetched);
-        target := bfe[0][7](fetched);     # low 8 bits: branch target or immediate
+        opcode := fetched<<15:13>>;
+        rd := fetched<<12:10>>;
+        ra := fetched<<9:7>>;
+        rb := fetched<<6:4>>;
+        target := fetched<<7:0>>;     # low 8 bits: branch target or immediate
 
         # ---- operand fetch ----
 
         a_val := rf(ra);
         b_val := rf(rb);
-        mem_addr  := bfe[0][7](a_val);    # address for LD/ST: low 8 bits of rf[ra]
+        mem_addr  := a_val<<7:0>>;    # address for LD/ST: low 8 bits of rf[ra]
 
         # ---- branch decision (BEQZ) ----
 
@@ -188,7 +188,7 @@ module isa_model(init_mem) = {
         } else if opcode = 2 {                   # SUB
             rf(rd) := a_val - b_val
         } else if opcode = 3 {                   # LI
-            rf(rd) := concat(0:addr, target)
+            rf(rd) := (0:addr) :: target
         } else if opcode = 4 {                   # LD
             rf(rd) := mem(mem_addr)
         } else if opcode = 5 {                   # ST
@@ -331,14 +331,14 @@ isolate trace = {
         #     recorded entries, which never change once written.)
 
         invariant T <= now -> st(T).fetched = st(T).mem(st(T).pc)
-        invariant T <= now -> st(T).opcode = bfe[13][15](st(T).fetched)
-        invariant T <= now -> st(T).rd = bfe[10][12](st(T).fetched)
-        invariant T <= now -> st(T).ra = bfe[7][9](st(T).fetched)
-        invariant T <= now -> st(T).rb = bfe[4][6](st(T).fetched)
-        invariant T <= now -> st(T).target = bfe[0][7](st(T).fetched)
+        invariant T <= now -> st(T).opcode = (st(T).fetched)<<15:13>>
+        invariant T <= now -> st(T).rd = (st(T).fetched)<<12:10>>
+        invariant T <= now -> st(T).ra = (st(T).fetched)<<9:7>>
+        invariant T <= now -> st(T).rb = (st(T).fetched)<<6:4>>
+        invariant T <= now -> st(T).target = (st(T).fetched)<<7:0>>
         invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
         invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
-        invariant T <= now -> st(T).mem_addr = bfe[0][7](st(T).a_val)
+        invariant T <= now -> st(T).mem_addr = (st(T).a_val)<<7:0>>
         invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
 
         # (b) Consecutive recorded states are related by one step of the ISA.
@@ -367,7 +367,7 @@ isolate trace = {
                                          if (st(T).opcode = 1 & R = st(T).rd) else
                                      (st(T).a_val - st(T).b_val
                                          if (st(T).opcode = 2 & R = st(T).rd) else
-                                     (concat(0:addr, st(T).target)
+                                     ((0:addr) :: st(T).target
                                          if (st(T).opcode = 3 & R = st(T).rd) else
                                      (st(T).mem(st(T).mem_addr)
                                          if (st(T).opcode = 4 & R = st(T).rd) else
@@ -538,13 +538,13 @@ object cpu = {
         invariant (m_valid & ~trace.st(trace.now).error) -> m_store = trace.st(mcommit).b_val
         invariant (m_valid & m_opcode = 1 & ~trace.st(trace.now).error) -> m_res = trace.st(mcommit).a_val + trace.st(mcommit).b_val
         invariant (m_valid & m_opcode = 2 & ~trace.st(trace.now).error) -> m_res = trace.st(mcommit).a_val - trace.st(mcommit).b_val
-        invariant (m_valid & m_opcode = 3 & ~trace.st(trace.now).error) -> m_res = concat(0:addr, trace.st(mcommit).target)
+        invariant (m_valid & m_opcode = 3 & ~trace.st(trace.now).error) -> m_res = (0:addr) :: trace.st(mcommit).target
 
         # ---- WB latch writeback value matches the trace ------------------
 
         invariant (w_valid & w_opcode = 1 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val + trace.st(commit).b_val
         invariant (w_valid & w_opcode = 2 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
-        invariant (w_valid & w_opcode = 3 & ~trace.st(trace.now).error) -> w_val = concat(0:addr, trace.st(commit).target)
+        invariant (w_valid & w_opcode = 3 & ~trace.st(trace.now).error) -> w_val = (0:addr) :: trace.st(commit).target
         invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
 
         # ---- ghost bookkeeping ------------------------------------------
@@ -631,28 +631,28 @@ object cpu = {
     # [21] full | [20] dirty | [19:16] hi_addr | [15:0] data.
     specification {
         function ln_full(L:cline) : bool
-        definition ln_full(L) = (bfe[21][21](L):bit) = 1
+        definition ln_full(L) = (L<<21:21>>:bit) = 1
         function ln_dirty(L:cline) : bool
-        definition ln_dirty(L) = (bfe[20][20](L):bit) = 1
+        definition ln_dirty(L) = (L<<20:20>>:bit) = 1
         function ln_hi(L:cline) : nib
-        definition ln_hi(L) = bfe[16][19](L)
+        definition ln_hi(L) = L<<19:16>>
         function ln_data(L:cline) : word
-        definition ln_data(L) = bfe[0][15](L)
+        definition ln_data(L) = L<<15:0>>
         # A is present iff its line is full and the hi_addr field matches; the
-        # cached address is then structurally concat(hi_addr, index(A)) = A, so no
+        # cached address is then structurally (hi_addr :: index(A)) = A, so no
         # separate "line is at the right index" invariant is needed.
         function dc_line(A:addr) : cline
-        definition dc_line(A) = dcache(bfe[0][3](A))
+        definition dc_line(A) = dcache(A<<3:0>>)
         function dc_present(A:addr) : bool
-        definition dc_present(A) = ln_full(dc_line(A)) & (ln_hi(dc_line(A)) = bfe[4][7](A))
+        definition dc_present(A) = ln_full(dc_line(A)) & (ln_hi(dc_line(A)) = A<<7:4>>)
         function dc_dirty(A:addr) : bool
         definition dc_dirty(A) = dc_present(A) & ln_dirty(dc_line(A))
         function dc_val(A:addr) : word
         definition dc_val(A) = ln_data(dc_line(A))
         function ic_line(A:addr) : cline
-        definition ic_line(A) = icache(bfe[0][3](A))
+        definition ic_line(A) = icache(A<<3:0>>)
         function ic_present(A:addr) : bool
-        definition ic_present(A) = ln_full(ic_line(A)) & (ln_hi(ic_line(A)) = bfe[4][7](A))
+        definition ic_present(A) = ln_full(ic_line(A)) & (ln_hi(ic_line(A)) = A<<7:4>>)
         function ic_val(A:addr) : word
         definition ic_val(A) = ln_data(ic_line(A))
     }
@@ -691,28 +691,28 @@ object cpu = {
     # ---- decode wires ----
 
     wire d_opcode : opc
-    definition d_opcode = bfe[13][15](d_ir)
+    definition d_opcode = d_ir<<15:13>>
 
     wire e_opcode : opc
     wire e_rd : reg
     wire e_ra : reg
     wire e_rb : reg
     wire e_target : addr
-    definition e_opcode = bfe[13][15](e_ir)
-    definition e_rd = bfe[10][12](e_ir)
-    definition e_ra = bfe[7][9](e_ir)
-    definition e_rb = bfe[4][6](e_ir)
-    definition e_target = bfe[0][7](e_ir)
+    definition e_opcode = e_ir<<15:13>>
+    definition e_rd = e_ir<<12:10>>
+    definition e_ra = e_ir<<9:7>>
+    definition e_rb = e_ir<<6:4>>
+    definition e_target = e_ir<<7:0>>
 
     wire m_opcode : opc
     wire m_rd : reg
-    definition m_opcode = bfe[13][15](m_ir)
-    definition m_rd = bfe[10][12](m_ir)
+    definition m_opcode = m_ir<<15:13>>
+    definition m_rd = m_ir<<12:10>>
 
     wire w_opcode : opc
     wire w_rd : reg
-    definition w_opcode = bfe[13][15](w_ir)
-    definition w_rd = bfe[10][12](w_ir)
+    definition w_opcode = w_ir<<15:13>>
+    definition w_rd = w_ir<<12:10>>
 
     # ---- EX operands and the true branch decision ----
 
@@ -763,9 +763,9 @@ object cpu = {
             var bht(I:bhtidx) : ctr
 
             wire pred_idx : bhtidx
-            definition pred_idx = bfe[0][3](fetch_pc)
+            definition pred_idx = fetch_pc<<3:0>>
             wire upd_idx : bhtidx
-            definition upd_idx = bfe[0][3](br_pc)
+            definition upd_idx = br_pc<<3:0>>
 
             # predict taken when the indexed counter is in a taken state (2 or 3)
             definition predicted_taken = (bht(pred_idx) = 2) | (bht(pred_idx) = 3)
@@ -811,22 +811,22 @@ object cpu = {
     # instruction can be stale -- accounted for by the ISA's ddirty/error.
 
     wire f_index : nib
-    definition f_index = bfe[0][3](pc)
+    definition f_index = pc<<3:0>>
     wire f_iline : cline              # the I-cache line at the fetch index
     definition f_iline = icache(f_index)
     wire f_ihit : bool
-    definition f_ihit = ((bfe[21][21](f_iline):bit) = 1) & ((bfe[16][19](f_iline):nib) = bfe[4][7](pc))
+    definition f_ihit = ((f_iline<<21:21>>:bit) = 1) & ((f_iline<<19:16>>:nib) = pc<<7:4>>)
     wire fetched : word
-    definition fetched = ((bfe[0][15](f_iline):word) if f_ihit else mem(pc))
+    definition fetched = ((f_iline<<15:0>>:word) if f_ihit else mem(pc))
 
     wire f_is_branch : bool
-    definition f_is_branch = ((bfe[13][15](fetched):opc) = 6)
+    definition f_is_branch = ((fetched<<15:13>>:opc) = 6)
 
     wire f_ptaken : bool             # predicted-taken for the fetched instruction
     definition f_ptaken = f_is_branch & bp.predicted_taken
 
     wire f_target : addr
-    definition f_target = bfe[0][7](fetched)
+    definition f_target = fetched<<7:0>>
 
     wire pred_next_pc : addr         # the predicted next fetch address
     definition pred_next_pc = (f_target if f_ptaken else pc + 1)
@@ -845,27 +845,27 @@ object cpu = {
     # ---- MEM-stage D-cache access (for the address m_addr) ----
 
     wire m_index : nib
-    definition m_index = bfe[0][3](m_addr)
+    definition m_index = m_addr<<3:0>>
     wire m_hi : nib                    # hi_addr of the accessed address
-    definition m_hi = bfe[4][7](m_addr)
+    definition m_hi = m_addr<<7:4>>
     wire m_line : cline                # the D-cache line at this index
     definition m_line = dcache(m_index)
     wire m_line_full : bool
-    definition m_line_full = (bfe[21][21](m_line):bit) = 1
+    definition m_line_full = (m_line<<21:21>>:bit) = 1
     wire m_line_dirty : bool
-    definition m_line_dirty = (bfe[20][20](m_line):bit) = 1
+    definition m_line_dirty = (m_line<<20:20>>:bit) = 1
     wire m_line_hi : nib               # hi_addr currently cached in this line
-    definition m_line_hi = bfe[16][19](m_line)
+    definition m_line_hi = m_line<<19:16>>
     wire m_line_data : word
-    definition m_line_data = bfe[0][15](m_line)
+    definition m_line_data = m_line<<15:0>>
     wire m_hit : bool
     definition m_hit = m_line_full & (m_line_hi = m_hi)
     wire m_iline : cline               # the I-cache line at this index
     definition m_iline = icache(m_index)
     wire m_ihit : bool                 # I-cache holds the (flush) address m_addr
-    definition m_ihit = ((bfe[21][21](m_iline):bit) = 1) & ((bfe[16][19](m_iline):nib) = m_hi)
+    definition m_ihit = ((m_iline<<21:21>>:bit) = 1) & ((m_iline<<19:16>>:nib) = m_hi)
     wire m_victim_addr : addr          # address to write the victim back to
-    definition m_victim_addr = concat(m_line_hi, m_index)
+    definition m_victim_addr = m_line_hi :: m_index
     wire m_fill_data : word            # main-memory word for m_addr (pre-clock)
     definition m_fill_data = mem(m_addr)
 
@@ -923,10 +923,10 @@ object cpu = {
                 # ST: install a dirty line holding the stored word (full, dirty,
                 # hi_addr, data). A 1-word line is fully overwritten, so a write
                 # miss needs no fetch.
-                dcache(m_index) := (concat(1:bit, 1:bit, m_hi, m_store) : cline)
+                dcache(m_index) := ((1:bit) :: (1:bit) :: m_hi :: m_store : cline)
             } else if ~m_hit {
                 # LD miss: install a clean line with the fetched word.
-                dcache(m_index) := (concat(1:bit, 0:bit, m_hi, m_fill_data) : cline)
+                dcache(m_index) := ((1:bit) :: (0:bit) :: m_hi :: m_fill_data : cline)
             }
         };
         # FLUSH m_addr: write the D-cache line back if it is present and dirty,
@@ -950,8 +950,8 @@ object cpu = {
             m_valid := e_valid;
             m_res := (e_a + e_b if e_opcode = 1 else
                      (e_a - e_b if e_opcode = 2 else
-                     (concat(0:addr, e_target) if e_opcode = 3 else 0)));
-            m_addr := bfe[0][7](e_a);
+                     ((0:addr) :: e_target if e_opcode = 3 else 0)));
+            m_addr := e_a<<7:0>>;
             m_store := e_b
         };
 
@@ -983,7 +983,7 @@ object cpu = {
                     d_pc := pc;
                     if ~f_ihit {
                         # install a clean I-cache line (dirty bit unused = 0)
-                        icache(f_index) := (concat(1:bit, 0:bit, (bfe[4][7](pc):nib), fetched) : cline)
+                        icache(f_index) := ((1:bit) :: (0:bit) :: (pc<<7:4>>:nib) :: fetched : cline)
                     };
                     pc := pred_next_pc
                 }

@@ -66,7 +66,7 @@ distilled from — read the one closest to your target before writing code:
 
 2. **Write `isa_model`.** State as `var`s. Intermediate values as **temporary
    `var`s** (`var opcode : opc`, `var a_val : word`, `var take_branch : bool`,
-   ...), *computed* by an `action prepare` (`opcode := bfe[13][15](fetched);
+   ...), *computed* by an `action prepare` (`opcode := fetched<<15:13>>;
    a_val := rf(ra); take_branch := (opcode=6)&(a_val=0); ...`). `after init` sets
    `pc`, zeroes `rf`, and loads `mem(A) := init_mem(A)`, `imem(A) :=
    init_imem(A)`. `action step` executes one instruction, reading the temporary
@@ -88,7 +88,7 @@ distilled from — read the one closest to your target before writing code:
    recorded entries; an LLM can generate these from `isa_model`):
    - `st(now).X = arch.X` for every field X.
    - Consistency for *all* recorded entries: `T <= now -> st(T).opcode =
-     bfe[13][15](st(T).fetched)`, `... st(T).a_val = st(T).rf(st(T).ra)`, etc.
+     st(T).fetched<<15:13>>`, `... st(T).a_val = st(T).rf(st(T).ra)`, etc.
    - Step relation between consecutive entries: `succ(T,U) & U <= now ->
      st(U).pc = (st(T).target if st(T).take_branch else st(T).pc + 1)`, and
      likewise for `rf`, `mem`, `imem`. Without these, past entries `st(T)` for
@@ -96,8 +96,8 @@ distilled from — read the one closest to your target before writing code:
 
 5. **Implementation datapath.** Model combinational signals as `wire` +
    `definition`, registers/latches as `var`, memories as `var f(A:addr):word`.
-   Each stage decodes its instruction word with `bfe`; stalls/squashes are
-   ordinary `if`s over the latches.
+   Each stage decodes its instruction word with the `<<hi:lo>>` bit-select;
+   stalls/squashes are ordinary `if`s over the latches.
 
 6. **Ghost tags + step in the `specification` block.** Give each stage a
    `var <stage>_tag : trace.tag` (or boundary counters `commit/mcommit/...`, one
@@ -138,10 +138,14 @@ distilled from — read the one closest to your target before writing code:
   versions used the `function`+`old` style and repeatedly hit the forgotten-`old`
   bug — which is exactly why the examples were changed.)
 
-- **`bfe` result sort must be pinned.** `bfe[i][j]` is fully polymorphic in its
-  result; when compared to a numeric literal, ascribe it: `(bfe[13][15](x):opc)
-  = 6`. When it defines a value of known sort (`wire opcode : opc; definition
-  opcode = bfe[13][15](ir)`) the sort is inferred.
+- **Use the bit-select / concat sugar; pin the bit-select's result sort.**
+  ivy1.8+ writes `bfe[i][j](w)` as `w<<j:i>>` (Verilog-style high:low) and
+  `concat(a, ...)` as `a :: ...`; the examples use this sugar throughout. It
+  desugars in the parser, so every `bfe`/`concat` note here applies unchanged. A
+  bit-select is polymorphic in its result sort: when compared to a numeric
+  literal or otherwise unconstrained, ascribe it: `(x<<15:13>>:opc) = 6`. When it
+  defines a value of known sort (`wire opcode : opc; definition opcode =
+  ir<<15:13>>`) the sort is inferred.
 
 - **Interpret the small bit-vector types in the trace isolate.** Quantified
   invariants that compare recorded fields to numerals need the bit-vector
@@ -168,19 +172,19 @@ distilled from — read the one closest to your target before writing code:
   `function` style these had to be read as `old mem_addr` / `old target`, and
   this is where the forgotten-`old` bugs were most common.)
 
-- **Packing with `concat`.** `concat` is variadic, so a packed cache line is
-  built in one shot: `concat(full, dirty, hi_addr, data) : cline` (assign to a
-  `cline`/`bv[22]`-interpreted type; ascribe the result). Decode fields with
-  `bfe`. A `concat` is given bit-vector semantics only when every argument sort
-  *and* the result sort is a bit-vector and the argument widths sum to the result
-  width; otherwise it is uninterpreted (still sound by congruence) and a width
-  mismatch warns rather than crashing. Two consequences: (1) each `concat`
-  argument's sort must be pinned — a bare `bfe[...]` inside a `concat` needs an
-  ascription like `(bfe[4][7](pc):nib)`, since the `:cline` on the whole `concat`
-  does not constrain the argument widths; (2) inside an isolate closed
-  `with addr,opc` (so `word` is not interpreted there), a `concat` returning
-  `word` is left uninterpreted — which is exactly what you want for the trace's
-  recorded values.
+- **Packing with `::` (concat).** `a :: b :: ...` (sugar for a variadic
+  `concat`) builds a packed cache line in one shot: `((1:bit) :: (0:bit) ::
+  hi_addr :: data : cline)` (assign to / ascribe a `cline`/`bv[22]`-interpreted
+  type). Decode fields with the `w<<hi:lo>>` bit-select. A concatenation is given
+  bit-vector semantics only when every argument sort *and* the result sort is a
+  bit-vector and the argument widths sum to the result width; otherwise it is
+  uninterpreted (still sound by congruence) and a width mismatch warns rather
+  than crashing. Two consequences: (1) each argument's sort must be pinned — a
+  bare bit-select inside a concat needs an ascription like `(pc<<7:4>>:nib)`,
+  since the `:cline` on the whole concatenation does not constrain the argument
+  widths; (2) inside an isolate closed `with addr,opc` (so `word` is not
+  interpreted there), a concat returning `word` is left uninterpreted — which is
+  exactly what you want for the trace's recorded values.
 
 - **Debugging CTIs: use `shrink=false`.** Counterexample generation can be very
   slow; `shrink=false` skips minimization. `trace_dir=<dir>` dumps a CTI for
@@ -254,10 +258,10 @@ weak memory, or any "software must synchronize" contract.
 
 - **Direct-mapped geometry: keep only `hi_addr` in the tag.** If a line stores
   only the high address bits (not the full address), the address it caches is
-  structurally `concat(hi_addr, index)`, always at its own index, so no "line is
+  structurally `hi_addr :: index`, always at its own index, so no "line is
   filed at the right index" invariant is needed. (If you instead store a full
-  address in the tag — e.g. to dodge a `concat` — you *do* need the structural
-  invariant `valid(I) -> bfe[0][3](tag(I)) = I`, or the prover imagines a line
+  address in the tag — e.g. to dodge a concat — you *do* need the structural
+  invariant `valid(I) -> tag(I)<<3:0>> = I`, or the prover imagines a line
   under the wrong index and writes a victim back to a bogus address.)
 
 - **`FLUSH` + fetch stall re-establish coherence.** `FLUSH A` writes back the

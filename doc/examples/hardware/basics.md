@@ -281,14 +281,14 @@ abstract counter:
         wire en : bool
         wire cout : bool
         specification {
-            invariant [cout_spec] cout <-> en & (bfe[0][0](abs.val) = 1:uint[1])
+            invariant [cout_spec] cout <-> en & (abs.val<<0:0>> = 1:uint[1])
         }
         implementation {
             var val : uint[1]
             after init { val := 0; }
             after posedge { if en { val := val + 1; } }
             definition cout = en & (val = 1)
-            invariant val = bfe[0][0](abs.val)
+            invariant val = abs.val<<0:0>>
         }
     } with this
 
@@ -317,7 +317,7 @@ carry, but its proof depends on the specification of `c0`:
             after init { val := 0; }
             after posedge { if en { val := val + 1; } }
             definition cout = en & (val = 1)
-            invariant val = bfe[1][1](abs.val)
+            invariant val = abs.val<<1:1>>
         }
     } with this
 
@@ -468,9 +468,9 @@ SystemVerilog. Here is the combinational nibble-swap written in Ivy,
         export wire out : byte
         wire lo : nibble
         wire hi : nibble
-        definition lo = bfe[0][3](inp)
-        definition hi = bfe[4][7](inp)
-        definition out = concat(lo, hi)
+        definition lo = inp<<3:0>>
+        definition hi = inp<<7:4>>
+        definition out = lo :: hi
     }
 
 and in SystemVerilog:

@@ -73,11 +73,11 @@ isolate cpu = {
     wire ra : reg
     wire rb : reg
     wire target : addr            # low 8 bits: branch target or immediate
-    definition opcode = bfe[13][15](ir)
-    definition rd = bfe[10][12](ir)
-    definition ra = bfe[7][9](ir)
-    definition rb = bfe[4][6](ir)
-    definition target = bfe[0][7](ir)
+    definition opcode = ir<<15:13>>
+    definition rd = ir<<12:10>>
+    definition ra = ir<<9:7>>
+    definition rb = ir<<6:4>>
+    definition target = ir<<7:0>>
 
     # ---- operands and ALU (combinational) ----
 
@@ -86,7 +86,7 @@ isolate cpu = {
     wire mem_addr : addr          # address for LD/ST: low 8 bits of rf[ra]
     definition a_val = rf(ra)
     definition b_val = rf(rb)
-    definition mem_addr = bfe[0][7](a_val)
+    definition mem_addr = a_val<<7:0>>
 
     # ---- branch decision (BEQZ) ----
 
@@ -119,7 +119,7 @@ isolate cpu = {
                     rf(rd) := a_val - b_val
                 } else {
                     if opcode = 3 {                  # LI
-                        rf(rd) := concat(0:addr, target)
+                        rf(rd) := (0:addr) :: target
                     } else {
                         if opcode = 4 {              # LD
                             rf(rd) := mem(mem_addr)

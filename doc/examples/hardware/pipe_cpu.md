@@ -67,7 +67,7 @@ with `bfe`, the operands are read from the register file, and the branch
 condition is computed:
 
     wire opcode : opc
-    definition opcode = bfe[13][15](ir)
+    definition opcode = ir<<15:13>>
     ...
     wire a_val : word
     definition a_val = rf(ra)

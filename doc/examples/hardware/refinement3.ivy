@@ -50,7 +50,7 @@ isolate c0 = {
     wire cout : bool  # the carry output
     
     specification {
-        invariant [cout_spec] cout <-> en & (bfe[0][0](abs.val) = 1:uint[1]) 
+        invariant [cout_spec] cout <-> en & (abs.val<<0:0>> = 1:uint[1]) 
     }
 
     implementation {
@@ -66,7 +66,7 @@ isolate c0 = {
         }
         definition cout = en & (val = 1)
 
-        invariant val = bfe[0][0](abs.val)
+        invariant val = abs.val<<0:0>>
         
     }
 
@@ -101,7 +101,7 @@ isolate c1 = {
         }
         definition cout = en & (val = 1)
 
-        invariant val = bfe[1][1](abs.val)
+        invariant val = abs.val<<1:1>>
     }
 
  }

@@ -124,17 +124,17 @@ module isa_model(init_mem,init_imem) = {
 
         # ---- decode of the X-stage instruction (combinational) ----
 
-        opcode := bfe[13][15](fetched);
-        rd := bfe[10][12](fetched);
-        ra := bfe[7][9](fetched);
-        rb := bfe[4][6](fetched);
-        target := bfe[0][7](fetched);     # low 8 bits: branch target or immediate
+        opcode := fetched<<15:13>>;
+        rd := fetched<<12:10>>;
+        ra := fetched<<9:7>>;
+        rb := fetched<<6:4>>;
+        target := fetched<<7:0>>;     # low 8 bits: branch target or immediate
 
         # ---- operand fetch ----
 
         a_val := rf(ra);
         b_val := rf(rb);
-        mem_addr  := bfe[0][7](a_val);    # address for LD/ST: low 8 bits of rf[ra]
+        mem_addr  := a_val<<7:0>>;    # address for LD/ST: low 8 bits of rf[ra]
 
         # ---- branch decision (BEQZ) ----
 
@@ -151,7 +151,7 @@ module isa_model(init_mem,init_imem) = {
         } else if opcode = 2 {                   # SUB
             rf(rd) := a_val - b_val
         } else if opcode = 3 {                   # LI
-            rf(rd) := concat(0:addr, target)
+            rf(rd) := (0:addr) :: target
         } else if opcode = 4 {                   # LD
             rf(rd) := mem(mem_addr)
         } else if opcode = 5 {                   # ST
@@ -289,14 +289,14 @@ isolate trace = {
         #     recorded entries, which never change once written.)
 
         invariant T <= now -> st(T).fetched = st(T).imem(st(T).pc)
-        invariant T <= now -> st(T).opcode = bfe[13][15](st(T).fetched)
-        invariant T <= now -> st(T).rd = bfe[10][12](st(T).fetched)
-        invariant T <= now -> st(T).ra = bfe[7][9](st(T).fetched)
-        invariant T <= now -> st(T).rb = bfe[4][6](st(T).fetched)
-        invariant T <= now -> st(T).target = bfe[0][7](st(T).fetched)
+        invariant T <= now -> st(T).opcode = (st(T).fetched)<<15:13>>
+        invariant T <= now -> st(T).rd = (st(T).fetched)<<12:10>>
+        invariant T <= now -> st(T).ra = (st(T).fetched)<<9:7>>
+        invariant T <= now -> st(T).rb = (st(T).fetched)<<6:4>>
+        invariant T <= now -> st(T).target = (st(T).fetched)<<7:0>>
         invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
         invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
-        invariant T <= now -> st(T).mem_addr = bfe[0][7](st(T).a_val)
+        invariant T <= now -> st(T).mem_addr = (st(T).a_val)<<7:0>>
         invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
 
         # (b) Consecutive recorded states are related by one step of the ISA.
@@ -315,7 +315,7 @@ isolate trace = {
                                          if (st(T).opcode = 1 & R = st(T).rd) else
                                      (st(T).a_val - st(T).b_val
                                          if (st(T).opcode = 2 & R = st(T).rd) else
-                                     (concat(0:addr, st(T).target)
+                                     ((0:addr) :: st(T).target
                                          if (st(T).opcode = 3 & R = st(T).rd) else
                                      (st(T).mem(st(T).mem_addr)
                                          if (st(T).opcode = 4 & R = st(T).rd) else
@@ -411,11 +411,11 @@ object cpu = {
     wire ra : reg
     wire rb : reg
     wire target : addr            # low 8 bits: branch target or immediate
-    definition opcode = bfe[13][15](ir)
-    definition rd = bfe[10][12](ir)
-    definition ra = bfe[7][9](ir)
-    definition rb = bfe[4][6](ir)
-    definition target = bfe[0][7](ir)
+    definition opcode = ir<<15:13>>
+    definition rd = ir<<12:10>>
+    definition ra = ir<<9:7>>
+    definition rb = ir<<6:4>>
+    definition target = ir<<7:0>>
 
     # ---- operands and ALU (combinational) ----
 
@@ -424,7 +424,7 @@ object cpu = {
     wire mem_addr : addr          # address for LD/ST: low 8 bits of rf[ra]
     definition a_val = rf(ra)
     definition b_val = rf(rb)
-    definition mem_addr = bfe[0][7](a_val)
+    definition mem_addr = a_val<<7:0>>
 
     # ---- branch decision (BEQZ) ----
 
@@ -454,7 +454,7 @@ object cpu = {
                     rf(rd) := a_val - b_val
                 } else {
                     if opcode = 3 {                  # LI
-                        rf(rd) := concat(0:addr, target)
+                        rf(rd) := (0:addr) :: target
                     } else {
                         if opcode = 4 {              # LD
                             rf(rd) := mem(mem_addr)

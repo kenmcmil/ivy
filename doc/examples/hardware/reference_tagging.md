@@ -68,7 +68,7 @@ separate `prepare` action.
 
     action prepare = {
         fetched := imem(pc);
-        opcode  := bfe[13][15](fetched);
+        opcode  := fetched<<15:13>>;
         a_val   := rf(ra);
         take_branch := (opcode = 6) & (a_val = 0);
         # ...
@@ -148,7 +148,7 @@ state, `st(now)`, matches `arch`; the pipeline compares lagging stages against
 Concretely, we assert that
 
 * each recorded state's intermediate values are the correct decode of its own
-  architectural state (e.g. `st(T).opcode = bfe[13][15](st(T).fetched)`), and
+  architectural state (e.g. `st(T).opcode = st(T).fetched<<15:13>>`), and
 * consecutive recorded states are related by one ISA step: `st(T+1)` is the
   result of executing `st(T)`'s instruction (the PC advances or branches, the
   register file and memory are updated according to the opcode).
@@ -339,11 +339,11 @@ same reference-tagging style, all relative to the trace state at the MEM stage
 Together these say the *effective* memory -- D-cache where present-and-dirty,
 else main memory -- always equals the reference memory (until an error), and the
 I-cache agrees wherever it has not gone stale. Each line is a packed bit-vector
-`[21] full | [20] dirty | [19:16] hi_addr | [15:0] data`, built with `concat` and
-decoded with `bfe`. Because the tag holds only `hi_addr` (not the full address),
-the address a line caches is structurally `concat(hi_addr, index)`, so it is
-always at its own index -- no extra "line is filed at the right index" invariant
-is needed.
+`[21] full | [20] dirty | [19:16] hi_addr | [15:0] data`, built with the `::`
+concatenation operator and decoded with the `w<<hi:lo>>` bit-select. Because the
+tag holds only `hi_addr` (not the full address), the address a line caches is
+structurally `hi_addr :: index`, so it is always at its own index -- no extra
+"line is filed at the right index" invariant is needed.
 
 `FLUSH A` is what re-establishes coherence: in the MEM stage it writes the
 D-cache line for `A` back to main memory if it is dirty, then evicts `A` from
@@ -385,11 +385,12 @@ All four designs translate to RTL with `ivy_to_rtl`, because the datapath is
 kept free of ghost state (tags, shadow and dirty bits used only in the proof
 live in `specification` blocks) and uses only point writes to the state arrays.
 Each cache is a single memory of packed 22-bit lines; a line is assembled with
-`concat` and its fields read with `bfe`, so in RTL it is one narrow memory per
-cache -- a direct-mapped cache. (This uses `concat`'s variadic form,
-`concat(full, dirty, hi_addr, data)`; a `concat` is given bit-vector semantics
-only when every argument and the result are bit-vectors and the argument widths
-sum to the result width, and is otherwise treated as uninterpreted.)
+the `::` concatenation operator and its fields read with the `w<<hi:lo>>`
+bit-select, so in RTL it is one narrow memory per cache -- a direct-mapped cache.
+(`a :: b :: ...` is sugar for a variadic `concat`, here `full :: dirty ::
+hi_addr :: data`; the concatenation is given bit-vector semantics only when every
+argument and the result are bit-vectors and the argument widths sum to the result
+width, and is otherwise treated as uninterpreted.)
 
 Equivalence checking against a golden model
 -------------------------------------------
