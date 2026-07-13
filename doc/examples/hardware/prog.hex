@@ -1,0 +1,9 @@
+# Example program for simulating 5stage_cache_cpu_ref (see sim_cache_cpu.sh).
+# 16-bit words, one per address starting at 0. Instruction encoding:
+#   [15:13] opcode  [12:10] rd  [9:7] ra  [6:4] rb  [7:0] imm/target
+# This is supplied to the RTL only for simulation; the Ivy proof holds for any
+# program (main memory is initialized from an uninterpreted init_mem).
+6405        # 0: LI   r1, 5
+6801        # 1: LI   r2, 1
+44a0        # 2: SUB  r1, r1, r2
+c002        # 3: BEQZ r0, 2      (r0 == 0, so an unconditional loop back to 2)

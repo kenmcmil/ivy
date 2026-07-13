@@ -77,6 +77,41 @@ one-cycle bubble) before the PC redirects to the branch target 2.
 (Memory init is realized as power-on contents, so re-asserting `rst` does not
 reload a memory — the standard hardware ROM/initialized-RAM behavior.)
 
+### Simulating with the program *outside* the model
+
+`5stage_cache_cpu_ref.ivy` deliberately does **not** bake in a program: its main
+memory is initialized from an *uninterpreted* function `init_mem`, which is what
+makes the correctness proof hold for every program. Because `init_mem` is
+uninterpreted (and referenced only in the proof-only reference model), `ivy_to_rtl`
+emits the main-memory array `\mem` with **no `$meminit`** — the program is genuinely
+not in the design.
+
+To simulate a specific program you supply it at the RTL boundary instead of in the
+Ivy source. `sim` honors `$meminit` cells, so `load_program.py` builds one for `\mem`
+from an external hex file and splices it into the netlist; the Ivy model stays
+program-free:
+
+```
+$ ./sim_cache_cpu.sh prog.hex 40      # ivy_to_rtl -> inject prog -> yosys sim
+```
+
+which runs, in effect:
+
+```
+$ ivy_to_rtl 5stage_cache_cpu_ref.ivy
+$ python3 load_program.py 5stage_cache_cpu_ref.il prog.hex 5stage_cache_cpu_ref_prog.il
+$ yosys -p "read_rtlil 5stage_cache_cpu_ref_prog.il; hierarchy -top cpu; proc;
+            memory_collect; sim -clock posedge -reset rst -n 40 -vcd cpu.vcd"
+```
+
+`prog.hex` holds 16-bit words (one per address from 0; `#` comments allowed). With
+the example program the `pc` trace is `0, 1, 2, 3, 4, 2, 3, 2, 3, ...` — the loop back
+to the branch target 2, with the extra spacing coming from the multi-cycle cache
+fills (the I-cache starts empty and refills from `\mem`). This keeps proof and
+simulation cleanly separated: Ivy proves correctness for an arbitrary `init_mem`,
+while the hex file is only concrete stimulus. (The same trick works for any model
+whose memory is initialized from an uninterpreted function.)
+
 ## Checking equivalence of two RTLIL designs
 
 `refinement3_ref.il` is a hand-written reference for `refinement3`. It is
