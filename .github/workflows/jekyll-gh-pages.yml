@@ -45,6 +45,10 @@ jobs:
         with:
           source: ./doc/
           destination: ./_site
+      - name: Take ownership of _site
+        # jekyll-build-pages runs in a container as root, so _site is root-owned;
+        # take ownership so the (non-root) Hugo step can create _site/blog.
+        run: sudo chown -R "$(id -u):$(id -g)" _site
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v3
         with:
