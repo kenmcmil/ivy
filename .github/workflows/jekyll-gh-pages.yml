@@ -3,8 +3,9 @@ name: Deploy Jekyll with GitHub Pages dependencies preinstalled
 
 # This is the active GitHub Pages workflow: it builds doc/ with the
 # github-pages gem (the same environment GitHub Pages uses), which renders the
-# site correctly. pages.yml (a Bundler/Jekyll-4 build) is disabled to avoid
-# racing this one on the shared "pages" environment.
+# site correctly, and additionally builds the Hugo blog (blog/) into _site/blog.
+# pages.yml (a Bundler/Jekyll-4 build) is disabled to avoid racing this one on
+# the shared "pages" environment.
 on:
   # Runs on pushes targeting the default branch
   push:
@@ -26,19 +27,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Build job
+  # Build job: Jekyll renders doc/ into _site (the site root); Hugo then renders
+  # the blog/ site into _site/blog. The combined _site is uploaded as the Pages
+  # artifact.
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Fetch Hugo theme
+        # Only the PaperMod theme submodule -- not the heavy abc/z3/picotls ones.
+        run: git submodule update --init --depth 1 blog/themes/PaperMod
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Build with Jekyll
+      - name: Build docs with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
           source: ./doc/
           destination: ./_site
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: '0.164.0'   # pinned to a tested version (extended)
+          extended: true
+      - name: Build blog with Hugo (into _site/blog)
+        run: >-
+          hugo --source blog --minify
+          --baseURL "https://kenmcmil.github.io/ivy/blog/"
+          --destination "$GITHUB_WORKSPACE/_site/blog"
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
 

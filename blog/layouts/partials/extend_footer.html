@@ -1,0 +1,42 @@
+{{- /*
+  Client-side syntax highlighting with highlight.js. Chroma (Hugo's built-in
+  highlighter) has no lexer for the Ivy language, so we register a custom "ivy"
+  grammar here. Its keyword list is the full set of reserved words from
+  ivy/ivy_lexer.py; comments (# to end of line), strings, and numbers are handled
+  by highlight.js's standard modes, so highlighting is reliable and complete
+  rather than guessed.
+*/ -}}
+<script src="{{ "hljs/highlight.min.js" | relURL }}"></script>
+<script>
+  hljs.registerLanguage('ivy', function (hljs) {
+    var KEYWORDS =
+      'relation individual function axiom conjecture schema instantiate instance ' +
+      'derived concept init action method field state assume assert set null old ' +
+      'from update params in match ensures requires modifies fresh module template ' +
+      'object class type if else local let call entry macro interpret forall exists ' +
+      'returns mixin execute before after isolate with export delegate import using ' +
+      'include progress rely mixord extract process destructor some maximizing ' +
+      'minimizing private implement property while invariant struct definition ghost ' +
+      'alias trusted this var attribute variant of scenario proof named temporal ' +
+      'globally eventually decreases specification implementation global common ensure ' +
+      'require around parameter apply theorem showgoals defergoal spoil explicit thunk ' +
+      'isa autoinstance constructor finite tactic unfold forget debug for subclass ' +
+      'whenfirst whenlast whenprev whennext unprovable trigger wire';
+    return {
+      name: 'Ivy',
+      case_insensitive: false,
+      keywords: {
+        keyword: KEYWORDS,
+        literal: 'true false',
+        type: 'bool bv int uint nat'
+      },
+      contains: [
+        hljs.HASH_COMMENT_MODE,   // # comments to end of line
+        hljs.QUOTE_STRING_MODE,   // "..." strings
+        hljs.C_NUMBER_MODE,       // decimal / hex numerals
+        { className: 'built_in', begin: /\b(bfe|concat)\b/ }
+      ]
+    };
+  });
+  hljs.highlightAll();
+</script>

@@ -10,3 +10,6 @@
 [submodule "z3orig"]
 	path = submodules/z3
 	url = https://github.com/Z3Prover/z3.git
+[submodule "blog/themes/PaperMod"]
+	path = blog/themes/PaperMod
+	url = https://github.com/adityatelange/hugo-PaperMod.git

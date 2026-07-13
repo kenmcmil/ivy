@@ -1,0 +1,56 @@
+baseURL = "https://kenmcmil.github.io/ivy/blog/"
+locale = "en-us"
+title = "The Ivy Blog"
+theme = "PaperMod"
+enableRobotsTXT = true
+enableEmoji = true
+
+# GitHub Pages serves this Hugo site under /ivy/blog/ (the CI workflow builds it
+# into _site/blog, alongside the Jekyll docs at the site root). The --baseURL
+# flag in the workflow matches the value above.
+
+[pagination]
+  pagerSize = 10
+
+[params]
+  env = "production"
+  description = "Notes on formal verification of hardware and protocols with Ivy."
+  author = "Kenneth McMillan"
+  DateFormat = "January 2, 2006"
+  ShowReadingTime = true
+  ShowCodeCopyButtons = true
+  ShowBreadCrumbs = true
+  ShowPostNavLinks = true
+  ShowToc = true
+  TocOpen = false
+
+  [params.homeInfoParams]
+    Title = "The Ivy Blog"
+    Content = "Notes on formal verification of hardware and protocols with [Ivy](https://kenmcmil.github.io/ivy/)."
+
+[[menu.main]]
+  identifier = "posts"
+  name = "Posts"
+  url = "posts/"
+  weight = 10
+
+[[menu.main]]
+  identifier = "archives"
+  name = "Archive"
+  url = "archives/"
+  weight = 20
+
+[[menu.main]]
+  identifier = "ivydocs"
+  name = "Ivy docs"
+  url = "https://kenmcmil.github.io/ivy/"
+  weight = 30
+
+# Syntax highlighting is done client-side by highlight.js (see the extend_head /
+# extend_footer partials), because Chroma has no lexer for the Ivy language.
+# Disabling Chroma's code-fence handling makes Goldmark emit plain
+# <pre><code class="language-ivy"> blocks that highlight.js then colors with a
+# proper Ivy grammar; guessSyntax is off so nothing is highlighted by guesswork.
+[markup.highlight]
+  codeFences = false
+  guessSyntax = false

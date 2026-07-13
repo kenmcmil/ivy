@@ -1,0 +1,4 @@
+# Hugo build outputs (the CI workflow builds into _site/blog, not here)
+/public/
+/resources/_gen/
+.hugo_build.lock
