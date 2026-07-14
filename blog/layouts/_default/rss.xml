@@ -15,13 +15,19 @@
 <rss version="2.0"
      xmlns:atom="http://www.w3.org/2005/Atom"
      xmlns:content="http://purl.org/rss/1.0/modules/content/"
-     xmlns:dc="http://purl.org/dc/elements/1.1/">
+     xmlns:dc="http://purl.org/dc/elements/1.1/"
+     xmlns:creativeCommons="http://backend.userland.com/creativeCommonsRssModule">
   <channel>
     <title>{{ if eq .Title site.Title }}{{ site.Title }}{{ else }}{{ with .Title }}{{ . }} on {{ end }}{{ site.Title }}{{ end }}</title>
     <link>{{ .Permalink }}</link>
     <description>Recent content {{ if ne .Title site.Title }}{{ with .Title }}in {{ . }} {{ end }}{{ end }}on {{ site.Title }}</description>
     <generator>Hugo</generator>
     <language>{{ site.Language.Lang }}</language>
+    {{- $license := site.Params.license | default "CC BY 4.0" }}
+    {{- $licenseURL := site.Params.licenseURL | default "https://creativecommons.org/licenses/by/4.0/" }}
+    <copyright>© {{ now.Year }} {{ site.Params.author }}. Content licensed under {{ $license }} ({{ $licenseURL }}).</copyright>
+    <creativeCommons:license>{{ $licenseURL }}</creativeCommons:license>
+    <atom:link rel="license" href="{{ $licenseURL }}" />
     {{- if gt (len $pages) 0 }}
     <lastBuildDate>{{ (index $pages 0).Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" | safeHTML }}</lastBuildDate>
     {{- end }}
@@ -35,6 +41,8 @@
       <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" | safeHTML }}</pubDate>
       {{- with (.Params.author | default site.Params.author) }}<dc:creator>{{ . }}</dc:creator>{{ end }}
       <guid>{{ .Permalink }}</guid>
+      <dc:rights>© {{ .Date.Year }} {{ .Params.author | default site.Params.author }}. Licensed under {{ $license }}.</dc:rights>
+      <creativeCommons:license>{{ $licenseURL }}</creativeCommons:license>
       <description>{{ .Summary | transform.XMLEscape | safeHTML }}</description>
       <content:encoded>{{ .Content | transform.XMLEscape | safeHTML }}</content:encoded>
     </item>
