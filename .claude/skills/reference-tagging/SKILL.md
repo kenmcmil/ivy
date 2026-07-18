@@ -22,8 +22,10 @@ is working on, then prove, per element, that its contents equal the trace value
 latch / register file / memory, and the *same trace model is reused unchanged*
 as the microarchitecture grows.
 
-`references/` contains four worked, fully-verified examples that this skill is
-distilled from — read the one closest to your target before writing code:
+`references/` contains the worked, fully-verified examples this skill is
+distilled from (the first four below); read the one closest to your target before
+writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
+(under `doc/examples/hardware/`) demonstrating component isolation:
 
 - `pipe_cpu_ref.ivy` — 2-stage pipeline (the tutorial base case).
 - `5stage_cpu_ref.ivy` — standard 5-stage (IF/ID/EX/MEM/WB) with data-hazard
@@ -33,6 +35,11 @@ distilled from — read the one closest to your target before writing code:
 - `5stage_cache_cpu_ref.ivy` — adds I/D caches, a `FLUSH` instruction, and a
   multi-cycle memory; the reference is extended with `ddirty`/`error` to model
   cache incoherence (see "Caches, incoherence, multi-cycle memory" below).
+- `dual_issue_cpu_ref.ivy` (in `doc/examples/hardware/`; **work in progress**
+  toward dual-issue fetch) — widens the I-cache line to two words and factors the
+  whole I-cache (array + fill state machine + its data invariant) into a nested
+  `cpu.ic` sub-isolate proved *locally*. The `cpu.ic` isolate is fully verified;
+  see "Isolating a component's proof" and "Common hardware design issues" below.
 - `reference_tagging.md` — the prose writeup of the method.
 
 ## The three ingredients
@@ -191,7 +198,19 @@ distilled from — read the one closest to your target before writing code:
   *every* failing check at once; `ivy replay <file>.a2g` prints it. A CTI whose
   state is impossible (e.g. `st(0).error = true`, or a cache line at the wrong
   index) means a missing *structural* invariant — add the fact that rules it
-  out, don't weaken the property.
+  out, don't weaken the property. `ivy_check check=<isolate>.<invname>` restricts
+  to one named invariant, and `ivy_check assume_invariants=false` speeds up CEX
+  search by dropping known-true postconditions of called procedures — but it can
+  drop assumptions you actually need, so re-confirm a CTI without it.
+
+- **A `definition` can be deadly to Z3 — try inlining it.** A whole-CPU
+  invariant that made Z3 return `unknown` (neither proof nor counterexample) was
+  traced to a *single* defined function — `il_full(L) = (L<<35:35>>:bit) = 1` —
+  whose inlining at its use site made the identical query return instantly.
+  Sibling definitions of the same shape were harmless, so there is no clean rule
+  yet; but when a proof is mysteriously slow or inconclusive, inlining a suspect
+  `definition` is a cheap thing to try before assuming the property is wrong or
+  the fragment is undecidable.
 
 ## Data hazards, control hazards, speculation
 
@@ -279,6 +298,115 @@ weak memory, or any "software must synchronize" contract.
   memory latency as additional stall conditions folded into the existing
   stage-stall/bubble logic; don't try to verify the memory's own timing (leave
   that to a downstream timing tool).
+
+## Isolating a component's proof (the two-word I-cache)
+
+`dual_issue_cpu_ref.ivy` widens the I-cache line to two words (so a later
+dual-issue fetch can read an even/odd instruction pair) and, more importantly,
+factors the *entire* I-cache — the array, the two-word fill state machine, the
+field accessors, and the I-cache data invariant — into a nested sub-isolate
+`cpu.ic`, so that invariant is discharged **locally**. Reach for this when a
+single whole-machine invariant is so large that Z3 returns `unknown` (not a
+proof, not a counterexample): confine it to an isolate that holds only the
+relevant state, and give/assume just the facts that cross the boundary. (The
+project spec is `doc/projects/isolate_icache.md`.)
+
+- **Component-isolate shape (same as the predictor).** `ic` declares its I/O as
+  `wire`s — inputs `fetch_addr`, `fetch_addr_valid`, `ifill_data`,
+  `ifill_data_valid`, and the FLUSH inputs `flush_addr`/`flush_valid`; outputs
+  `fetch_data`, `fetch_valid`, `ifill_addr`, `ifill_addr_valid`, `ifill_busy`.
+  It owns its state (`icache` array; `ifill_on`/`ifill_got`/`ifill_miss`). The
+  parent drives the inputs with interconnect `definition`s placed in **neither**
+  `specification` nor `implementation` (so they reach both RTL and the
+  sub-isolate). The shared memory port stays in the parent; `ic` only *requests*
+  reads (`ifill_addr`/`ifill_addr_valid`) and consumes the returned word — a
+  req/return handshake, so a D-fill and the I-fill still share one port.
+
+- **Every bit-vector type the isolate uses must be in its `with` clause** —
+  otherwise `bfe`/constants over it are *uninterpreted* and you get **spurious**
+  counterexamples (this cost several rounds). Symptoms: a "two numerals assigned
+  same value" warning, or a field taking an impossible value — e.g. the full bit
+  of the all-zero line reading 1 (`icline` uninterpreted), or `ddirty`/`mem` step
+  relations misbehaving because opcode constants 5/7 aren't distinct (`opc`
+  uninterpreted). Fix: list them all — `with this, trace, word, addr, nib, bit,
+  icline, itag, opc, tag`. Use **`ivy_show isolate=<name> <file>`** to print an
+  isolate's contents *and exactly which invariants it assumes* — the right tool
+  for auditing this boundary.
+
+- **Export only what the sub-isolate needs; keep the rest `private`.** Split the
+  parent's invariants into interleaved `specification { }` / `private { }` blocks
+  (you may have many; ordering is free, so you needn't reorder definitions).
+  `cpu.ic` needs only two things from the parent: the **input assumption** (the
+  fill word equals the reference at the MEM tag when not dirty — proved in cpu,
+  since `ifill_data` is driven from main memory), and the **tag-ordering chain**
+  (`commit ≤ mcommit ≤ ecommit ≤ dcommit ≤ now`, which gives `mcommit.next ≤ now`
+  when `m_valid`, so the trace's single-step relations apply at the MEM tag).
+  Everything else (pipeline match, shadow bits, D-cache coherence) stays
+  `private` — still used to prove cpu's own obligations, just not dumped into
+  `ic`'s VC, keeping it small.
+
+- **Design for verification: make the isolate *defensive* instead of adding an
+  input assumption.** An isolate treats its inputs as arbitrary, so an
+  input combination that "can't really happen" still appears as a (spurious)
+  counterexample. You can rule it out two ways: add an *input assumption* the
+  parent must prove, or **gate the input inside the isolate** so the bad case is
+  harmless. Prefer the gate when it is cheap — it shrinks the interface contract
+  and makes the proof robust. Example: a stray `ifill_data_valid` while no fill
+  is in progress cannot really occur (the parent only raises it on a read this
+  isolate requested), but rather than burden `cpu` with an
+  `ifill_data_valid -> filling` guarantee, `ic` simply writes
+  `ifill_on & ifill_data_valid` everywhere it consumes the fill word. One AND
+  gate of real hardware buys a smaller assume-guarantee contract and a simpler,
+  more defensive block. The same spirit drives voiding the fetch bypass and the
+  install on a same-cycle FLUSH (below): `ic` self-protects against stale data
+  instead of demanding the environment never present it. Weigh the (usually
+  tiny) hardware cost against the proof/interface simplification.
+
+- **Combinational input→output paths need the input assumption in the
+  *post*-state.** `ic`'s output guarantee (a valid fetched word is coherent with
+  the reference) has a **zero-delay path** from an input (`ifill_data`, the fill
+  bypass) to an output (`fetch_data`). Proving the *output* invariant in the
+  post-state therefore needs the *input* invariant **in the post-state**, but
+  ordinary assume-guarantee only hands you pre-state assumptions. Fix: name the
+  input invariant (`invariant [icache_input] ...`) and add **`with icache_input`**
+  to the output invariant (`invariant [icache_output] ... with icache_input`).
+  This is sound exactly because the dependency is acyclic — the input assumption
+  is discharged by the parent independently of the output. Without it the bypass
+  case is a spurious counterexample. (This wrinkle applies to any isolate with a
+  combinational path from an assumed input to a guaranteed output.)
+
+- **The half-filled line must be a distinct, well-formed state.** With one `full`
+  bit per two-word line, a line mid-fill has `full = 0` and holds only its miss
+  word (the fill state machine, not a per-word valid bit, records which word is
+  live). State this as an invariant (`midfill`: while `ifill_on & ifill_got`, the
+  line at the miss index is `~full` and carries the miss word's tag). The `~full`
+  part is load-bearing: it is what stops a FLUSH — which only evicts *full* lines
+  with a matching tag — from silently clobbering the in-progress fill.
+
+## Common hardware design issues
+
+Verification surfaces genuine design bugs, not only proof-engineering ones. When
+designing a cache, **explicitly consider the collision of a fill and a FLUSH (or
+any invalidation) on the same address.** A multi-cycle fill reads memory over
+several cycles; if a FLUSH of the address being filled lands in that window, the
+word in flight — or the miss word already installed — is stale w.r.t. the
+freshly-flushed memory, and installing or forwarding it violates coherence. The
+two-word I-cache needed three guards, each found from a counterexample:
+
+  1. **Ignore the returned fill word** when a FLUSH this cycle targets the fill
+     address (`~(flush_valid & flush_addr = ifill_addr)` on the install).
+  2. **Void the fetch bypass** under the same condition, so fetch misses and
+     refetches rather than forwarding the stale word. Easy to forget: the install
+     and the fetch consume the same returned word by two different routes, so
+     both need the guard (the bypass one is what finally closed `icache_output`).
+  3. **Refetch the miss word** when a FLUSH hits the already-installed miss word
+     of a half-filled line (`flush_addr = ifill_miss -> ifill_got := false`), so
+     the machine rereads it from now-current memory. (The CTI showed the stale
+     address is `ifill_miss`, the cached word — not `fetch_addr`.)
+
+The general lesson: for any in-flight, multi-cycle operation (fill, prefetch,
+write-back), enumerate the invalidations that can occur *during* it and decide,
+per case, whether in-flight data must be dropped, re-issued, or is safe.
 
 ## Preparing the model for ivy_to_rtl
 
