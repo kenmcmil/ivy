@@ -38,8 +38,10 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
 - `dual_issue_cpu_ref.ivy` (in `doc/examples/hardware/`; **work in progress**
   toward dual-issue fetch) — widens the I-cache line to two words and factors the
   whole I-cache (array + fill state machine + its data invariant) into a nested
-  `cpu.ic` sub-isolate proved *locally*. The `cpu.ic` isolate is fully verified;
-  see "Isolating a component's proof" and "Common hardware design issues" below.
+  `cpu.ic` sub-isolate proved *locally*. `cpu.ic` is fully verified, its
+  fill-input coherence is discharged in the top isolate, and the emitted RTL
+  simulates a real two-word fill; see "Isolating a component's proof", "Common
+  hardware design issues", and "A safety proof is not a live design" below.
 - `reference_tagging.md` — the prose writeup of the method.
 
 ## The three ingredients
@@ -345,6 +347,19 @@ project spec is `doc/projects/isolate_icache.md`.)
   `private` — still used to prove cpu's own obligations, just not dumped into
   `ic`'s VC, keeping it small.
 
+- **Specify the interface as an abstract protocol over ghost state.** The clean
+  way to state a cross-isolate contract is to introduce ghost variables for the
+  *protocol state* and write the assumption/guarantee as invariants over them —
+  the *same* invariant is a guarantee for one side and an assumption for the
+  other. The memory↔I-cache protocol here is deliberately minimal: *memory
+  returns `mem` at the address presented on the previous cycle, and that word is
+  valid exactly when `ifill_data_valid`* — that is all `icache_input` says. Keep
+  the protocol as weak as the proof allows: a stronger, more realistic handshake
+  (a "request pending" ghost bit, with the cache obliged to hold the address
+  constant while pending) is a design choice you *can* add, not a requirement.
+  The weakness is what lets the cache be *defensive* (next bullet) rather than
+  forcing memory to promise it returns data only when asked.
+
 - **Design for verification: make the isolate *defensive* instead of adding an
   input assumption.** An isolate treats its inputs as arbitrary, so an
   input combination that "can't really happen" still appears as a (spurious)
@@ -361,6 +376,37 @@ project spec is `doc/projects/isolate_icache.md`.)
   install on a same-cycle FLUSH (below): `ic` self-protects against stale data
   instead of demanding the environment never present it. Weigh the (usually
   tiny) hardware cost against the proof/interface simplification.
+
+- **A pipeline latch on the interface breaks a naive coherence invariant —
+  bridge it with a ghost of the delayed value.** The returned fill word is
+  `mem(mfa)`, i.e. memory at the address presented *one cycle earlier* (the port
+  latches the request address into `mfa`). Stating the input coherence over the
+  *current* `ic.ifill_addr` fails: in the parent's abstraction of `ic`,
+  `ifill_addr` is a free output, so the solver moves it and the datum no longer
+  matches (the CTI shows `ifill_addr` jumping to an unrelated value in the
+  post-state). Fix: add a ghost `ifill_addr_old` mirroring the latched address
+  (`ifill_addr_old := ic.ifill_addr` every posedge, in `specification` so `ic`
+  sees the update logic), and state `icache_input` over `ifill_addr_old` — the
+  parent proves it because `mfa` and `ifill_addr_old` latch the *same* previous
+  value. The isolate then only has to guarantee it *holds the address stable*
+  across the request→response, i.e. `held_addr: ifill_on -> ifill_addr =
+  ifill_addr_old`. General move: when a property couples two isolates across a
+  pipeline register, introduce ghost state for the delayed value and split the
+  obligation at that register.
+
+- **Redefine the FSM's state so the bridging invariant is inductive, instead of
+  piling on guards.** `held_addr` was *not* inductive under the first encoding:
+  `ifill_addr` changes on the miss→sibling switch and on a flush-reset while
+  `ifill_on` still held. Guarding it (`ifill_on & ifill_data_valid -> ...`) still
+  failed, because `ifill_data_valid` is a *free input* to the isolate — nothing
+  stops the solver asserting it the cycle after the address moved. The fix was to
+  change the *meaning* of `ifill_on` to "a fill request went out last cycle",
+  giving the fill machine the clean four-state cycle `(off,¬got) -> (on,¬got) ->
+  (off,got) -> (on,got) -> (off,¬got)` in which `ifill_addr` never moves while
+  `ifill_on` — so `held_addr` holds *unguarded*. Picking the right state
+  abstraction is often far cheaper than strengthening a stuck proof. (This
+  transition edit also fixed a liveness bug — see "A safety proof is not a live
+  design".)
 
 - **Combinational input→output paths need the input assumption in the
   *post*-state.** `ic`'s output guarantee (a valid fetched word is coherent with
@@ -408,6 +454,39 @@ The general lesson: for any in-flight, multi-cycle operation (fill, prefetch,
 write-back), enumerate the invalidations that can occur *during* it and decide,
 per case, whether in-flight data must be dropped, re-issued, or is safe.
 
+## A safety proof is not a live design — simulate
+
+Reference tagging proves *safety* (nothing bad relative to the ISA). It says
+nothing about *liveness*, and the isolate machinery can hide a dead design.
+
+- **All-invariants-pass does not mean the machine does anything.** The whole
+  `cpu.ic` proof passed while the fill state machine was actually *stuck* — a
+  missing `(off,got) -> (on,got)` transition meant no fill ever completed, so the
+  cache never held a full line. A machine that never leaves a coherent
+  idle/half-filled state trivially satisfies every coherence invariant. Adding
+  the transition made the fill machine live *and* was the state redefinition that
+  made `held_addr` inductive (above) — one edit fixed both.
+
+- **Inductive "probe" invariants are not reachability tests.** Tempted to check
+  whether a state is reachable by asserting its negation and seeing if it fails?
+  Don't: `ivy_check check=X` assumes *every other* listed invariant in the
+  pre-state — including any hand-added probes, even false ones — so the probes
+  contaminate each other and the result answers "is X implied by the invariant
+  set under one step", not "is state S reachable". Probing `~ifill_got` this way
+  falsely suggested the fill machine was unreachable (proof vacuous); it was not.
+
+- **Simulate to settle liveness and non-vacuity — it is the ground truth the
+  inductive checker cannot give.** Because the emitted RTL is real hardware, run
+  it: `sim_cpu.sh <design> [prog.hex] [cycles] [extra_signals]` emits RTLIL,
+  injects a program into `\mem` at the RTL boundary (via `load_program.py`, so
+  the program stays *out* of the Ivy source — main memory is uninterpreted, and
+  the proof still holds for every program), runs `yosys sim`, and prints the pc
+  trace plus any extra signals per cycle. It is generic across same-ISA designs
+  with unified memory in `cpu.mem` (it keys only on an 8-bit `pc` and the `\mem`
+  array). Passing `"ifill_on,ifill_got,mbusy"` showed the full four-state fill
+  cycle firing on every line — proof-positive of liveness that no invariant
+  check surfaced. Make a quick simulation a routine companion to the proof.
+
 ## Preparing the model for ivy_to_rtl
 
 The datapath must be free of ghost/abstract constructs:
@@ -442,6 +521,13 @@ The datapath must be free of ghost/abstract constructs:
 
 - Translate with `ivy_to_rtl <file>.ivy` and sanity-check the RTLIL with
   `yosys -q -p "read_rtlil <file>.il"`.
+
+- **Inject the program at the RTL boundary, not in the Ivy source.** Because main
+  memory is emitted with no `$meminit` (its init function is uninterpreted), a
+  program is supplied for simulation by patching a `$meminit` for `\mem` into the
+  netlist — that is what `load_program.py` does, and what `sim_cpu.sh` wraps
+  together with `yosys sim` (see "A safety proof is not a live design"). The Ivy
+  model — and its proof — stay program-independent.
 
 - **Equivalence-check against a golden model (optional, strong).** Because the
   emitted RTL is real hardware, you can cross-check it against an independent
