@@ -913,6 +913,9 @@ object cpu = {
         wire flush_valid : bool         # input:  a FLUSH executes in MEM this cycle
         wire fetch_data : word          # output: selected word at fetch_addr
         wire fetch_valid : bool         # output: fetch_data valid (hit / mid-fill / arrival)
+        wire fetch_data1 : word         # output: word at the odd sibling (dual issue lane 1)
+        wire fetch_valid1 : bool        # output: fetch_data1 valid
+        wire fetch_addr1 : addr         # output: the odd sibling address (fetch_addr | 1)
         wire ifill_addr : addr          # output: address ic wants read from memory
         wire ifill_addr_valid : bool    # output: ic is requesting a memory read
         wire ifill_busy : bool          # output: a fill is in progress (its port slot)
@@ -959,6 +962,28 @@ object cpu = {
 
             definition fetch_valid = f_arr_hit | f_bypass
             definition fetch_data  = (f_cword if f_arr_hit else ifill_data)
+
+            # ---- lane 1 (dual issue): the odd sibling word of the same pair ----
+            # The younger instruction of an aligned pair is the odd address of
+            # fetch_addr's own two-word line, so it shares the line's index and
+            # tag: a full-line hit for lane 1 is exactly f_full_hit, and its data
+            # is the high word (word1). This output is only consumed by cpu when
+            # fetch_addr is even (dual issue); cpu ignores it on an odd PC.
+            # The sibling is the next address; lane 1 is only offered on an even
+            # PC (f_wsel = 0), where fetch_addr+1 is the odd word of the same line
+            # (same index/tag, bit 0 set). On an odd PC lane 1 is voided.
+            definition fetch_addr1 = fetch_addr + 1
+            wire f_fill_hit1 : bool         # the odd word is the just-installed miss word
+            definition f_fill_hit1 = ifill_got & (fetch_addr1 = ifill_miss)
+            wire f_arr_hit1 : bool
+            definition f_arr_hit1 = f_full_hit | f_fill_hit1
+            wire f_cword1 : word            # the high (odd) word of the line
+            definition f_cword1 = (f_iline<<31:16>>:word)
+            wire f_bypass1 : bool           # the arriving fill word is for the odd sibling
+            definition f_bypass1 = ifill_on & ifill_data_valid & (ifill_addr = fetch_addr1)
+                                   & ~(flush_valid & (flush_addr = ifill_addr))
+            definition fetch_valid1 = (f_wsel = 0) & (f_arr_hit1 | f_bypass1)
+            definition fetch_data1  = (f_cword1 if f_arr_hit1 else ifill_data)
 
             # ---- fill request: which word to read (miss word, then sibling), and
             # whether a read is wanted. A new miss requests fetch_addr; once a fill
@@ -1058,6 +1083,15 @@ object cpu = {
                   fetch_addr_valid & fetch_valid & ~trace.st(trace.now).error
                           & ~trace.st(mcommit).ddirty(fetch_addr)
                               -> fetch_data = trace.st(mcommit).mem(fetch_addr)
+            with icache_input
+
+            # GUARANTEE for lane 1: the odd sibling word is likewise coherent.
+            # Same proof as icache_output via `hard` at fetch_addr1 (array hit)
+            # and icache_input (the fill bypass, a combinational input path).
+            invariant [icache_output1]
+                  fetch_addr_valid & fetch_valid1 & ~trace.st(trace.now).error
+                          & ~trace.st(mcommit).ddirty(fetch_addr1)
+                              -> fetch_data1 = trace.st(mcommit).mem(fetch_addr1)
             with icache_input
         }
 
