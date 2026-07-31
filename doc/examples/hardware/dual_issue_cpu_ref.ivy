@@ -595,6 +595,16 @@ object cpu = {
         invariant (w_valid & w_opcode = 2 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
         invariant (w_valid & w_opcode = 3 & ~trace.st(trace.now).error) -> w_val = (0:addr) :: trace.st(commit).target
         invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
+
+        # ---- dual-issue Step 1: lane 1 is always empty ------------------
+        # Issue width is hardwired to 1 (d_valid1 is driven false on every fetch
+        # path), so lane 1 never carries a valid instruction. These make that
+        # explicit, so the two-lane skeleton is proved equivalent to the
+        # single-issue machine. Step 2 relaxes them when the lane goes live.
+        invariant ~d_valid1
+        invariant ~e_valid1
+        invariant ~m_valid1
+        invariant ~w_valid1
     }
 
     specification {
@@ -748,6 +758,30 @@ object cpu = {
     var w_ir : word                 # MEM/WB
     var w_valid : bool
     var w_val : word
+
+    # ---- lane-1 pipeline latches (dual-issue Step 1: two-lane skeleton) ----
+    # The younger instruction of an aligned pair rides in lane 1. In Step 1 the
+    # issue width is hardwired to 1 (d_valid1 is always driven false), so every
+    # *_valid1 is provably false and lane 1 is an ever-empty bubble carried
+    # alongside lane 0. The computed lane-1 values (m_res1/w_val1) are don't-cares
+    # while the lane is empty; they get their real combinational datapath in
+    # Step 2 together with the issue logic that fills the lane.
+    var d_ir1 : word                # IF/ID   (lane 1)
+    var d_valid1 : bool
+    var d_pred1 : bool
+    var d_pc1 : addr
+    var e_ir1 : word                # ID/EX   (lane 1)
+    var e_valid1 : bool
+    var e_pred1 : bool
+    var e_pc1 : addr
+    var m_ir1 : word                # EX/MEM  (lane 1)
+    var m_valid1 : bool
+    var m_res1 : word
+    var m_addr1 : addr
+    var m_store1 : word
+    var w_ir1 : word                # MEM/WB  (lane 1)
+    var w_valid1 : bool
+    var w_val1 : word
 
     # ---- decode wires ----
 
@@ -1139,6 +1173,10 @@ object cpu = {
         e_valid := false;
         m_valid := false;
         w_valid := false;
+        d_valid1 := false;      # lane 1 starts empty (and stays empty in Step 1)
+        e_valid1 := false;
+        m_valid1 := false;
+        w_valid1 := false;
         rf(R) := 0;
         mem(A) := init_mem(A);
         dcache(I) := 0;         # all D-cache lines empty (full bit = 0)
@@ -1165,6 +1203,10 @@ object cpu = {
         w_valid := m_valid & ~dmem_stall;
         w_val := (m_res if m_opcode ~= 4 else
                  (m_line_data if m_hit else m_fill_data));
+        # lane 1 (Step 1: bubble). w_val1 is a don't-care while w_valid1 is false.
+        w_ir1 := m_ir1;
+        w_valid1 := m_valid1 & ~dmem_stall;
+        w_val1 := 0;
         if ~dmem_stall & m_valid & (m_opcode = 4 | m_opcode = 5) {
             # On a miss, write the dirty victim back before reinstalling.
             if ~m_hit & m_line_full & m_line_dirty {
@@ -1195,7 +1237,8 @@ object cpu = {
         # otherwise executes and moves to MEM.
         if dmem_stall {
         } else if ex_stall {
-            m_valid := false
+            m_valid := false;
+            m_valid1 := false
         } else {
             m_ir := e_ir;
             m_valid := e_valid;
@@ -1203,7 +1246,14 @@ object cpu = {
                      (e_a - e_b if e_opcode = 2 else
                      ((0:addr) :: e_target if e_opcode = 3 else 0)));
             m_addr := e_a<<7:0>>;
-            m_store := e_b
+            m_store := e_b;
+            # lane 1 (Step 1: bubble). Computed values are don't-cares (m_valid1
+            # is false); the real lane-1 ALU/AGU arrives in Step 2.
+            m_ir1 := e_ir1;
+            m_valid1 := e_valid1;
+            m_res1 := 0;
+            m_addr1 := 0;
+            m_store1 := 0
         };
 
         # ID -> EX and IF -> ID, unless EX or MEM is stalled (then all hold).
@@ -1212,6 +1262,8 @@ object cpu = {
                 # Squash the younger, wrong-path instructions and redirect.
                 e_valid := false;                              # squash the ID instruction
                 d_valid := false;                              # squash the current fetch
+                e_valid1 := false;                             # lane 1 squashed too
+                d_valid1 := false;
                 pc := (e_target if e_take else e_pc + 1)       # correct next PC
             } else {
                 # ID -> EX
@@ -1219,11 +1271,17 @@ object cpu = {
                 e_valid := d_valid;
                 e_pred := d_pred;
                 e_pc := d_pc;
+                # lane 1 (Step 1: bubble)
+                e_ir1 := d_ir1;
+                e_valid1 := d_valid1;
+                e_pred1 := d_pred1;
+                e_pc1 := d_pc1;
 
                 if flush_in_pipe | ifetch_stall {
                     # IF stalled behind a pending FLUSH, or waiting for an I-cache
                     # fill: insert a bubble into ID and hold the PC.
-                    d_valid := false
+                    d_valid := false;
+                    d_valid1 := false
                 } else {
                     # IF -> ID: speculative fetch. On an I-cache miss the word is
                     # supplied (bypassed) from main memory in the fill's busy cycle
@@ -1234,7 +1292,13 @@ object cpu = {
                     d_valid := true;
                     d_pred := f_ptaken;
                     d_pc := pc;
-                    pc := pred_next_pc
+                    pc := pred_next_pc;
+                    # lane 1: no second issue in Step 1 (issue width 1). The
+                    # younger word of the pair will fill this in Step 2.
+                    d_ir1 := 0;
+                    d_valid1 := false;
+                    d_pred1 := false;
+                    d_pc1 := 0
                 }
             }
         };
