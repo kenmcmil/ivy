@@ -427,6 +427,18 @@ object cpu = {
         var ecommit : tag
         var dcommit : tag
 
+        # ---- lane-1 tags (ghost, dual-issue) -----------------------------
+        # Each boundary counter (commit/mcommit/ecommit/dcommit) is the trace
+        # tag of its stage's lane-0 instruction. A stage that holds two
+        # instructions has its lane-1 instruction one tag later; these vars name
+        # that "middle" tag, so a boundary that jumps by two (a full bundle
+        # crossing) can be written with the `succ` relation and no tag
+        # arithmetic: succ(commit,w1_tag) & succ(w1_tag,mcommit), etc.
+        var w1_tag : tag                # WB  lane-1 tag  (between commit, mcommit)
+        var m1_tag : tag                # MEM lane-1 tag  (between mcommit, ecommit)
+        var e1_tag : tag                # EX  lane-1 tag  (between ecommit, dcommit)
+        var d1_tag : tag                # ID  lane-1 tag  (between dcommit, now)
+
         # ---- shadow bits (ghost) -----------------------------------------
         # d_shadow etc.: this stage holds a wrong-path instruction. spec_wrong:
         # the fetch stream is currently on a mispredicted path.
@@ -449,6 +461,7 @@ object cpu = {
 
         after init {
             commit := 0; mcommit := 0; ecommit := 0; dcommit := 0;
+            w1_tag := 0; m1_tag := 0; e1_tag := 0; d1_tag := 0;
             d_shadow := false; e_shadow := false;
             m_shadow := false; w_shadow := false;
             spec_wrong := false;
@@ -465,18 +478,40 @@ object cpu = {
 
         # ---- the non-shadowed instructions form a contiguous tag run -----
 
-        invariant w_valid -> commit.succ(mcommit)
+        # Each stage now holds 0, 1, or 2 non-shadowed instructions, so each
+        # boundary counter is `succ` of the previous by 0/1/2 steps. A two-step
+        # jump is expressed through the stage's lane-1 tag as the named middle
+        # (succ(lo, mid) & succ(mid, hi)). In-order issue (`*_valid1 -> *_valid`)
+        # forbids a gap. With lane 1 empty these reduce to the single-issue set.
+        invariant w_valid1 -> w_valid
         invariant ~w_valid -> mcommit = commit
-        invariant m_valid -> mcommit.succ(ecommit)
+        invariant (w_valid & ~w_valid1) -> commit.succ(mcommit)
+        invariant w_valid1 -> commit.succ(w1_tag)
+        invariant w_valid1 -> w1_tag.succ(mcommit)
+
+        invariant m_valid1 -> m_valid
         invariant ~m_valid -> ecommit = mcommit
+        invariant (m_valid & ~m_valid1) -> mcommit.succ(ecommit)
+        invariant m_valid1 -> mcommit.succ(m1_tag)
+        invariant m_valid1 -> m1_tag.succ(ecommit)
+
         # The EX/ID and ID/IF boundary counts depend on the speculation logic
         # (dcommit/now advance only for correct-path, non-shadowed fetches), so
         # like the shadow facts below they are guarded by ~error. The WB/MEM/EX
         # boundary counts above are pure validity bookkeeping and hold regardless.
-        invariant (e_valid & ~trace.st(trace.now).error) -> ecommit.succ(dcommit)
+        invariant e_valid1 -> e_valid
         invariant (~e_valid & ~trace.st(trace.now).error) -> dcommit = ecommit
-        invariant (d_valid & ~d_shadow & ~trace.st(trace.now).error) -> dcommit.succ(trace.now)
+        invariant (e_valid & ~e_valid1 & ~trace.st(trace.now).error) -> ecommit.succ(dcommit)
+        invariant (e_valid1 & ~trace.st(trace.now).error) -> ecommit.succ(e1_tag)
+        invariant (e_valid1 & ~trace.st(trace.now).error) -> e1_tag.succ(dcommit)
+
+        # A bundle shares one shadow bit (both lanes are on the same fetch path),
+        # so d_shadow gates both lanes of the ID stage.
+        invariant d_valid1 -> d_valid
         invariant ((~d_valid | d_shadow) & ~trace.st(trace.now).error) -> dcommit = trace.now
+        invariant (d_valid & ~d_shadow & ~d_valid1 & ~trace.st(trace.now).error) -> dcommit.succ(trace.now)
+        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> dcommit.succ(d1_tag)
+        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d1_tag.succ(trace.now)
     }
 
     private {
@@ -595,6 +630,29 @@ object cpu = {
         invariant (w_valid & w_opcode = 2 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
         invariant (w_valid & w_opcode = 3 & ~trace.st(trace.now).error) -> w_val = (0:addr) :: trace.st(commit).target
         invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
+
+        # ---- lane-1 (dual-issue) trace match, at the lane-1 tags ----------
+        # Lane 1 is the younger instruction of an aligned bundle; it shares the
+        # bundle's shadow bit (d_shadow) and, in the easy case, is always
+        # "simple" (opcode 0/1/2/3: NOP/ADD/SUB/LI) -- never memory or branch, so
+        # there are no lane-1 m_addr/m_store/branch fields to relate.
+        invariant d_valid1 -> (d_opcode1 = 0 | d_opcode1 = 1 | d_opcode1 = 2 | d_opcode1 = 3)
+        invariant e_valid1 -> (e_opcode1 = 0 | e_opcode1 = 1 | e_opcode1 = 2 | e_opcode1 = 3)
+        invariant m_valid1 -> (m_opcode1 = 0 | m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3)
+        invariant w_valid1 -> (w_opcode1 = 0 | w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3)
+
+        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d_ir1 = trace.st(d1_tag).fetched
+        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d_pc1 = trace.st(d1_tag).pc
+        invariant (e_valid1 & ~trace.st(trace.now).error) -> e_ir1 = trace.st(e1_tag).fetched
+        invariant (e_valid1 & ~trace.st(trace.now).error) -> e_pc1 = trace.st(e1_tag).pc
+        invariant (m_valid1 & ~trace.st(trace.now).error) -> m_ir1 = trace.st(m1_tag).fetched
+        invariant (w_valid1 & ~trace.st(trace.now).error) -> w_ir1 = trace.st(w1_tag).fetched
+        invariant (m_valid1 & m_opcode1 = 1 & ~trace.st(trace.now).error) -> m_res1 = trace.st(m1_tag).a_val + trace.st(m1_tag).b_val
+        invariant (m_valid1 & m_opcode1 = 2 & ~trace.st(trace.now).error) -> m_res1 = trace.st(m1_tag).a_val - trace.st(m1_tag).b_val
+        invariant (m_valid1 & m_opcode1 = 3 & ~trace.st(trace.now).error) -> m_res1 = (0:addr) :: trace.st(m1_tag).target
+        invariant (w_valid1 & w_opcode1 = 1 & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).a_val + trace.st(w1_tag).b_val
+        invariant (w_valid1 & w_opcode1 = 2 & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).a_val - trace.st(w1_tag).b_val
+        invariant (w_valid1 & w_opcode1 = 3 & ~trace.st(trace.now).error) -> w_val1 = (0:addr) :: trace.st(w1_tag).target
 
         # ---- dual-issue Step 1: lane 1 is always empty ------------------
         # Issue width is hardwired to 1 (d_valid1 is driven false on every fetch
@@ -788,6 +846,8 @@ object cpu = {
     implementation {
     wire d_opcode : opc
     definition d_opcode = d_ir<<15:13>>
+    wire d_opcode1 : opc
+    definition d_opcode1 = d_ir1<<15:13>>
 
     wire e_opcode : opc
     wire e_rd : reg
@@ -834,6 +894,39 @@ object cpu = {
 
     wire mispredict : bool
     definition mispredict = e_valid & ~ex_stall & (e_opcode = 6) & (e_pred ~= e_take)
+
+    # ---- lane-1 decode / operands / ALU (dual-issue) ----------------------
+    # Lane 1 carries the younger instruction of an aligned pair. In the easy
+    # case it is always "simple" (NOP/ADD/SUB/LI: opcode 0/1/2/3) -- never a
+    # branch, memory op, or FLUSH -- so it needs no branch decision and no
+    # D-cache access, only decode, operand read, and the ALU.
+    wire e_opcode1 : opc
+    wire e_rd1 : reg
+    wire e_ra1 : reg
+    wire e_rb1 : reg
+    wire e_target1 : addr
+    definition e_opcode1 = e_ir1<<15:13>>
+    definition e_rd1 = e_ir1<<12:10>>
+    definition e_ra1 = e_ir1<<9:7>>
+    definition e_rb1 = e_ir1<<6:4>>
+    definition e_target1 = e_ir1<<7:0>>
+    wire e_a1 : word
+    wire e_b1 : word
+    definition e_a1 = rf(e_ra1)
+    definition e_b1 = rf(e_rb1)
+    wire e_res1 : word               # lane-1 ALU result (computed in EX)
+    definition e_res1 = (e_a1 + e_b1 if e_opcode1 = 1 else
+                        (e_a1 - e_b1 if e_opcode1 = 2 else
+                        ((0:addr) :: e_target1 if e_opcode1 = 3 else 0)))
+
+    wire m_opcode1 : opc
+    wire m_rd1 : reg
+    definition m_opcode1 = m_ir1<<15:13>>
+    definition m_rd1 = m_ir1<<12:10>>
+    wire w_opcode1 : opc
+    wire w_rd1 : reg
+    definition w_opcode1 = w_ir1<<15:13>>
+    definition w_rd1 = w_ir1<<12:10>>
 
     }
     # ---- the branch predictor, as a sub-isolate `bp` ----
@@ -1237,10 +1330,10 @@ object cpu = {
         w_valid := m_valid & ~dmem_stall;
         w_val := (m_res if m_opcode ~= 4 else
                  (m_line_data if m_hit else m_fill_data));
-        # lane 1 (Step 1: bubble). w_val1 is a don't-care while w_valid1 is false.
+        # lane 1: simple ALU, never a load, so w_val1 is just the ALU result.
         w_ir1 := m_ir1;
         w_valid1 := m_valid1 & ~dmem_stall;
-        w_val1 := 0;
+        w_val1 := m_res1;
         if ~dmem_stall & m_valid & (m_opcode = 4 | m_opcode = 5) {
             # On a miss, write the dirty victim back before reinstalling.
             if ~m_hit & m_line_full & m_line_dirty {
@@ -1281,11 +1374,10 @@ object cpu = {
                      ((0:addr) :: e_target if e_opcode = 3 else 0)));
             m_addr := e_a<<7:0>>;
             m_store := e_b;
-            # lane 1 (Step 1: bubble). Computed values are don't-cares (m_valid1
-            # is false); the real lane-1 ALU/AGU arrives in Step 2.
+            # lane 1: simple ALU only (no memory), so m_addr1/m_store1 are unused.
             m_ir1 := e_ir1;
             m_valid1 := e_valid1;
-            m_res1 := 0;
+            m_res1 := e_res1;
             m_addr1 := 0;
             m_store1 := 0
         };
