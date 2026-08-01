@@ -605,7 +605,7 @@ object cpu = {
 
         # ---- the PC is the (correct) fetch address unless mispredicting ---
 
-        invariant (~spec_wrong & ~trace.st(trace.now).error) -> pc = trace.st(trace.now).pc
+        invariant [pc_track] (~spec_wrong & ~trace.st(trace.now).error) -> pc = trace.st(trace.now).pc
 
         # ---- non-shadowed in-flight instructions match the trace ---------
 
@@ -636,6 +636,12 @@ object cpu = {
         # bundle's shadow bit (d_shadow) and, in the easy case, is always
         # "simple" (opcode 0/1/2/3: NOP/ADD/SUB/LI) -- never memory or branch, so
         # there are no lane-1 m_addr/m_store/branch fields to relate.
+        # lane 0 of a dual bundle is also simple (issue_two requires f_simple0),
+        # so a dual bundle never carries a branch/memory op in lane 0.
+        invariant d_valid1 -> (d_opcode = 0 | d_opcode = 1 | d_opcode = 2 | d_opcode = 3)
+        invariant e_valid1 -> (e_opcode = 0 | e_opcode = 1 | e_opcode = 2 | e_opcode = 3)
+        invariant m_valid1 -> (m_opcode = 0 | m_opcode = 1 | m_opcode = 2 | m_opcode = 3)
+        invariant w_valid1 -> (w_opcode = 0 | w_opcode = 1 | w_opcode = 2 | w_opcode = 3)
         invariant d_valid1 -> (d_opcode1 = 0 | d_opcode1 = 1 | d_opcode1 = 2 | d_opcode1 = 3)
         invariant e_valid1 -> (e_opcode1 = 0 | e_opcode1 = 1 | e_opcode1 = 2 | e_opcode1 = 3)
         invariant m_valid1 -> (m_opcode1 = 0 | m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3)
@@ -654,15 +660,24 @@ object cpu = {
         invariant (w_valid1 & w_opcode1 = 2 & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).a_val - trace.st(w1_tag).b_val
         invariant (w_valid1 & w_opcode1 = 3 & ~trace.st(trace.now).error) -> w_val1 = (0:addr) :: trace.st(w1_tag).target
 
-        # ---- dual-issue Step 1: lane 1 is always empty ------------------
-        # Issue width is hardwired to 1 (d_valid1 is driven false on every fetch
-        # path), so lane 1 never carries a valid instruction. These make that
-        # explicit, so the two-lane skeleton is proved equivalent to the
-        # single-issue machine. Step 2 relaxes them when the lane goes live.
-        invariant ~d_valid1
-        invariant ~e_valid1
-        invariant ~m_valid1
-        invariant ~w_valid1
+        # Fetch-reference (now) coherence of the two fetched words, proved in cpu
+        # via the ic guarantees as zero-delay (combinational) dependencies. These
+        # are what the pc-tracking and lane-data invariants need: the fetched word
+        # equals the reference memory at the fetch address for the *current* trace
+        # position, not just at mcommit.
+        invariant [fetch0_coh]
+          fetch_active & ic.fetch_valid & ~trace.st(trace.now).error
+             & ~trace.st(trace.now).ddirty(pc)
+             -> ic.fetch_data = trace.st(trace.now).mem(pc)
+        with ic.icache_output
+
+        invariant [fetch1_coh]
+          fetch_active & ic.fetch_valid1 & ~trace.st(trace.now).error
+             & ~trace.st(trace.now).ddirty(pc+1)
+             -> ic.fetch_data1 = trace.st(trace.now).mem(pc+1)
+        with ic.icache_output1
+
+
     }
 
     specification {
@@ -682,7 +697,10 @@ object cpu = {
             # a combinational wire, ic.ifill_addr is frozen at its pre-state value
             # here, exactly the address the port latches into mfa on a read.
             ifill_addr_old := ic.ifill_addr;
-            if old w_valid { commit := commit.next };
+            # Each boundary advances by the number of instructions that cross it
+            # (0/1/2). A bundle of two advances the counter twice.
+            if old w_valid1 { commit := commit.next.next }
+            else if old w_valid { commit := commit.next };
             if dmem_stall {
                 # MEM stalls for a D-fill: WB drains (commit advanced above) and
                 # bubbles; MEM and everything behind hold, so no other tag moves
@@ -696,15 +714,18 @@ object cpu = {
             # is evicted -- preserving its data invariant.
             ensure (~trace.st(trace.now).error & old m_valid & trace.st(mcommit).opcode = 7)
                        -> (ic.flush_valid & ic.flush_addr = trace.st(mcommit).mem_addr);
-            if old m_valid { mcommit := mcommit.next };
+            if old m_valid1 { mcommit := mcommit.next.next }
+            else if old m_valid { mcommit := mcommit.next };
             w_shadow := m_shadow;
             if ~ex_stall {
                 m_shadow := e_shadow;
-                if old e_valid { ecommit := ecommit.next };
+                if old e_valid1 { ecommit := ecommit.next.next }
+                else if old e_valid { ecommit := ecommit.next };
                 if mispredict {
                     spec_wrong := false
                 } else {
-                    if old d_valid & ~d_shadow { dcommit := dcommit.next };
+                    if old d_valid1 & ~d_shadow { dcommit := dcommit.next.next }
+                    else if old d_valid & ~d_shadow { dcommit := dcommit.next };
                     e_shadow := d_shadow;
                     if flush_in_pipe | ifetch_stall {
                         # IF stalled (pending FLUSH or awaiting an I-cache fill):
@@ -717,12 +738,24 @@ object cpu = {
                             if f_ptaken ~= trace.st(trace.now).take_branch {
                                 spec_wrong := true
                             };
-                            trace.step
+                            trace.step;
+                            # a dual issue fetches two instructions: step the trace
+                            # again for the second (which is non-branch, so it needs
+                            # no prediction check).
+                            if issue_two { trace.step }
                         }
                     }
                 }
             }
-            }
+            };
+            # Lane-1 tags: the middle tag of any two-instruction stage is one past
+            # that stage's lane-0 boundary. Set unconditionally (vacuous when the
+            # lane is empty); this maintains succ(boundary, lane1_tag) always, and
+            # succ(lane1_tag, next_boundary) whenever the stage holds two.
+            w1_tag := commit.next;
+            m1_tag := mcommit.next;
+            e1_tag := ecommit.next;
+            d1_tag := dcommit.next
         }
     }
 
@@ -880,21 +913,6 @@ object cpu = {
     wire e_take : bool               # the true (operand-based) branch decision
     definition e_take = (e_opcode = 6) & (e_a = 0)
 
-    # ---- data-hazard stall (as in 5stage_cpu_ref) ----
-
-    wire ex_stall : bool
-    definition ex_stall = e_valid & (
-        (m_valid & (m_opcode = 1 | m_opcode = 2 | m_opcode = 3 | m_opcode = 4)
-                 & (m_rd = e_ra | m_rd = e_rb)) |
-        (w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
-                 & (w_rd = e_ra | w_rd = e_rb)))
-
-    # ---- misprediction: the EX branch's prediction disagrees with its true
-    #      outcome. Detected only once its operand is available (~ex_stall).
-
-    wire mispredict : bool
-    definition mispredict = e_valid & ~ex_stall & (e_opcode = 6) & (e_pred ~= e_take)
-
     # ---- lane-1 decode / operands / ALU (dual-issue) ----------------------
     # Lane 1 carries the younger instruction of an aligned pair. In the easy
     # case it is always "simple" (NOP/ADD/SUB/LI: opcode 0/1/2/3) -- never a
@@ -927,6 +945,36 @@ object cpu = {
     wire w_rd1 : reg
     definition w_opcode1 = w_ir1<<15:13>>
     definition w_rd1 = w_ir1<<12:10>>
+
+    # ---- data-hazard stall (as in 5stage_cpu_ref) ----
+
+    # Register-file writer slots (both lanes of MEM and WB). Lane 1 is always
+    # simple (opcode 1/2/3 write; 0/NOP does not), never a load.
+    wire m0_wr : bool
+    definition m0_wr = m_valid & (m_opcode = 1 | m_opcode = 2 | m_opcode = 3 | m_opcode = 4)
+    wire m1_wr : bool
+    definition m1_wr = m_valid1 & (m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3)
+    wire w0_wr : bool
+    definition w0_wr = w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
+    wire w1_wr : bool
+    definition w1_wr = w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3)
+
+    # A source register R has a pending in-flight writer (RAW; no forwarding, so
+    # the reader must stall until the writer retires). Intra-bundle dependences
+    # are prevented at issue, so only MEM/WB (older) slots appear here.
+    function hazard_on(R:reg) : bool
+    definition hazard_on(R) = (m0_wr & m_rd = R) | (m1_wr & m_rd1 = R)
+                            | (w0_wr & w_rd = R) | (w1_wr & w_rd1 = R)
+
+    wire ex_stall : bool
+    definition ex_stall = (e_valid  & (hazard_on(e_ra)  | hazard_on(e_rb)))
+                        | (e_valid1 & (hazard_on(e_ra1) | hazard_on(e_rb1)))
+
+    # ---- misprediction: the EX branch's prediction disagrees with its true
+    #      outcome. Detected only once its operand is available (~ex_stall).
+
+    wire mispredict : bool
+    definition mispredict = e_valid & ~ex_stall & (e_opcode = 6) & (e_pred ~= e_take)
 
     }
     # ---- the branch predictor, as a sub-isolate `bp` ----
@@ -1183,9 +1231,10 @@ object cpu = {
             # and icache_input (the fill bypass, a combinational input path).
             invariant [icache_output1]
                   fetch_addr_valid & fetch_valid1 & ~trace.st(trace.now).error
-                          & ~trace.st(mcommit).ddirty(fetch_addr1)
-                              -> fetch_data1 = trace.st(mcommit).mem(fetch_addr1)
+                          & ~trace.st(mcommit).ddirty(fetch_addr+1)
+                              -> fetch_data1 = trace.st(mcommit).mem(fetch_addr+1)
             with icache_input
+
         }
 
         private {
@@ -1236,6 +1285,8 @@ object cpu = {
 
     wire fetched : word
     definition fetched = ic.fetch_data
+    wire fetched1 : word              # the odd sibling word (dual-issue lane 1)
+    definition fetched1 = ic.fetch_data1
 
     wire f_is_branch : bool
     definition f_is_branch = ((fetched<<15:13>>:opc) = 6)
@@ -1292,6 +1343,40 @@ object cpu = {
     wire dmem_stall : bool
     definition dmem_stall = d_miss & ~d_fill_go
 
+    # ---- dual-issue decision (aligned even pair, both simple, independent) ----
+    # Decode both fetched words. Issue two only when the pair is aligned and safe:
+    # ic.fetch_valid1 (which already implies an even PC) and both instructions are
+    # "simple" (NOP/ADD/SUB/LI), and lane 1 does not depend on lane 0 (no RAW on
+    # lane 0's destination, and distinct destinations). Otherwise fetch a single
+    # instruction and advance the PC by one -- the split is just "fetch as two
+    # singles", so no recirculation is needed. (Placed here so its dependencies --
+    # dmem_stall/ifetch_stall/... -- are all in scope.)
+    wire f_op0 : opc
+    definition f_op0 = fetched<<15:13>>
+    wire f_op1 : opc
+    definition f_op1 = fetched1<<15:13>>
+    wire f_rd0 : reg
+    definition f_rd0 = fetched<<12:10>>
+    wire f_ra1 : reg
+    definition f_ra1 = fetched1<<9:7>>
+    wire f_rb1 : reg
+    definition f_rb1 = fetched1<<6:4>>
+    wire f_rd1 : reg
+    definition f_rd1 = fetched1<<12:10>>
+    wire f_simple0 : bool
+    definition f_simple0 = (f_op0 = 0 | f_op0 = 1 | f_op0 = 2 | f_op0 = 3)
+    wire f_simple1 : bool
+    definition f_simple1 = (f_op1 = 0 | f_op1 = 1 | f_op1 = 2 | f_op1 = 3)
+    wire f_lane0_wr : bool            # lane 0 writes a register (ADD/SUB/LI)
+    definition f_lane0_wr = (f_op0 = 1 | f_op0 = 2 | f_op0 = 3)
+    wire f_indep : bool
+    definition f_indep = ~f_lane0_wr
+                       | ((f_rd0 ~= f_ra1) & (f_rd0 ~= f_rb1) & (f_rd0 ~= f_rd1))
+    wire issue_two : bool
+    definition issue_two = ~dmem_stall & ~ex_stall & ~mispredict & ~flush_in_pipe
+                         & ~ifetch_stall & ic.fetch_valid1
+                         & f_simple0 & f_simple1 & f_indep
+
     # ---- reset ----
 
     after init {
@@ -1315,9 +1400,14 @@ object cpu = {
 
     after posedge {
 
-        # WB: retire the WB instruction (write the register file).
+        # WB: retire the WB bundle (up to two register-file writes). Lane 0 first,
+        # then lane 1, so on a same-destination pair the younger (lane 1) wins;
+        # issue forbids that case anyway, so the two writes are independent.
         if w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4) {
             rf(w_rd) := w_val
+        };
+        if w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3) {
+            rf(w_rd1) := w_val1
         };
 
         # MEM: access the write-back D-cache. A LD/ST hits if the indexed line is
@@ -1418,13 +1508,14 @@ object cpu = {
                     d_valid := true;
                     d_pred := f_ptaken;
                     d_pc := pc;
-                    pc := pred_next_pc;
-                    # lane 1: no second issue in Step 1 (issue width 1). The
-                    # younger word of the pair will fill this in Step 2.
-                    d_ir1 := 0;
-                    d_valid1 := false;
+                    # lane 1: issue the odd sibling of the pair when safe. Both
+                    # lanes of an issued pair are non-branch, so lane 1 carries no
+                    # prediction. On a dual issue the PC advances by two.
+                    d_ir1 := fetched1;
+                    d_valid1 := issue_two;
                     d_pred1 := false;
-                    d_pc1 := 0
+                    d_pc1 := pc + 1;
+                    pc := (pc + 2 if issue_two else pred_next_pc)
                 }
             }
         };
