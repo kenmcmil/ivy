@@ -470,7 +470,6 @@ object cpu = {
         # posedge, ifill_addr_old := ic.ifill_addr (pre-state). Since this update
         # logic is in the specification, `ic` can see it and relate its current
         # ifill_addr to ifill_addr_old.
-        var ifill_addr_old : addr
 
         after init {
             commit := 0; mcommit := 0; ecommit := 0; dcommit := 0;
@@ -478,9 +477,27 @@ object cpu = {
             d_shadow := false; e_shadow := false;
             m_shadow := false; w_shadow := false;
             spec_wrong := false;
-            ifill_addr_old := 0;
         }
     }
+
+    isolate mem_intf = {
+        var ifill_addr_old : addr
+
+        specification {
+            after init {
+                ifill_addr_old := 0;
+            }
+
+            # Latch the address presented to the memory port this cycle. Read as
+            # a combinational wire, ic.ifill_addr is frozen at its pre-state value
+            # here, exactly the address the port latches into mfa on a read.
+
+            after posedge {
+                ifill_addr_old := ic.ifill_addr;
+            }
+        }
+    } with this
+            
 
     # Per isolate_icache.md: cpu invariants ic does NOT need are kept `private`;
     # those it DOES need stay in `specification`. The tag-ordering (commit-chain)
@@ -488,6 +505,20 @@ object cpu = {
     # <= dcommit <= now, hence mcommit.next <= now when m_valid, so ic can apply
     # the trace's single-step relations at the MEM tag.
     specification {
+
+            # (3) the I-cache data invariant now lives inside the `ic` isolate (proved
+            # locally). What cpu must GUARANTEE to ic is the fill-input coherence: the
+            # word supplied to a fill equals the reference (when not dirty). cpu proves
+            # this from (4) above, since ic.ifill_data is driven from main memory.
+            # Stated in terms of ifill_addr_old (the address presented last cycle,
+            # now latched in the port's mfa), since ic.ifill_data = mem(mfa). cpu can
+            # prove this from main_mem; ic relates ifill_addr_old back to its current
+            # ifill_addr via the held-address invariant `held_addr` below.
+
+            invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
+            & ~trace.st(trace.now).error & ~trace.st(mcommit).ddirty(mem_intf.ifill_addr_old))
+            -> ic.ifill_data = trace.st(mcommit).mem(mem_intf.ifill_addr_old)
+            with main_mem
 
         # ---- the non-shadowed instructions form a contiguous tag run -----
 
@@ -507,6 +538,14 @@ object cpu = {
         invariant (m_valid & ~m_valid1) -> mcommit.succ(ecommit)
         invariant m_valid1 -> mcommit.succ(m1_tag)
         invariant m_valid1 -> m1_tag.succ(ecommit)
+
+        # The MEM-stage tag does not exceed the trace head (in the error-free
+        # regime): mcommit <= ecommit <= dcommit <= now via the guarded chain
+        # above. cpu.ic cherry-picks this (it depends on mem_intf, not this) so it
+        # can apply the trace's single-step relations at the MEM tag. Guarded by
+        # ~error because the upper chain (dcommit/now) is; ic only uses it under
+        # ~error anyway (all its guarantees are).
+        invariant [mcommit_le_now] ~trace.st(trace.now).error -> mcommit <= trace.now
 
         # The EX/ID and ID/IF boundary counts depend on the speculation logic
         # (dcommit/now advance only for correct-path, non-shadowed fetches), so
@@ -594,25 +633,11 @@ object cpu = {
         #   (2) a present cache line holds the reference's MEM-stage value;
         #   (4) a not-dirty address holds the reference value in main memory.
         # ((3), the I-cache, is below.)
-        invariant ~trace.st(trace.now).error -> (dc_dirty(A) -> trace.st(mcommit).ddirty(A))
+        invariant [main_mem_dirty] ~trace.st(trace.now).error -> (dc_dirty(A) -> trace.st(mcommit).ddirty(A))
         invariant ~trace.st(trace.now).error -> (dc_present(A) -> dc_val(A) = trace.st(mcommit).mem(A))
         invariant [main_mem] ~trace.st(trace.now).error -> (~dc_dirty(A) -> mem(A) = trace.st(mcommit).mem(A))
     }
 
-    specification {
-        # (3) the I-cache data invariant now lives inside the `ic` isolate (proved
-        # locally). What cpu must GUARANTEE to ic is the fill-input coherence: the
-        # word supplied to a fill equals the reference (when not dirty). cpu proves
-        # this from (4) above, since ic.ifill_data is driven from main memory.
-        # Stated in terms of ifill_addr_old (the address presented last cycle,
-        # now latched in the port's mfa), since ic.ifill_data = mem(mfa). cpu can
-        # prove this from main_mem; ic relates ifill_addr_old back to its current
-        # ifill_addr via the held-address invariant `held_addr` below.
-        invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
-                   & ~trace.st(trace.now).error & ~trace.st(mcommit).ddirty(ifill_addr_old))
-                      -> ic.ifill_data = trace.st(mcommit).mem(ifill_addr_old)
-        with main_mem
-    }
 
     private {
 
@@ -704,7 +729,7 @@ object cpu = {
           fetch_active & ic.fetch_valid1 & ~trace.st(trace.now).error
              & ~trace.st(trace.now).ddirty(pc+1)
              -> ic.fetch_data1 = trace.st(trace.now).mem(pc+1)
-        with ic.icache_output1
+        with ic.icache_output1, ic.icache_output1_odd
 
 
     }
@@ -722,10 +747,6 @@ object cpu = {
         # values, so they need no `old`).
 
         after posedge {
-            # Latch the address presented to the memory port this cycle. Read as
-            # a combinational wire, ic.ifill_addr is frozen at its pre-state value
-            # here, exactly the address the port latches into mfa on a read.
-            ifill_addr_old := ic.ifill_addr;
             # Each boundary advances by the number of instructions that cross it
             # (0/1/2). A bundle of two advances the counter twice.
             if old w_valid1 { commit := commit.next.next }
@@ -1260,11 +1281,11 @@ object cpu = {
             definition il_w1(L) = L<<31:16>>
             function ic_line(A:addr) : icline
             definition ic_line(A) = icache(A<<4:1>>)
-            function ic_val(A:addr) : word
-            definition ic_val(A) = (il_w0(ic_line(A)) if (A<<0:0>>:bit) = 0 else il_w1(ic_line(A)))
-            function ic_present(A:addr) : bool
-            definition ic_present(A) = (((ic_line(A)<<35:35>>:bit) = 1) & (il_tag(ic_line(A)) = A<<7:5>>))
-                                     | (ifill_got & A = ifill_miss)
+            # function ic_val(A:addr) : word
+            # definition ic_val(A) = (il_w0(ic_line(A)) if (A<<0:0>>:bit) = 0 else il_w1(ic_line(A)))
+            # function ic_present(A:addr) : bool
+            # definition ic_present(A) = (((ic_line(A)<<35:35>>:bit) = 1) & (il_tag(ic_line(A)) = A<<7:5>>))
+            #                          | (ifill_got & A = ifill_miss)
 
             # GUARANTEE: a valid fetched word is coherent with the reference memory
             # at the MEM stage (for a not-dirty address).
@@ -1279,16 +1300,20 @@ object cpu = {
             # and icache_input (the fill bypass, a combinational input path).
             invariant [icache_output1]
                   fetch_addr_valid & fetch_valid1 & ~trace.st(trace.now).error
-                          & ~trace.st(mcommit).ddirty(fetch_addr+1)
-                              -> fetch_data1 = trace.st(mcommit).mem(fetch_addr+1)
+                          & ~trace.st(mcommit).ddirty((fetch_addr + 1))
+                              -> fetch_data1 = trace.st(mcommit).mem((fetch_addr + 1))
             with icache_input
+
+            invariant [icache_output1_odd] fetch_addr_valid & fetch_valid1 -> (fetch_addr<<0:0>>:bit = 0)
 
         }
 
         private {
             # The I-cache data invariant -- proved locally here.
             invariant [hard] ~trace.st(trace.now).error ->
-                         ((ic_present(A) & ~trace.st(mcommit).ddirty(A)) -> ic_val(A) = trace.st(mcommit).mem(A))
+                         ((((((ic_line(A)<<35:35>>:bit) = 1) & (il_tag(ic_line(A)) = A<<7:5>>))
+                                     | (ifill_got & A = ifill_miss)) & ~trace.st(mcommit).ddirty(A)) ->
+            (il_w0(ic_line(A)) if (A<<0:0>>:bit) = 0 else il_w1(ic_line(A))) = trace.st(mcommit).mem(A))
 
             # Well-formedness of the half-filled line: while mid-fill, the line at
             # the miss word's index is NOT marked full and carries the miss word's
@@ -1304,9 +1329,9 @@ object cpu = {
             # This lets ic turn `icache_input` (phrased in terms of ifill_addr_old,
             # the address whose data the port is returning) into a fact about the
             # word it is about to install at ifill_addr.
-            invariant [held_addr] ifill_on -> ifill_addr = ifill_addr_old
+            invariant [held_addr] ifill_on -> ifill_addr = mem_intf.ifill_addr_old
        }
-    } with this, trace, word, addr, nib, bit, icline, itag, tag, opc
+    } with mem_intf, trace, word, addr, nib, bit, icline, itag, tag, opc, icache_input, mcommit_le_now
 
     implementation {
 
