@@ -175,8 +175,7 @@ Steps (each ends with `ivy_check OK` + a `sim_cpu.sh` sanity run)
    independent-ALU program.
 
 3. **Intra-bundle RAW via bypass.** Forward lane 0's result to lane 1's operand
-   read instead of splitting on a RAW dependence. Add the bypass mux and the
-   invariant that lane 1's operands still equal `trace.st(its tag)`.
+   read instead of splitting on a RAW dependence. See "Step 3 detail" below.
 
 4. **One memory op per bundle.** Allow a load/store in one lane paired with an
    ALU in the other, over the single D-cache port (split if both are memory).
@@ -192,6 +191,64 @@ Steps (each ends with `ivy_check OK` + a `sim_cpu.sh` sanity run)
    case, pure IPC gain, so last.
 
 Steps 3-6 each fall back to split, so they are independent and reorderable.
+
+Step 3 detail: intra-bundle RAW bypass
+--------------------------------------
+
+Today `issue_two` requires `f_indep` -- lane 1 must not read lane 0's
+destination -- so a dependent aligned pair splits. Step 3 removes that
+restriction by forwarding lane 0's freshly-computed ALU result to lane 1's
+operand, so a dependent simple pair issues together.
+
+Why it is sound (the reference view). Lane 1's tag is `e1_tag = ecommit.next`,
+so `st(e1_tag).rf` already has lane 0 (tag `ecommit`) applied. If lane 0 writes
+lane 1's source register R (`st(ecommit).rd = R`), then
+`st(e1_tag).rf(R) = st(ecommit).res` -- exactly lane 0's ALU result. In hardware
+that result is `e_res` (lane 0's EX ALU output, available the same cycle), and we
+already prove `e_res` tracks `st(ecommit).res`. So forwarding is the correct
+value; if lane 0 does *not* write R, the register-file read is correct as before.
+
+Datapath changes:
+
+- Factor lane 0's ALU result into a wire `e_res` (currently computed inline in
+  the posedge as `m_res := e_a + e_b if ...`); use it both for the MEM latch and
+  the bypass.
+- Bypass muxes in EX: `e_a1_fwd = (e_res if (e_lane0_wr & e_rd = e_ra1) else
+  e_a1)` and likewise `e_b1_fwd` for `e_rb1`, where `e_lane0_wr = e_valid &
+  e_opcode in {1,2,3}`. Lane 1's ALU `e_res1` consumes the forwarded operands.
+- Relax `issue_two`: drop `f_indep` entirely (any aligned simple non-branch
+  non-memory pair issues). WAW (`e_rd = e_rd1`) is already handled -- WB writes
+  lane 1 second, so the younger write wins and `rf` matches the reference.
+
+Proof changes:
+
+- Add EX-result tracking `[eres_trk] (e_valid & ~ex_stall & e_opcode in {1,2,3}
+  & ~error) -> e_res = st(ecommit).res` (follows from the operand-tracking
+  `ea_trk`/`eb_trk` + the trace `res`-consistency).
+- Rework `ea1_trk`/`eb1_trk` to the forwarded operand: they become a case split
+  on the mux -- forwarded (`= e_res = st(ecommit).res = st(e1_tag).rf(e_ra1)`) or
+  register-file (`= st(commit).rf(e_ra1) = st(e1_tag).rf(e_ra1)`, no writer in the
+  window). Keep the zero-delay `with rf_track` (and add `with eres_trk` for the
+  forwarded case).
+- Drop `d_indep`/`e_indep` (dependence is now allowed, so they are no longer
+  true and no longer needed).
+
+Verification order (keep `ivy_check` green at each sub-step):
+
+  3a. Add `e_res` wire + the bypass muxes, but keep `f_indep` in `issue_two` (so
+      the bypass path is present but never exercised). Verify unchanged.
+  3b. Add `eres_trk`; rework `ea1_trk`/`eb1_trk` for the mux. Verify (still with
+      `f_indep`, so the forwarded case is dormant but provable).
+  3c. Drop `f_indep` from `issue_two` and drop `d_indep`/`e_indep`. Verify;
+      iterate CTIs.
+  3d. Full check + `sim_cpu.sh` on a program with a genuine RAW aligned pair
+      (e.g. `LI r1 ; ADD r2,r1,r1` at an even/odd pair) -- confirm `issue_two`
+      now fires on the dependent pair.
+
+Risks: the mux makes `ea1_trk` a case split (may be slow -- the array-read
+tracking discipline and zero-delay `with` are the mitigation); WAW correctness
+rests on the lane-1-second write ordering in WB (already in place, but re-confirm
+`rf_track` preserves with two same-cycle writes).
 
 Risks / things to watch
 -----------------------
