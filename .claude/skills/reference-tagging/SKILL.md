@@ -36,12 +36,14 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
   multi-cycle memory; the reference is extended with `ddirty`/`error` to model
   cache incoherence (see "Caches, incoherence, multi-cycle memory" below).
 - `dual_issue_cpu_ref.ivy` (in `doc/examples/hardware/`; **work in progress**
-  toward dual-issue fetch) — widens the I-cache line to two words and factors the
-  whole I-cache (array + fill state machine + its data invariant) into a nested
-  `cpu.ic` sub-isolate proved *locally*. `cpu.ic` is fully verified, its
-  fill-input coherence is discharged in the top isolate, and the emitted RTL
-  simulates a real two-word fill; see "Isolating a component's proof", "Common
-  hardware design issues", and "A safety proof is not a live design" below.
+  toward a full dual-issue superscalar) — widens the I-cache line to two words and
+  factors the whole I-cache (array + fill state machine + its data invariant) into
+  a nested `cpu.ic` sub-isolate proved *locally*, then widens the pipeline to
+  2-wide in-order issue (aligned pairs, split-on-hazard). `cpu.ic` is fully
+  verified; the two-lane machine verifies (`isolate=this`) and the emitted RTL
+  simulates real dual issue. See "Isolating a component's proof", "Widening to
+  superscalar (dual issue)", "Common hardware design issues", and "A safety proof
+  is not a live design" below.
 - `reference_tagging.md` — the prose writeup of the method.
 
 ## The three ingredients
@@ -214,6 +216,28 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
   `definition` is a cheap thing to try before assuming the property is wrong or
   the fragment is undecidable.
 
+- **Bit-vector arrays are slow to reason about — add a tracking invariant for
+  every array read, with a zero-delay dependence on the array's own tracking
+  invariant.** Ivy/Z3 are markedly slow reasoning about arrays of bit-vectors
+  (functions from a bit-vector type to a bit-vector type — register files,
+  memories, caches). Wherever the *implementation* reads such an array, the proof
+  goes much faster if you add an invariant that pins the read *value* to the
+  trace, instead of letting every consumer re-derive it through the array's
+  coherence each time. Concretely: the register file `rf` has a tracking
+  invariant `[rf_track] ~error -> rf(R) = st(commit).rf(R)`; the EX operands are
+  reads `e_a = rf(e_ra)`, so add `[ea_trk] (e_valid & ~ex_stall & ~error) -> e_a
+  = st(ecommit).a_val` and give it **`with rf_track`** — the read is a zero-delay
+  (combinational) path from the array to the operand wire, so the array's
+  post-state coherence must be available in the post-state (same trick as the
+  combinational input→output paths under isolation). Then the *downstream*
+  invariants (the ALU result `m_res = st(mcommit).res`, etc.) consume the operand
+  equality directly instead of re-expanding `rf` + the hazard argument. Measured
+  effect on the dual-issue CPU: the ALU-result invariants dropped from >150 s
+  (timeout territory) to ~12 s each, and the whole `isolate=this` proof from
+  ~68 min to ~25 min. The guard matters: the operand only equals the trace value
+  when the reader is *not* stalled (`~ex_stall`); under a hazard the register
+  file holds a stale value and the equality is genuinely false (but unused).
+
 ## Data hazards, control hazards, speculation
 
 - **Data hazard → stall.** Detect when an operand register matches an older
@@ -347,6 +371,32 @@ project spec is `doc/projects/isolate_icache.md`.)
   `private` — still used to prove cpu's own obligations, just not dumped into
   `ic`'s VC, keeping it small.
 
+- **When a component isolate is slow, localize its dependencies before you reach
+  for type abstraction.** `with this` makes the sub-isolate depend on the *entire*
+  parent — including cpu's whole ghost monitor (every tag/shadow update and the
+  `trace.step` calls), which the SMT query then has to reason about even though
+  the component barely touches it. Cutting that down is the highest-leverage
+  speedup. The pattern that worked for `cpu.ic`: put the small piece of interface
+  state the component actually shares with the parent into a **tiny interface
+  isolate** — here `mem_intf`, holding just the ghost `ifill_addr_old` and its
+  one-line latch — and have the component depend on *that* plus the few parent
+  invariants it genuinely needs, **cherry-picked by name** in the `with` clause
+  (`with mem_intf, trace, …, icache_input, mcommit_le_now`), dropping `this`
+  entirely. Facts the component needs that live in the parent (e.g.
+  `mcommit ≤ now`) get *named* and proved in the parent (where the tag context
+  is), then listed in the component's `with`. Measured: this took `cpu.ic` from
+  not-converging to **4.5 s**, and the whole-machine check from ~11.5 min to
+  ~6 min. **Ablation caveat:** we also tried abstracting the address types
+  (`addr`/`nib` → uninterpreted, with an injectivity theory and a `sib` function)
+  — it bought essentially *nothing* (`cpu.ic` 4.5 s with plain interpreted `bv`
+  arithmetic vs 5.8 s with the abstraction). So try localization *first*;
+  bit-vector type abstraction is more machinery for, here, no gain. One
+  consequence to watch: erasing the parent's ghost monitor from the component's
+  view also erases the `trace.step` calls, so Ivy must re-check that those ghost
+  steps (now *external* actions from the component's perspective) cannot violate
+  the component's invariants — which is exactly what the cherry-picked invariants
+  and interface state have to be strong enough to guarantee.
+
 - **Specify the interface as an abstract protocol over ghost state.** The clean
   way to state a cross-isolate contract is to introduce ghost variables for the
   *protocol state* and write the assumption/guarantee as invariants over them —
@@ -428,6 +478,89 @@ project spec is `doc/projects/isolate_icache.md`.)
   line at the miss index is `~full` and carries the miss word's tag). The `~full`
   part is load-bearing: it is what stops a FLUSH — which only evicts *full* lines
   with a matching tag — from silently clobbering the in-progress fill.
+
+## Widening to superscalar (dual issue)
+
+Going from one instruction per cycle to two (in-order, 2-wide) is a large change
+to the *implementation* but **the ISA reference and the `trace` isolate do not
+change at all** — the reference still executes one instruction per step; the
+trace is still a linear sequence. Superscalar is entirely an implementation-side
+refinement, and reference tagging absorbs it by *indexing the per-element
+invariants by lane*. Lessons from the dual-issue CPU (`dual_issue_cpu_ref.ivy`):
+
+- **Grow incrementally; keep `ivy_check` green at every step; split-on-hazard as
+  the always-available fallback.** The staging that worked: (1) two-lane latch
+  *skeleton* with issue width hardwired to 1 (lane 1 provably always empty —
+  `~*_valid1` invariants — so the machine is proven equivalent to single-issue
+  before any hazard exists); (2) the I-cache dual read port; (3) the tag scheme +
+  lane-1 data invariants, still dormant; (4) *activation*. Because any bundle can
+  always fall back to issuing one instruction and recirculating the other (here:
+  "fetch as two singles", `pc += 1`, no recirculation buffer), the machine is
+  correct at every step and each later relaxation (bypass, dual memory, branches)
+  only adds IPC. Do the big mechanical proof change (the tag scheme) *first*, in
+  isolation, before turning issue width up.
+
+- **The tag scheme generalizes to an adjacency chain — carry a ghost tag per lane
+  and relate adjacent lanes.** Each boundary counter (`commit`/`mcommit`/…) is
+  the tag of its stage's lane-0 instruction; a stage holding two instructions has
+  its lane-1 instruction one tag later, named by a ghost "middle" tag
+  (`w1_tag`/`m1_tag`/…). List the lanes oldest-first across the pipeline; **every
+  adjacent pair (older, younger) — whether within a stage (`X0,X1`) or across a
+  boundary (`X1,Y0`) — satisfies `younger.tag = older.tag` (younger is a bubble)
+  or `succ(older.tag, younger.tag)` (younger is real).** The valid lanes' tags
+  then form a contiguous run. Advancing a counter "by two" needs no tag
+  arithmetic — invariants can only use the `succ` relation (`.next` is an action,
+  unusable in invariants), so the middle tag is what lets a two-instruction jump
+  be written `succ(lo,mid) & succ(mid,hi)`. In the ghost monitor, advance a
+  counter by two with `t := t.next.next` and step the trace twice when a bundle
+  of two issues.
+
+- **Per-lane data invariants are the single-issue ones indexed by lane.** Lane
+  `j` holds `st(<lane-j tag>).fetched`, its operands equal the trace's recorded
+  values at that tag, etc. A bundle *shares one shadow/speculation bit* (both
+  lanes are on the same fetch path), so `d_shadow` gates both lanes — no per-lane
+  shadow bits.
+
+- **Constrain the issued bundle enough to keep lane 1 simple, and say so with
+  invariants.** In the easy case both lanes of a dual bundle are "simple"
+  (non-branch, non-memory), and lane 0 is simple too (`issue_two` requires it).
+  State *both* — `*_valid1 -> lane1 simple` **and** `*_valid1 -> lane0 simple`.
+  The lane-0 one is easy to forget and its absence shows up as a spurious CTI: a
+  dual bundle with a *branch in lane 0* that mispredicts, whose recovery does not
+  track the PC. (Also state intra-bundle independence — lane 0's destination
+  differs from lane 1's source/dest registers — established at issue by the
+  issue predicate; lane 1's operand read needs it because lane 0 sits inside the
+  window `[commit, lane1_tag)` and the ordinary hazard-stall does not cover a
+  same-cycle sibling.)
+
+- **A one-cycle-delayed reference belongs in the array's owner, re-exported as a
+  fetch-time guarantee.** The dual fetch needs *both* fetched words coherent with
+  the trace at the *current* position `now` (not just at `mcommit`). Stating that
+  as a `cpu` invariant made the whole-machine query stop converging (Z3 churns,
+  neither proof nor CTI — the classic sign to decompose). The fix mirrors the
+  I-cache guarantee: the I-cache isolate already guarantees word-1 coherence at
+  `mcommit` (`icache_output1`); re-export the *now*-form as a `cpu` invariant
+  `fetch1_coh` that depends on `ic.icache_output1` with **zero delay** (`with
+  ic.icache_output1`). The isolate cannot prove the `now`-form itself (it does not
+  own `now`, and does not see cpu's private invariants), but cpu can, cheaply,
+  using the isolate's `mcommit`-form guarantee across the combinational fetch
+  path. With both fetched words pinned this way, PC-tracking converges.
+
+- **`res` (the ALU result) as a recorded ISA intermediate.** Recording the ALU
+  result in the ISA model / trace (`res`, computed in `prepare`) lets the WB/MEM
+  result invariants read `= st(tag).res` instead of recomputing
+  `a_val ± b_val` — one invariant per stage instead of one per opcode, and it
+  composes with the operand-tracking trick above so Z3 matches `res` symbolically
+  rather than expanding the bit-vector arithmetic.
+
+- **A parameterized `function` used in the datapath will not translate to RTL.**
+  A convenience like `function hazard_on(R) = …`, used in a wire's `definition`,
+  is rejected by `ivy_to_rtl` (a non-wire function "can reflect state updates
+  made earlier in the same action", so it is not treated as combinational).
+  Replace it with one nullary `wire` per concrete argument you actually apply it
+  to (here `hz_ea`/`hz_eb`/`hz_ea1`/`hz_eb1`). Semantically identical, but
+  RTL-translatable — and a reminder to re-verify after the swap, since it changes
+  the SMT encoding.
 
 ## Common hardware design issues
 
