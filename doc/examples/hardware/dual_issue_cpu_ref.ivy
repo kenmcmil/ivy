@@ -147,6 +147,9 @@ module isa_model(init_mem) = {
 
     var take_branch : bool
 
+    # ---- ALU result (ADD/SUB/LI; 0 otherwise) ----
+    var res : word
+
     # ---- reset ----
 
     after init {
@@ -179,6 +182,12 @@ module isa_model(init_mem) = {
         # ---- branch decision (BEQZ) ----
 
         take_branch := (opcode = 6) & (a_val = 0);
+
+        # ---- ALU result, recorded so the pipeline invariants can compare the
+        # latched result directly instead of recomputing a_val +/- b_val ----
+        res := (a_val + b_val if opcode = 1 else
+               (a_val - b_val if opcode = 2 else
+               ((0:addr) :: target if opcode = 3 else 0)));
     }
 
     # Update the architectural state. The temporary variables were computed by
@@ -263,7 +272,8 @@ isolate trace = {
             a_val : word,
             b_val : word,
             mem_addr  : addr,          # address for LD/ST: low 8 bits of rf[ra]
-            take_branch : bool
+            take_branch : bool,
+            res : word                 # ALU result (ADD/SUB/LI; 0 otherwise)
         }
             
         var now : tag   # the current length of the trace
@@ -290,6 +300,7 @@ isolate trace = {
             res.b_val := arch.b_val;
             res.mem_addr  := arch.mem_addr ;
             res.take_branch := arch.take_branch;
+            res.res := arch.res;
         }
 
         # Initalization computes the temporary variable values in the initial ISA
@@ -333,6 +344,7 @@ isolate trace = {
         invariant st(now).b_val = arch.b_val
         invariant st(now).mem_addr  = arch.mem_addr
         invariant st(now).take_branch = arch.take_branch
+        invariant st(now).res = arch.res
 
         # The invariants above only pin the *most recent* recorded state,
         # st(now). But the pipeline implementation compares a lagging stage
@@ -356,6 +368,7 @@ isolate trace = {
         invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
         invariant T <= now -> st(T).mem_addr = (st(T).a_val)<<7:0>>
         invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
+        invariant T <= now -> st(T).res = (st(T).a_val + st(T).b_val if st(T).opcode = 1 else (st(T).a_val - st(T).b_val if st(T).opcode = 2 else ((0:addr) :: st(T).target if st(T).opcode = 3 else 0)))
 
         # (b) Consecutive recorded states are related by one step of the ISA.
         #     If st(T) precedes st(U) (U = T+1, U <= now), then st(U) is the
@@ -572,7 +585,7 @@ object cpu = {
 
         # ---- committed architectural state matches the trace -------------
 
-        invariant ~trace.st(trace.now).error -> rf(R) = trace.st(commit).rf(R)
+        invariant [rf_track] ~trace.st(trace.now).error -> rf(R) = trace.st(commit).rf(R)
 
         # ---- write-back D-cache coherence (relative to the trace at MEM) ----
         # The effective memory (D-cache line where present-and-dirty, else main
@@ -620,15 +633,11 @@ object cpu = {
 
         invariant (m_valid & ~trace.st(trace.now).error) -> m_addr = trace.st(mcommit).mem_addr
         invariant (m_valid & ~trace.st(trace.now).error) -> m_store = trace.st(mcommit).b_val
-        invariant (m_valid & m_opcode = 1 & ~trace.st(trace.now).error) -> m_res = trace.st(mcommit).a_val + trace.st(mcommit).b_val
-        invariant (m_valid & m_opcode = 2 & ~trace.st(trace.now).error) -> m_res = trace.st(mcommit).a_val - trace.st(mcommit).b_val
-        invariant (m_valid & m_opcode = 3 & ~trace.st(trace.now).error) -> m_res = (0:addr) :: trace.st(mcommit).target
+        invariant (m_valid & (m_opcode = 1 | m_opcode = 2 | m_opcode = 3) & ~trace.st(trace.now).error) -> m_res = trace.st(mcommit).res
 
         # ---- WB latch writeback value matches the trace ------------------
 
-        invariant (w_valid & w_opcode = 1 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val + trace.st(commit).b_val
-        invariant (w_valid & w_opcode = 2 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
-        invariant (w_valid & w_opcode = 3 & ~trace.st(trace.now).error) -> w_val = (0:addr) :: trace.st(commit).target
+        invariant (w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3) & ~trace.st(trace.now).error) -> w_val = trace.st(commit).res
         invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
 
         # ---- lane-1 (dual-issue) trace match, at the lane-1 tags ----------
@@ -651,14 +660,34 @@ object cpu = {
         invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d_pc1 = trace.st(d1_tag).pc
         invariant (e_valid1 & ~trace.st(trace.now).error) -> e_ir1 = trace.st(e1_tag).fetched
         invariant (e_valid1 & ~trace.st(trace.now).error) -> e_pc1 = trace.st(e1_tag).pc
+
+        # ---- EX operands track the trace operand values --------------------
+        # e_a/e_b are the register-file reads for the EX instruction; they must
+        # equal the trace's recorded a_val/b_val at the EX tag. Once these hold,
+        # the ALU-result invariants (m_res = st(mcommit).res, etc.) follow without
+        # re-deriving rf-coherence.
+        invariant [ea_trk]  (e_valid  & ~ex_stall & ~trace.st(trace.now).error) -> e_a  = trace.st(ecommit).a_val
+            with rf_track
+        invariant [eb_trk]  (e_valid  & ~ex_stall & ~trace.st(trace.now).error) -> e_b  = trace.st(ecommit).b_val
+            with rf_track
+        invariant [ea1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_a1 = trace.st(e1_tag).a_val
+            with rf_track
+        invariant [eb1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1 = trace.st(e1_tag).b_val
+            with rf_track
+
+        # Intra-bundle independence: lane 0's destination differs from lane 1's
+        # source and destination registers (established by f_indep at issue). This
+        # is what lets lane 1's operand read see the same rf value the trace has at
+        # e1_tag = ecommit.next -- lane 0 (tag ecommit) is inside [commit, e1_tag),
+        # so ~ex_stall alone does not cover it.
+        invariant [d_indep] d_valid1 -> (~(d_opcode = 1 | d_opcode = 2 | d_opcode = 3)
+                               | (d_rd ~= d_ra1 & d_rd ~= d_rb1 & d_rd ~= d_rd1))
+        invariant [e_indep] e_valid1 -> (~(e_opcode = 1 | e_opcode = 2 | e_opcode = 3)
+                               | (e_rd ~= e_ra1 & e_rd ~= e_rb1 & e_rd ~= e_rd1))
         invariant (m_valid1 & ~trace.st(trace.now).error) -> m_ir1 = trace.st(m1_tag).fetched
         invariant (w_valid1 & ~trace.st(trace.now).error) -> w_ir1 = trace.st(w1_tag).fetched
-        invariant (m_valid1 & m_opcode1 = 1 & ~trace.st(trace.now).error) -> m_res1 = trace.st(m1_tag).a_val + trace.st(m1_tag).b_val
-        invariant (m_valid1 & m_opcode1 = 2 & ~trace.st(trace.now).error) -> m_res1 = trace.st(m1_tag).a_val - trace.st(m1_tag).b_val
-        invariant (m_valid1 & m_opcode1 = 3 & ~trace.st(trace.now).error) -> m_res1 = (0:addr) :: trace.st(m1_tag).target
-        invariant (w_valid1 & w_opcode1 = 1 & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).a_val + trace.st(w1_tag).b_val
-        invariant (w_valid1 & w_opcode1 = 2 & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).a_val - trace.st(w1_tag).b_val
-        invariant (w_valid1 & w_opcode1 = 3 & ~trace.st(trace.now).error) -> w_val1 = (0:addr) :: trace.st(w1_tag).target
+        invariant (m_valid1 & (m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3) & ~trace.st(trace.now).error) -> m_res1 = trace.st(m1_tag).res
+        invariant (w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3) & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).res
 
         # Fetch-reference (now) coherence of the two fetched words, proved in cpu
         # via the ic guarantees as zero-delay (combinational) dependencies. These
@@ -881,6 +910,14 @@ object cpu = {
     definition d_opcode = d_ir<<15:13>>
     wire d_opcode1 : opc
     definition d_opcode1 = d_ir1<<15:13>>
+    wire d_rd : reg
+    definition d_rd = d_ir<<12:10>>
+    wire d_ra1 : reg
+    definition d_ra1 = d_ir1<<9:7>>
+    wire d_rb1 : reg
+    definition d_rb1 = d_ir1<<6:4>>
+    wire d_rd1 : reg
+    definition d_rd1 = d_ir1<<12:10>>
 
     wire e_opcode : opc
     wire e_rd : reg
@@ -959,16 +996,27 @@ object cpu = {
     wire w1_wr : bool
     definition w1_wr = w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3)
 
-    # A source register R has a pending in-flight writer (RAW; no forwarding, so
+    # A source register has a pending in-flight writer (RAW; no forwarding, so
     # the reader must stall until the writer retires). Intra-bundle dependences
-    # are prevented at issue, so only MEM/WB (older) slots appear here.
-    function hazard_on(R:reg) : bool
-    definition hazard_on(R) = (m0_wr & m_rd = R) | (m1_wr & m_rd1 = R)
-                            | (w0_wr & w_rd = R) | (w1_wr & w_rd1 = R)
+    # are prevented at issue, so only MEM/WB (older) slots appear here. One wire
+    # per source register read (both EX lanes) -- nullary so it translates to RTL
+    # (a parameterized function would not be recognized as combinational).
+    wire hz_ea : bool
+    definition hz_ea = (m0_wr & m_rd = e_ra) | (m1_wr & m_rd1 = e_ra)
+                     | (w0_wr & w_rd = e_ra) | (w1_wr & w_rd1 = e_ra)
+    wire hz_eb : bool
+    definition hz_eb = (m0_wr & m_rd = e_rb) | (m1_wr & m_rd1 = e_rb)
+                     | (w0_wr & w_rd = e_rb) | (w1_wr & w_rd1 = e_rb)
+    wire hz_ea1 : bool
+    definition hz_ea1 = (m0_wr & m_rd = e_ra1) | (m1_wr & m_rd1 = e_ra1)
+                      | (w0_wr & w_rd = e_ra1) | (w1_wr & w_rd1 = e_ra1)
+    wire hz_eb1 : bool
+    definition hz_eb1 = (m0_wr & m_rd = e_rb1) | (m1_wr & m_rd1 = e_rb1)
+                      | (w0_wr & w_rd = e_rb1) | (w1_wr & w_rd1 = e_rb1)
 
     wire ex_stall : bool
-    definition ex_stall = (e_valid  & (hazard_on(e_ra)  | hazard_on(e_rb)))
-                        | (e_valid1 & (hazard_on(e_ra1) | hazard_on(e_rb1)))
+    definition ex_stall = (e_valid  & (hz_ea  | hz_eb))
+                        | (e_valid1 & (hz_ea1 | hz_eb1))
 
     # ---- misprediction: the EX branch's prediction disagrees with its true
     #      outcome. Detected only once its operand is available (~ex_stall).
