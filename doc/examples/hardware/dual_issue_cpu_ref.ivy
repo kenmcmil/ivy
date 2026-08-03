@@ -986,13 +986,28 @@ object cpu = {
     definition e_ra1 = e_ir1<<9:7>>
     definition e_rb1 = e_ir1<<6:4>>
     definition e_target1 = e_ir1<<7:0>>
+    # lane 0's ALU result, factored out so it can also be forwarded to lane 1.
+    wire e_lane0_wr : bool           # lane 0 writes a register (ADD/SUB/LI)
+    definition e_lane0_wr = e_valid & (e_opcode = 1 | e_opcode = 2 | e_opcode = 3)
+    wire e_res : word
+    definition e_res = (e_a + e_b if e_opcode = 1 else
+                       (e_a - e_b if e_opcode = 2 else
+                       ((0:addr) :: e_target if e_opcode = 3 else 0)))
+
     wire e_a1 : word
     wire e_b1 : word
     definition e_a1 = rf(e_ra1)
     definition e_b1 = rf(e_rb1)
+    # intra-bundle RAW bypass (Step 3): forward lane 0's freshly-computed result
+    # to lane 1's operand when lane 0 writes lane 1's source register. Dormant
+    # while issue_two still requires f_indep (the mux condition never holds then).
+    wire e_a1_fwd : word
+    definition e_a1_fwd = (e_res if (e_lane0_wr & e_rd = e_ra1) else e_a1)
+    wire e_b1_fwd : word
+    definition e_b1_fwd = (e_res if (e_lane0_wr & e_rd = e_rb1) else e_b1)
     wire e_res1 : word               # lane-1 ALU result (computed in EX)
-    definition e_res1 = (e_a1 + e_b1 if e_opcode1 = 1 else
-                        (e_a1 - e_b1 if e_opcode1 = 2 else
+    definition e_res1 = (e_a1_fwd + e_b1_fwd if e_opcode1 = 1 else
+                        (e_a1_fwd - e_b1_fwd if e_opcode1 = 2 else
                         ((0:addr) :: e_target1 if e_opcode1 = 3 else 0)))
 
     wire m_opcode1 : opc
@@ -1532,9 +1547,7 @@ object cpu = {
         } else {
             m_ir := e_ir;
             m_valid := e_valid;
-            m_res := (e_a + e_b if e_opcode = 1 else
-                     (e_a - e_b if e_opcode = 2 else
-                     ((0:addr) :: e_target if e_opcode = 3 else 0)));
+            m_res := e_res;
             m_addr := e_a<<7:0>>;
             m_store := e_b;
             # lane 1: simple ALU only (no memory), so m_addr1/m_store1 are unused.
