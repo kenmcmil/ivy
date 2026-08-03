@@ -250,6 +250,21 @@ tracking discipline and zero-delay `with` are the mitigation); WAW correctness
 rests on the lane-1-second write ordering in WB (already in place, but re-confirm
 `rf_track` preserves with two same-cycle writes).
 
+Status (2026-08-02): parked mid-Step-3, to return to later.
+
+  3a  DONE and committed (77ea84c): the bypass datapath (e_res wire,
+      e_a1_fwd/e_b1_fwd muxes, m_res := e_res), kept dormant behind f_indep /
+      e_indep. isolate=this verified OK.
+  3b  IN PROGRESS, NOT fully verified. Added eres_trk (e_res = st(ecommit).res)
+      and re-pointed ea1_trk/eb1_trk to the forwarded operands e_a1_fwd/e_b1_fwd
+      (bypass still dormant). eres_trk initially very slow with `with rf_track`;
+      switched its zero-delay dependency to `with ea_trk, eb_trk` (e_res is
+      combinational in e_a/e_b) and it PASSES individually, but a clean full
+      isolate=this run has not yet confirmed the whole set is green (earlier
+      timings were contaminated by competing ivy_check processes). Next: get a
+      clean isolate=this OK, commit 3b, then do 3c (drop f_indep + d_indep/e_indep
+      to make the bypass live) and 3d (full check + sim on a real RAW pair).
+
 Risks / things to watch
 -----------------------
 
