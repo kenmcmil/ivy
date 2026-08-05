@@ -61,7 +61,7 @@ Every Ivy file begins with a line like the following:
 This tells Ivy what version of the language we are using. This is
 important because in successive version of the language, certain
 features may be changed or deprecated. Providing the language version
-allows old programs to keep working. They current version of the Ivy
+allows old programs to keep working. The current version of the Ivy
 language is 1.7. Changes between versions of the language are listed
 at the end of this document.
 
