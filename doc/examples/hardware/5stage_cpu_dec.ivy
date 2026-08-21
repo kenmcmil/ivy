@@ -1,17 +1,22 @@
 #lang ivy1.8
 
-# A very simple two-stage pipelined processor.
+# A standard 5-stage in-order pipeline (IF, ID, EX, MEM, WB), verified against
+# an ISA reference by MODULAR STAGE DECOMPOSITION.
 #
-# In this version, we create an unpipelined reference model
-# (essentially an ISA defininition) and show the our simple two-stage
-# pipelined version implementes it. This would be be easy to do in a
-# direct way using invariants and simple auxiliary variables. However,
-# we will do the specification and verification in a more general way
-# that we cn apply to mode complex processor designs.
+# As in the reference-tagging examples, an unpipelined reference model (the ISA)
+# is recorded in a ghost `trace` of architectural states, and each pipeline
+# element carries a tag into that trace. What is different here is the proof
+# structure: every stage is its own isolate, and between each consecutive pair
+# of stages there is a ghost "interface" isolate stating the assumptions and
+# guarantees at that boundary. Each stage is then proved using only its two
+# neighbouring interfaces, so the whole proof decomposes into small local pieces
+# rather than one monolithic invariant.
 #
-# This example is intended to illustrate a design pattern we will call
-# 'reference tagging' that lets us break down the proof of large designs
-# into isolated proofs of its components. 
+# The methodology -- registers, stage isolates, interface isolates, and the
+# simple/complex read-after-write hazard patterns -- is described in
+# doc/projects/decomposition.md. For a pipeline this simple the decomposition is
+# more machinery than the problem needs (a monolithic proof is easier); it is
+# the scaffolding intended for larger designs.
 
 # Instruction encoding (16 bits):
 #
@@ -332,15 +337,11 @@ isolate trace = {
                       st(U).mem(A) = (st(T).b_val if (st(T).opcode = 5 & A = st(T).mem_addr)
                                       else st(T).mem(A))
         invariant (tag.succ(T,U) & U <= now) ->
-                      st(U).rf(R) = (st(T).a_val + st(T).b_val
-                                         if (st(T).opcode = 1 & R = st(T).rd) else
-                                     (st(T).a_val - st(T).b_val
-                                         if (st(T).opcode = 2 & R = st(T).rd) else
-                                     ((0:addr) :: st(T).target
-                                         if (st(T).opcode = 3 & R = st(T).rd) else
-                                     (st(T).mem(st(T).mem_addr)
-                                         if (st(T).opcode = 4 & R = st(T).rd) else
-                                     st(T).rf(R)))))
+                      st(U).rf(R) = (st(T).res
+                                     if ((st(T).opcode = 1 | st(T).opcode = 2 |
+                                          st(T).opcode = 3 | st(T).opcode = 4)
+                                         & R = st(T).rd)
+                                     else st(T).rf(R))
 
     }
 }  with addr,opc
@@ -354,10 +355,9 @@ isolate trace = {
 #   MEM : data-memory access (LD reads, ST writes)
 #   WB  : write the result to rf
 #
-# Operands are read in EX and results written in WB (no forwarding yet), so a
-# RAW dependency on an instruction still in MEM or WB is a data hazard; we
-# detect it and STALL the EX stage (holding EX/ID/IF, bubbling MEM) until the
-# producer commits.
+# Operands are read in EX and results written in WB (no forwarding of the ALU
+# result yet), so a RAW dependency on an instruction still in MEM or WB is a
+# data hazard; we detect it and STALL the EX stage until the producer retires.
 #
 # The operand of a branch is likewise read in EX, so a branch resolves in EX.
 # To keep the trace (which records instructions at issue, in program order)
@@ -365,8 +365,14 @@ isolate trace = {
 # branch is unresolved (in ID or EX), and the PC is redirected from EX. (A
 # branch predictor will replace this later.)
 #
-# This version is monolithic (one object). A later version will split each
-# stage into its own isolate for a truly compositional proof.
+# Following the decomposition methodology (doc/projects/decomposition.md), the
+# model is split into per-stage isolates -- if_stage, id_stage, ex_stage,
+# mem_stage, wb_stage -- with a ghost interface isolate -- if_id, id_ex, ex_mem,
+# mem_wb -- at each boundary. The architectural register file lives in wb_stage
+# and the two EX operand reads are forwarded from ex_stage down to wb_stage (the
+# SIMPLE read-after-write hazard pattern). The pc lives in if_stage and a branch
+# redirect is forwarded from ex_stage (the COMPLEX hazard pattern, since the pc
+# is written in two stages -- incremented in IF, redirected in EX).
 # ============================================================================
 
 isolate cpu = {
@@ -533,15 +539,9 @@ isolate cpu = {
                     # ---- the IF/ID pipe register tracks the trace ----
                     invariant if_stage.d_valid -> if_stage.d_ir = trace.st(commit).fetched
 
-                    # ---- fetch state tracks the trace ----
-                    # imem is immutable, so it matches every entry; tie it to commit.
-                    # pc is the next fetch address st(now).pc when no branch is pending;
-                    # while a branch is pending (fetch_stall) it holds the fall-through
-                    # address st(now-1).pc + 1, until EX redirects it.
-
-                     # invariant [pc_track] ~pc_reserved -> if_stage.pc = trace.st(trace.now).pc
-
-                    # while PC is reserved, we never fetch an instruction
+                    # While the pc is reserved by a downstream taken branch, IF
+                    # does not fetch, so any valid instruction still in IF/ID must
+                    # itself be that pending taken branch.
                     invariant [no_fetch] pc_reserved_onward & if_stage.d_valid -> trace.st(commit).take_branch
                 }
             } with cpu, trace, word, addr, reg, opc, if_id, if_stage
@@ -611,9 +611,7 @@ isolate cpu = {
 
                 invariant if_id.pc_reserved & ~(if_stage.d_valid & trace.st(if_id.commit).take_branch) -> id_ex.pc_reserved
 
-                invariant  id_ex.pc_reserved -> if_id.pc_reserved 
-
-                # invariant [d_empty_on_taken] ~(id_ex.pc_reserved & if_stage.d_valid) with if_id.if_props.no_fetch
+                invariant  id_ex.pc_reserved -> if_id.pc_reserved
 
                 invariant [pc_res] if_id.pc_reserved_onward <-> e_valid & trace.st(id_ex.commit).take_branch
 
@@ -631,17 +629,16 @@ isolate cpu = {
                 # commit counts how many instructions have passed the EX boundary.
                 # The instruction in the ID/EX pipe register (if valid) is the next
                 # to pass, so its trace tag is commit; the ID-boundary tag
-                # if_stage.commit equals commit when the register is empty, or
+                # if_id.commit equals commit when the register is empty, or
                 # commit + 1 when it holds a valid instruction.
 
                 var commit : trace.tag
                 var pc_reserved : bool
 
-                definition pc_reserved = id_stage.e_valid & trace.st(commit).take_branch 
+                definition pc_reserved = id_stage.e_valid & trace.st(commit).take_branch
 
                 after init {
                     commit := 0;
-                    # pc_reserved := false;
                 }
 
                 # When EX advances (not stalled) and the register held a valid
@@ -649,7 +646,6 @@ isolate cpu = {
                 after posedge {
                     if ~ex_stall {
                         if old id_stage.e_valid { commit := commit.next }
-                        # pc_reserved := old if_id.pc_reserved & ~ex_stage.e_take;
                     }
                 }
 
@@ -768,11 +764,7 @@ isolate cpu = {
                     m_store := e_b
                 }
             }
-
-            specification {
-                # invariant [a_val_track] id_stage.e_valid & ~ex_stall -> e_a = trace.st(id_ex.commit).a_val with ex_mem.mem_props.a_track, ex_mem.ex_props.commit_bound, id_ex.id_props.e_ir_track, id_ex.id_props.commit_bound
-            }
-        }  with cpu, trace, word, addr, reg, opc, id_ex, ex_mem 
+        }  with cpu, trace, word, addr, reg, opc, id_ex, ex_mem
     }
         
     # Specification of interface at the EX/MEM boundary
