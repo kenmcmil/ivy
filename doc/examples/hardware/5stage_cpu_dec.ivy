@@ -392,7 +392,7 @@ isolate cpu = {
     # (`old if_stage.d_ir`), and its trace-tracking invariant is a plain state
     # invariant that a later isolate can assume directly.
     #
-    #   inputs :  ex_stall, fetch_stall, e_take, e_target
+    #   inputs :  ex_stall, fetch_stall, pc_ex_we, pc_ex_wval
     #   outputs:  the IF/ID pipe register d_ir/d_valid (state), read directly by
     #             cpu; pc/imem/commit are read by if_stage's own invariants.
 
@@ -413,8 +413,8 @@ isolate cpu = {
             # ---- interface wires ----
             wire ex_stall : bool            # input:  EX is stalled -> freeze fetch
             wire id_fetch_stall : bool         # input:  branch pending -> hold PC / bubble
-            wire e_take : bool              # input:  a branch resolves taken in EX
-            wire e_target : addr            # input:  the branch target
+            wire pc_ex_we : bool            # input:  EX writes the pc this cycle (taken branch)
+            wire pc_ex_wval : addr          # input:  the value EX writes to the pc (branch target)
 
             # ---- fetch output (combinational, internal) ----
             wire fetched : word
@@ -435,18 +435,21 @@ isolate cpu = {
             after posedge {
                 if ~ex_stall {
                     # IF -> ID: latch the fetched word into the pipe register and
-                    # advance the PC, unless a branch is pending (bubble + hold PC).
+                    # advance the PC (the "early" pc write), unless a branch is
+                    # pending (bubble + hold PC).
                     if fetch_stall {
                         d_valid := false
                     } else {
                         d_ir := fetched;
                         d_valid := true;
                         pc := pc + 1             # fall-through address
-                    };
-                    # Branch resolution: redirect the PC on a taken branch.
-                    if e_take {
-                        pc := e_target
                     }
+                };
+                # Forwarded "late" pc write: a taken branch in EX redirects the
+                # pc. pc_ex_we already implies ~ex_stall, so this is not guarded
+                # by ~ex_stall and, when it fires, overrides the fall-through.
+                if pc_ex_we {
+                    pc := pc_ex_wval
                 }
             }
             specification {
@@ -538,10 +541,10 @@ isolate cpu = {
                 specification {
                     invariant [pc_resv_stall]  pc_reserved_onward -> if_stage.id_fetch_stall with if_props.commit_bound
 
-                    invariant [pc_we_track] ~ex_stall & ex_stage.e_take -> pc_reserved_onward 
-                        with id_ex.ex_props.e_take_valid, id_ex.ex_props.e_take_target, if_props.commit_bound, if_props.pc_no_early
-                    invariant [pc_wval_track] pc_writes_done -> ~ex_stall & ex_stage.e_take & ex_stage.e_target = trace.st(commit).pc
-                        with id_ex.ex_props.e_take_valid, id_ex.ex_props.e_take_target, if_props.commit_bound, if_props.pc_no_early
+                    invariant [pc_we_track] ex_stage.pc_ex_we -> pc_reserved_onward
+                        with id_ex.ex_props.pc_we_track, id_ex.ex_props.pc_wval_track, if_props.commit_bound, if_props.pc_no_early
+                    invariant [pc_wval_track] pc_writes_done -> ex_stage.pc_ex_we & ex_stage.pc_ex_wval = trace.st(commit).pc
+                        with id_ex.ex_props.pc_we_track, id_ex.ex_props.pc_wval_track, if_props.commit_bound, if_props.pc_no_early
                 }
             } with cpu, trace, word, addr, reg, opc, if_id, id_stage, id_ex
             
@@ -594,10 +597,6 @@ isolate cpu = {
             specification {
                 definition if_id.pc_writes_done = e_valid & trace.st(id_ex.commit).take_branch & ~ex_stall
 
-                invariant if_id.pc_reserved & ~(if_stage.d_valid & trace.st(if_id.commit).take_branch) -> id_ex.pc_reserved
-
-                invariant  id_ex.pc_reserved -> if_id.pc_reserved
-
                 invariant [pc_res] if_id.pc_reserved_onward <-> e_valid & trace.st(id_ex.commit).take_branch
 
             }
@@ -618,9 +617,6 @@ isolate cpu = {
                 # commit + 1 when it holds a valid instruction.
 
                 var commit : trace.tag
-                var pc_reserved : bool
-
-                definition pc_reserved = id_stage.e_valid & trace.st(commit).take_branch
 
                 after init {
                     commit := 0;
@@ -651,11 +647,16 @@ isolate cpu = {
                 # Guarantees of the EX stage at ID/EX boundary
 
                 isolate ex_props = {
-                    invariant [e_take_valid]  ~ex_stall -> (ex_stage.e_take <-> id_stage.e_valid & pc_reserved)
+                    # This is the incoming interface of the late (EX) pc-write
+                    # stage, so its guarantees are the doc's r_z_we / r_z_wval for
+                    # r = pc. The write enable pc_ex_we (a genuine enable, gated on
+                    # ~ex_stall) holds iff a valid, non-stalled taken branch is in
+                    # EX (writes_r == take_branch); the written value is the target.
+                    invariant [pc_we_track] ex_stage.pc_ex_we <-> id_stage.e_valid & ~ex_stall & trace.st(commit).take_branch
                     with id_props.e_ir_track, id_props.commit_bound, ex_mem.mem_props.a_track
-                    invariant [e_take_target]  ~ex_stall & ex_stage.e_take -> ex_stage.e_target = trace.st(commit).target
+                    invariant [pc_wval_track] ex_stage.pc_ex_we -> ex_stage.pc_ex_wval = trace.st(commit).target
                     with id_props.e_ir_track, id_props.commit_bound
-                } with cpu, trace, word, addr, reg, opc, id_ex, ex_mem, ex_stage 
+                } with cpu, trace, word, addr, reg, opc, id_ex, ex_mem, ex_stage
             }
         }
     }
@@ -674,7 +675,7 @@ isolate cpu = {
     #   inputs :  wb_we/wb_rd/wb_val (WB writeback); the ID/EX pipe register
     #             id_stage.e_ir/e_valid
     #   outputs:  the EX/MEM pipe register m_* (state, read pre-edge by cpu);
-    #             e_opcode/e_target/e_take (to control / IF), m_opcode (to MEM),
+    #             e_opcode/pc_ex_wval/pc_ex_we (to control / IF), m_opcode (to MEM),
     #             ex_stall (to IF/ID/cpu)
 
     implementation {
@@ -693,8 +694,8 @@ isolate cpu = {
             wire wb_val : word              # input:  WB write value
             wire mem_stall : bool           # input:  stall signal from M stage 
             wire e_opcode : opc             # output: opcode of the instruction in EX
-            wire e_target : addr            # output: branch target / low-8 immediate
-            wire e_take : bool              # output: branch resolves taken (to IF)
+            wire pc_ex_wval : addr          # output: value EX writes to pc (branch target); also LI immediate
+            wire pc_ex_we : bool            # output: EX writes the pc this cycle (a taken branch, gated on ~ex_stall)
             wire m_opcode : opc             # output: opcode of the instruction in MEM
             wire ex_stall : bool            # output: data hazard -> stall EX
 
@@ -703,17 +704,20 @@ isolate cpu = {
             # ---- EX decode (of id_stage's ID/EX pipe register) ----
             wire e_ra : reg
             wire e_rb : reg
-            definition e_opcode = id_stage.e_ir<<15:13>>
-            definition e_ra     = id_stage.e_ir<<9:7>>
-            definition e_rb     = id_stage.e_ir<<6:4>>
-            definition e_target = id_stage.e_ir<<7:0>>
+            definition e_opcode  = id_stage.e_ir<<15:13>>
+            definition e_ra      = id_stage.e_ir<<9:7>>
+            definition e_rb      = id_stage.e_ir<<6:4>>
+            definition pc_ex_wval = id_stage.e_ir<<7:0>>    # low-8 field: branch target / LI immediate
 
             # ---- EX operands (read from the register file) ----
             wire e_a : word
             wire e_b : word
 
-            # ---- branch decision (BEQZ), resolved in EX ----
-            definition e_take = id_stage.e_valid & (e_opcode = 6) & (e_a = 0)
+            # ---- pc late write (BEQZ redirect), resolved in EX ----
+            # pc_ex_we is a write ENABLE: it is gated on ~ex_stall so that, per the
+            # decomposition write-forwarding scheme, it means "EX writes the pc
+            # this cycle" rather than merely "a taken branch is present".
+            definition pc_ex_we = ~ex_stall & id_stage.e_valid & (e_opcode = 6) & (e_a = 0)
 
             # ---- MEM decode (of this stage's own EX/MEM pipe register) ----
             wire m_rd : reg
@@ -744,7 +748,7 @@ isolate cpu = {
                     m_valid := old id_stage.e_valid;
                     m_res := (e_a + e_b if e_opcode = 1 else
                              (e_a - e_b if e_opcode = 2 else
-                             ((0:addr) :: e_target if e_opcode = 3 else 0)));
+                             ((0:addr) :: pc_ex_wval if e_opcode = 3 else 0)));   # LI immediate
                     m_addr := e_a<<7:0>>;
                     m_store := e_b
                 }
@@ -983,8 +987,8 @@ isolate cpu = {
     # ---- connect the stage inputs ----
     definition if_stage.ex_stall    = ex_stall
     definition if_stage.id_fetch_stall = id_stage.fetch_stall
-    definition if_stage.e_take      = ex_stage.e_take
-    definition if_stage.e_target    = ex_stage.e_target
+    definition if_stage.pc_ex_we    = ex_stage.pc_ex_we
+    definition if_stage.pc_ex_wval  = ex_stage.pc_ex_wval
 
     definition id_stage.ex_stall    = ex_stall
 
