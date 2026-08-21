@@ -30,21 +30,6 @@
 #          5  ST   [ra], rb       mem[ rf[ra] ] := rf[rb]
 #          6  BEQZ ra, target     if rf[ra] == 0 then pc := target
 
-# The implementation:
-#
-# Pipeline stages:
-#   F (fetch)   : read the instruction at PC from instruction memory.
-#   X (execute) : decode and execute the instruction fetched last cycle,
-#                 reading/writing the register file and data memory and
-#                 redirecting the PC on a taken branch.
-#
-# The pipeline register between F and X is (ir, ir_valid). Operands are read
-# and results written in the same stage (X), so there are no data hazards. A
-# taken conditional branch is resolved in X, so the instruction fetched in its
-# shadow must be squashed -- a one-cycle bubble. That is the classic control
-# hazard.
-#
-
 include order   # ordered abstract types
 
 # Word (data / instruction), address (PC / memory), and register-index types.
