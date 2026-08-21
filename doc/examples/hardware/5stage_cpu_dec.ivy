@@ -542,7 +542,7 @@ isolate cpu = {
                     # While the pc is reserved by a downstream taken branch, IF
                     # does not fetch, so any valid instruction still in IF/ID must
                     # itself be that pending taken branch.
-                    invariant [no_fetch] pc_reserved_onward & if_stage.d_valid -> trace.st(commit).take_branch
+                    invariant [pc_no_early] pc_reserved_onward & if_stage.d_valid -> trace.st(commit).take_branch
                 }
             } with cpu, trace, word, addr, reg, opc, if_id, if_stage
 
@@ -551,12 +551,12 @@ isolate cpu = {
             isolate id_props = {
 
                 specification {
-                    invariant [fetch_stall_track]  pc_reserved_onward -> if_stage.id_fetch_stall with if_props.commit_bound
+                    invariant [pc_resv_stall]  pc_reserved_onward -> if_stage.id_fetch_stall with if_props.commit_bound
 
-                    invariant [pc_done] ~ex_stall & ex_stage.e_take -> pc_reserved_onward 
-                        with id_ex.ex_props.e_take_valid, id_ex.ex_props.e_take_target, if_props.commit_bound, if_props.no_fetch
-                    invariant [pc_writes] pc_writes_done -> ~ex_stall & ex_stage.e_take & ex_stage.e_target = trace.st(commit).pc
-                        with id_ex.ex_props.e_take_valid, id_ex.ex_props.e_take_target, if_props.commit_bound, if_props.no_fetch
+                    invariant [pc_we_track] ~ex_stall & ex_stage.e_take -> pc_reserved_onward 
+                        with id_ex.ex_props.e_take_valid, id_ex.ex_props.e_take_target, if_props.commit_bound, if_props.pc_no_early
+                    invariant [pc_wval_track] pc_writes_done -> ~ex_stall & ex_stage.e_take & ex_stage.e_target = trace.st(commit).pc
+                        with id_ex.ex_props.e_take_valid, id_ex.ex_props.e_take_target, if_props.commit_bound, if_props.pc_no_early
                 }
             } with cpu, trace, word, addr, reg, opc, if_id, id_stage, id_ex
             
@@ -654,7 +654,7 @@ isolate cpu = {
                 isolate id_props = {
                     # ---- tag chain at the EX boundary ----
                     invariant id_stage.e_valid -> commit.succ(if_id.commit)
-                    invariant [id_ex_tagging] ~id_stage.e_valid -> if_id.commit = commit
+                    invariant ~id_stage.e_valid -> if_id.commit = commit
                     invariant [commit_bound] commit <= trace.now
                     
                     # ---- the ID/EX pipe register tracks the trace ----
@@ -669,7 +669,7 @@ isolate cpu = {
                     invariant [e_take_valid]  ~ex_stall -> (ex_stage.e_take <-> id_stage.e_valid & pc_reserved)
                     with id_props.e_ir_track, id_props.commit_bound, ex_mem.mem_props.a_track
                     invariant [e_take_target]  ~ex_stall & ex_stage.e_take -> ex_stage.e_target = trace.st(commit).target
-                    with id_props.e_ir_track, id_props.id_ex_tagging, id_props.commit_bound
+                    with id_props.e_ir_track, id_props.commit_bound
                 } with cpu, trace, word, addr, reg, opc, id_ex, ex_mem, ex_stage 
             }
         }
