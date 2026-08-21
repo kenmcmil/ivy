@@ -140,6 +140,7 @@
     "template"
     "constructor"
     "wire"
+    "register"
 ))
 
 (defconst ivy-types '("bool" "int" "bv"))

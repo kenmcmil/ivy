@@ -93,6 +93,7 @@ class Module(object):
         self.wires = set()  # set of symbol
         self.input_wires = []  # list of symbol: top-level input wires (import wire), in declaration order
         self.output_wires = []  # list of symbol: top-level output wires (export wire), in declaration order
+        self.registers = set() # set of symbol
         self.invardeps = {}  # map from string to string list
         self.sig = il.sig.copy() # capture the current signature
 
@@ -120,6 +121,11 @@ class Module(object):
     def background_theory(self, symbols=None):
         if hasattr(self,"theory"):
             return self.theory
+        return lu.Clauses([])
+
+    def non_wire_background_theory(self, symbols=None):
+        if hasattr(self,"theory"):
+            return self.non_wire_theory
         return lu.Clauses([])
 
     def add_to_hierarchy(self,name):
@@ -152,6 +158,7 @@ class Module(object):
     def update_theory(self):
         theory = list(self.get_axioms())
         defs = []
+        non_wire_defs = []
         # axioms of the derived relations TODO: used only the
         # referenced ones, but we need to know abstract domain for
         # this
@@ -168,6 +175,8 @@ class Module(object):
                         theory.append(ax) # TODO: make this a def?
                     else:
                         defs.append(ax)
+                        if ax.defines() not in self.wires:
+                            non_wire_defs.append(ax)
         # extensionality axioms for structs
         for sort in sorted(self.sort_destructors):
             destrs = self.sort_destructors[sort]
@@ -178,6 +187,7 @@ class Module(object):
         # exclusivity axioms for variants
         theory.extend(self.variant_axioms())
         self.theory = lu.Clauses(theory,defs)
+        self.non_wire_theory = lu.Clauses(theory,non_wire_defs)
 
     def variant_axioms(self):
         theory = []

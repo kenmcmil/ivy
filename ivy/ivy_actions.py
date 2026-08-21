@@ -16,6 +16,8 @@ from .ivy_ast import AST, compose_atoms, MixinAfterDef
 from . import ivy_module
 from . import ivy_utils as iu
 
+from ordered_set import OrderedSet
+
 def p_c_a(s):
     a = s.split(':')
     # Accept the file name with or without the '.ivy' extension. Source
@@ -887,7 +889,7 @@ class Sequence(Action):
         return '{' + '; '.join(my_str(x) for x in self.args) + '}'
     def int_update(self,domain,pvars):
         update = ([],true_clauses(EmptyAnnotation()),false_clauses(EmptyAnnotation()))
-        axioms = domain.background_theory(pvars)
+        axioms = domain.non_wire_background_theory(pvars)
         for op in self.args:
             thing = op.int_update(domain,pvars);
 #            if thing[1].annot is None or thing[2].annot is None:
@@ -1832,3 +1834,22 @@ def env_action(actname,label=None):
 #        action.label = label if not isinstance(actname,str) else actname
     return action
 
+class ModSets(object):
+    def __init__(self,mod):
+        self.mod = mod
+        self.memo = dict()
+    def modset(self,actname):
+        if not self.mod.registers:
+            return OrderedSet()
+        if actname in self.memo:
+            return self.memo[actname]
+        action = self.mod.actions[actname]
+        res = OrderedSet()
+        for sub in action.iter_subactions():
+            for sym in sub.modifies():
+                if sym in self.mod.registers:
+                    res.add(sym)
+        if isinstance(sub,CallAction):
+            res.update(self.modset(sub.args[0].rep))
+        self.memo[actname] = res
+        return res

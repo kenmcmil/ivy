@@ -588,16 +588,26 @@ def quant_constraints(vs,z3_vs):
     
 # this adds bounds for nat and range types
 
+def z3_and(*args):
+    if len(args) == 1 and isinstance(args[0],list):
+        args = args[0]
+    if len(args) == 0:
+        return z3.BoolVal(True)
+    if len(args) == 1:
+        return args[0]
+    return z3.And(*args)
+
+
 def forall(vs,z3_vs,z3_body):
     cnstrs = quant_constraints(vs,z3_vs)
     if len(cnstrs) > 0:
-        z3_body = z3.Implies(z3.And(*cnstrs),z3_body)
+        z3_body = z3.Implies(z3_and(*cnstrs),z3_body)
     return z3.ForAll(z3_vs, z3_body)
 
 def exists(vs,z3_vs,z3_body):
     cnstrs = quant_constraints(vs,z3_vs)
     if len(cnstrs) > 0:
-        z3_body = z3.And(*(cnstrs + [z3_body]))
+        z3_body = z3_and(*(cnstrs + [z3_body]))
     return z3.Exists(z3_vs, z3_body)
 
 def mylambda(vs,z3_vs,z3_body):
@@ -615,7 +625,7 @@ def clause_to_z3(clause):
 
 def conj_to_z3(cl):
     if isinstance(cl,ivy_logic.And):
-        return z3.And(*[conj_to_z3(t) for t in cl.args])
+        return z3_and(*[conj_to_z3(t) for t in cl.args])
     return formula_to_z3_closed(cl)
 
 def type_constraints(syms):
@@ -652,7 +662,7 @@ def clauses_to_z3(clauses):
     z3_clauses = [conj_to_z3(cl) for cl in clauses.fmlas]
     z3_clauses.extend([formula_to_z3(dfn) for dfn in clauses.defs])
     z3_clauses.extend(type_constraints(used_symbols_clauses(clauses)))
-    res = z3.And(z3_clauses)
+    res = z3_and(z3_clauses)
     return res
 
 def formula_to_z3_int(fmla):
@@ -670,7 +680,7 @@ def formula_to_z3_int(fmla):
     if isinstance(fmla,ivy_logic.And):
         if len(args) == 0:
             return z3.BoolVal(True)
-        return z3.And(args)
+        return z3_and(args)
     if isinstance(fmla,ivy_logic.Or):
         if len(args) == 0:
             return z3.BoolVal(False)
@@ -719,7 +729,7 @@ def formula_to_z3(fmla):
     z3_fmla = formula_to_z3_closed(fmla)
     tcs = type_constraints(used_symbols_ast(fmla))
     if len(tcs) > 0:
-        z3_fmla = z3.And(*([z3_fmla] + tcs))
+        z3_fmla = z3_and(*([z3_fmla] + tcs))
     return z3_fmla
                            
 
@@ -776,7 +786,7 @@ def binary_interpolant(clauses2, clauses1):
 def cube_to_z3(cube):
     if len(cube) == 0:
         return z3.BoolVal(True)
-    fmla = z3.And([literal_to_z3(lit) for lit in cube])
+    fmla = z3_and([literal_to_z3(lit) for lit in cube])
     return fmla
 
 def get_id(x):
@@ -1084,7 +1094,7 @@ def not_clauses_to_z3(clauses):
     dcls = Clauses([],sdefs)
     cls = Clauses(clauses.fmlas,defs)
 #    print "not_clauses_to_z3: dcls: {} cls: {}".format(dcls,cls)
-    return z3.And(clauses_to_z3(dcls),z3.Not(clauses_to_z3(clauses)))
+    return z3_and(clauses_to_z3(dcls),z3.Not(clauses_to_z3(clauses)))
 
 def clauses_sat(clauses1):
     """True if clauses1 imply clauses2.
@@ -1653,7 +1663,7 @@ def gebin(bits,n):
         return z3.BoolVal(False)
     hval = 2**(len(bits)-1)
     if hval <= n:
-        return z3.And(bits[0],gebin(bits[1:],n-hval))
+        return z3_and(bits[0],gebin(bits[1:],n-hval))
     return z3.Or(bits[0],gebin(bits[1:],n))
 
 def binenc(m,n):
@@ -1698,8 +1708,8 @@ def encode_equality(*terms):
     n = len(sort.defines())
     bits = ceillog2(n)
     eterms = [encode_term(t,bits,sort) for t in terms]
-    eqs = z3.And([x == y for x,y in zip(*eterms)])
-    alt = z3.And([gebin(e,n-1) for e in eterms])
+    eqs = z3_and([x == y for x,y in zip(*eterms)])
+    alt = z3_and([gebin(e,n-1) for e in eterms])
     res =  z3.Or(eqs,alt)
 #    print "encode_equality terms={},{}".format(terms[0],terms[1])
 #    print "encode_equality res={}".format(res)

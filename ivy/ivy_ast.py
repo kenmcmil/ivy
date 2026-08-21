@@ -992,6 +992,10 @@ class WireConstantDecl(ConstantDecl):
     def name(self):
         return 'wire'
     
+class RegisterConstantDecl(ConstantDecl):
+    def name(self):
+        return 'register'
+
 class ParameterDecl(ConstantDecl):
     def name(self):
         return 'parameter'

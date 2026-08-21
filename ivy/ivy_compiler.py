@@ -1148,6 +1148,10 @@ class IvyDomainSetup(IvyDeclInterp):
             sym = self.individual(v)
         self.domain.wires.add(sym)
         return sym
+    def register(self,v):
+        sym = self.individual(v)
+        self.domain.registers.add(sym)
+        return sym
     def input_wire(self,v):
         # an `import wire`: an ordinary wire that is also a top-level input
         sym = self.wire(v)
@@ -2180,6 +2184,7 @@ def create_conj_actions(mod):
     
     if iso.do_check_interference.get():
         for ison,actions in myexports.items():
+            # print (f'isolate {ison} exports actions {actions}')
             for action in actions:
                 action_isos[action].add(ison)
         for ison,isol in mod.isolates.items():

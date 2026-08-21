@@ -37,7 +37,7 @@ def lookup_action(ast,mod,name):
         raise iu.IvyError(ast,"action {} undefined".format(name))
     return mod.actions[name]
 
-def add_mixins(mod,actname,action2,assert_to_assume=lambda m:[],use_mixin=lambda:True,mod_mixin=lambda name,m:m):
+def add_mixins(mod,actname,action2,assert_to_assume=lambda m:[],use_mixin=lambda:True,mod_mixin=lambda name,m:m, sum_unused=False, mods=None):
     # TODO: mixins need to be in a fixed order
     res = action2
     if create_imports.get():
@@ -53,9 +53,14 @@ def add_mixins(mod,actname,action2,assert_to_assume=lambda m:[],use_mixin=lambda
                 action1 = action1.assert_to_assume(ata)
             action1 = mod_mixin(mixin,action1)
             res = ia.apply_mixin(mixin,action1,res)
+        else:
+            action1 = summarize_action(mixin_name,action1,mods)
+            res = ia.apply_mixin(mixin,action1,res)
+            
     return res
 
-def summarize_action(action):
+def summarize_action(actname,action,mods):
+    # print (f'summarizing: {actname}')
     res = ia.Sequence()
     res.lineno = action.lineno
     res.formal_params = action.formal_params
@@ -67,6 +72,11 @@ def summarize_action(action):
         for x in res.formal_returns:
             if x in res.formal_params:
                 res.args.append(ia.HavocAction(x))
+        # Also, have to havoc any modfied registers
+        # print (f'modset: {mods.modset(actname)}')
+        for x in mods.modset(actname):
+            res.args.append(ia.HavocAction(x))
+            # print (f'havoced register {x}')
     return res
 
 # Delegation of assertions
@@ -577,8 +587,9 @@ def find_references(mod,syms,new_actions):
     
 
 def check_interference(mod,new_actions,summarized_actions,impl_mixins,check_term,interf_syms,
-                       after_inits,all_after_inits):
+                       after_inits,all_after_inits,exported):
     # print(f'interf_syms2: {",".join(str(x) for x in interf_syms)}')
+    # print (f'summarized_actions: {summarized_actions}')
     calls = dict()
     mods = dict()
     mixins = dict()
@@ -630,13 +641,15 @@ def check_interference(mod,new_actions,summarized_actions,impl_mixins,check_term
 
     for e in mod.exports:
         called_name = canon_act(e.exported())
+        is_iso_export = 'ext:'+called_name in exported
+        # print (f'called_name: {called_name}, is_iso_export: {is_iso_export}')
         all_calls = ([called_name] + [m.mixer() for m in mod.mixins[called_name]]
                                    + [m.mixer() for m in impl_mixins[called_name]])
         for called in all_calls:
             if called in summarized_actions:
-                cmods = set(mods[called])
+                cmods = set(x for x in mods[called] if not is_iso_export or not x in mod.registers)
                 if called in all_after_inits:
-                    cmods = set(sym for sym in cmods if sym in after_init_refs)
+                    cmods = set(sym for sym in cmods if sym in after_init_refs and sym not in mod.registers)
                 if cmods:
                     things = ','.join(sorted(map(str,cmods)))
                     refs = ''.join('\n' + str(ln) + 'referenced here' for ln in find_references(mod,cmods,new_actions))
@@ -939,8 +952,8 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     def prefix_call_ext(name):
         return 'ext:'+name if startswith_some(name,verified,mod) else name
     mod_mixin = lambda mixin,m: m if startswith_some(mixin.mixer(),verified,mod) else m.prefix_calls(prefix_call_ext)
-    def ext_mod_mixin(ea):
-        return lambda mixin,m: m if startswith_some(mixin.mixer(),verified,mod) and not ea(mixin) else m.prefix_calls(prefix_call_ext)
+    ext_mod_mixin = (lambda ea:
+        lambda mixin,m: m if startswith_some(mixin.mixer(),verified,mod) and not ea(mixin) else m.prefix_calls(prefix_call_ext))
     all_mixins = lambda m: True
     no_mixins = lambda m: False
     after_mixins = lambda m: isinstance(m,ivy_ast.MixinAfterDef)
@@ -978,7 +991,12 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
                                   if after_mixins(m)
                                   else []))
 
+    # Hack: if we have registers, we need to include summaries of all mixins, since
+    # registers may be havoced. 
+    sum_unused = True if mod.registers else False
+
     summarized_actions = set()
+    modsets = ia.ModSets(mod)
     for actname,action in mod.actions.items():
         ver = vstartswith_eq_some(actname,verified,mod)
         pre = startswith_eq_some(actname,present,mod)
@@ -997,11 +1015,11 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
                 int_action = action
             # internal version of the action has mixins checked
             ea = no_mixins if ver else int_assumes
-            new_actions[actname] = add_mixins(mod,actname,int_action,ea,use_mixin,lambda mixin,m:m)
+            new_actions[actname] = add_mixins(mod,actname,int_action,ea,use_mixin,lambda mixin,m:m,sum_unused,modsets)
             # external version of the action assumes mixins are ok, unless they
             # are delegated to a currently verified object
             ea = ext_assumes if ver else ext_assumes_no_ver
-            new_action = add_mixins(mod,actname,ext_action,ea,use_mixin,ext_mod_mixin(ea))
+            new_action = add_mixins(mod,actname,ext_action,ea,use_mixin,ext_mod_mixin(ea),sum_unused,modsets)
             new_actions['ext:'+actname] = new_action
             # TODO: external version is public if action public *or* called from opaque
             # public_actions.add('ext:'+actname)
@@ -1013,9 +1031,9 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
             # TODO: here must check that summarized action does not
             # have a call dependency on the isolated module
             summarized_actions.add(actname)
-            action = summarize_action(action)
-            new_actions[actname] = add_mixins(mod,actname,action,int_sum_assumes,use_mixin,ext_mod_mixin(after_mixins))
-            new_actions['ext:'+actname] = add_mixins(mod,actname,action,ext_assumes_no_ver,use_mixin,ext_mod_mixin(all_mixins))
+            action = summarize_action(actname,action,modsets)
+            new_actions[actname] = add_mixins(mod,actname,action,int_sum_assumes,use_mixin,ext_mod_mixin(after_mixins),sum_unused,modsets)
+            new_actions['ext:'+actname] = add_mixins(mod,actname,action,ext_assumes_no_ver,use_mixin,ext_mod_mixin(all_mixins),sum_unused,modsets)
 
         for mixin in mod.mixins[actname]:
             if use_mixin(mixin.mixer()):
@@ -1299,7 +1317,8 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     non_wires = [x for x in mod.definitions if x.formula.defines() not in mod.wires]
     wires = [x for x in mod.definitions if x.formula.defines() in mod.wires]
     # print (f'wires: {",".join(str(x) for x in wires)}')
-    for x in [mod.labeled_axioms,mod.labeled_props,mod.labeled_inits,mod.labeled_conjs,non_wires]:
+    for x in [mod.labeled_axioms,mod.labeled_props,mod.labeled_inits,mod.labeled_conjs,non_wires,
+              mod.assumed_invariants]:
         asts.extend(y.formula for y in x if not isinstance(y.formula,ivy_ast.SchemaBody))
     wire_asts.extend(y.formula for y in non_wires) 
     asts.extend(action for action in list(mod.actions.values()))
@@ -1318,7 +1337,17 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
 
     all_syms = set(lu.used_symbols_asts(asts + wire_asts))
     # interf_syms = set(lu.used_symbols_asts(asts))
-    interf_syms = all_syms
+    interf_syms = all_syms.copy()
+
+    
+    all_invar_deps = set()
+    for conjname in [x.name for x in mod.labeled_conjs]:
+        if conjname in mod.invardeps:
+            for depname in mod.invardeps[conjname]:
+                all_invar_deps.add(depname)
+    for aconj in mod.assumed_invariants:
+        if aconj.name in all_invar_deps:
+            interf_syms.update(lu.used_symbols_ast(aconj.formula))
 
     # print(f'interf_syms: {",".join(str(x) for x in interf_syms)}')
     
@@ -1350,7 +1379,9 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
 
     #check non-interference (temporarily put back in old_actions)
 
+    # print (f'exported: {exported}')
     if do_check_interference.get():
+        # interf_syms = set(x for x in ivy_logic.all_symbols() if x in interf_syms and x not in mod.registers)
         interf_syms = set(x for x in ivy_logic.all_symbols() if x in interf_syms)
         # print(f'interf_syms3: {",".join(str(x) for x in interf_syms)}')
         nonwire_defs = [ldf for ldf in orig_defs if ldf.formula.defines() not in mod.wires]
@@ -1359,7 +1390,7 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
         mod.actions = old_actions
         check_term = enforce_axioms.get() and iu.version_le("1.7",iu.get_string_version())
         check_interference(mod,new_actions,summarized_actions,impl_mixins,check_term,interf_syms,
-                           after_inits,all_after_inits)
+                           after_inits,all_after_inits,exported)
         mod.actions = save_new_actions
 
     # filter the sorts
@@ -1567,7 +1598,7 @@ def bracket_action_int(mod,actname,before,after):
 
 def bracket_action(mod,actname,before,after):
     bracket_action_int(mod,actname,before,after)
-    bracket_action_int(mod,'ext:'+actname,before,after)
+    # bracket_action_int(mod,'ext:'+actname,before,after)
 
 def apply_present_conjectures(isol,mod):
     if not assume_invariants.get():
@@ -2019,12 +2050,12 @@ def iter_isolate(mod,iso,fun,verified=True,present=True):
 
 # Get the set of actions present in an isolate. 
 
-def get_isolate_actions(mod,iso):
+def get_isolate_actions(mod,iso,verified=True,present=True):
     actions = set()
     def fun(name):
         if name in mod.actions:
             actions.add(name)
-    iter_isolate(mod,iso,fun)
+    iter_isolate(mod,iso,fun,verified,present)
     return actions
 
 def get_isolate_lfs(mod,iso,lfs,verified=True,present=True):
@@ -2058,12 +2089,75 @@ def get_isolate_post_conjs(mod,iso):
         post_conjs.append(ver)
     return get_isolate_lfs(mod,iso,post_conjs,verified=False)
 
+def mixer_to_mixee(mod):
+    res = defaultdict(list)
+    for ml in mod.mixins.values():
+        for m in ml:
+            res[m.mixer()].append(m.mixee())
+    return res
+
+# This checks whether external calls to an action can be
+# safely ignored in checking an isolate. Calls can be ignored
+# if:
+#
+# 1) The action has no assertions to be verified by the isolate
+# 2) All called actions can be ignored
+# 3) All mixins can be ignored
+#
+# Parameters:
+#
+# - mod : the full ivy program as a module (not an isolate)
+# - actname : name of the action to be checked for side effects
+# - present : actions present in the isolate
+# - verified : actions verified in the isolate
+# - memo : memo table
+#
+# Note: this function differs from has_side_effect_rec above, because
+# it operates on the full program, not on an isolate. The isolate information
+# is given by the paramteres present and verified.
+
+def has_side_effect_full_rec(mod,actname,present,verified,memo):
+    if actname in memo or actname not in present:
+        return False
+    memo.add(actname)
+    action = mod.actions[actname]
+    for sub in action.iter_subactions():
+        if isinstance(sub,ia.NativeAction):
+            if sub.impure:
+                return True
+        for sym in sub.modifies():
+            if sym.name in mod.sig.symbols:
+                return True
+        if actname in verified:
+            if isinstance(sub,ia.AssertAction):
+                return True
+            if isinstance(sub,ia.Ranking):
+                return True
+        if isinstance(sub,ia.CallAction):
+            if has_side_effect_full_rec(mod,sub.args[0].rep,present,verified,memo):
+                return True
+    for m in mod.mixins.get(actname,[]):
+        # print (f'checking mod.mixer(): {} of {}')
+        if has_side_effect_full_rec(mod,m.mixer(),present,verified,memo):
+            return True
+    return False
 
 def get_isolate_exports(mod,cg,iso):
-    actions = get_isolate_actions(mod,iso)
+    present = get_isolate_actions(mod,iso)
+    verified = get_isolate_actions(mod,iso,present=False)
+    mixee_map = mixer_to_mixee(mod)
+    for action in list(present):
+        for mixee in mixee_map[action]:
+            # print (f'{mixee} is a mixee of {action}')
+            present.add(mixee)
+            if action in verified:
+                verified.add(mixee)
     mod_exports = set(exp.exported() for exp in mod.exports)
-    exports = set(act for act in actions if act in mod_exports
-                  or any((x not in actions) for x in cg[act]))
+    memo = set()
+    exports = set(act for act in present if
+                  (act in mod_exports
+                  or any((x not in present) for x in cg[act]))
+                  and has_side_effect_full_rec(mod,act,present,verified,memo))
     return exports
 
 # This creates a map that takes each name in the hierarchy to

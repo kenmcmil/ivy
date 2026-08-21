@@ -23,6 +23,7 @@ def print_module(mod):
                     ('property',mod.labeled_props),
                     ('init',mod.labeled_inits),
                     ('invariant',mod.labeled_conjs),
+                    ('assume invariant',mod.assumed_invariants),
                     ('definition',mod.definitions),
                     ('definition',mod.native_definitions),]:
         

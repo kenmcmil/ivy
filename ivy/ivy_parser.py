@@ -1082,6 +1082,12 @@ def p_wire_defnlhs_colon_atype(p):
     p[0] = WireConstantDecl(p[1])
     p[0].lineno = p[1].lineno
 
+def p_register_defnlhs_colon_atype(p):
+    'register : typeddefn'
+#    p[1].sort = p[3]
+    p[0] = RegisterConstantDecl(p[1])
+    p[0].lineno = p[1].lineno
+
 def p_wire_defn(p):
     'wire : typeddefn EQ defnrhs'
     df = Definition(app_to_atom(p[1]),p[3])
@@ -1097,11 +1103,26 @@ def p_wires_wires_comma_wire(p):
     p[0] = p[1]
     p[0].append(p[3])
 
+def p_registers_register(p):
+    'registers : register'
+    p[0] = [p[1]]
+
+def p_registers_registers_comma_register(p):
+    'registers : registers COMMA register'
+    p[0] = p[1]
+    p[0].append(p[3])
+
 if iu.get_numeric_version() <= [1,6]:
     pass
 else:
     def p_top_wire_tapp_colon_atype(p):
         'top : top WIRE wires'
+        p[0] = p[1]
+        for d in p[3]:
+            p[0].declare(d)
+
+    def p_top_register_tapp_colon_atype(p):
+        'top : top REGISTER registers'
         p[0] = p[1]
         for d in p[3]:
             p[0].declare(d)
