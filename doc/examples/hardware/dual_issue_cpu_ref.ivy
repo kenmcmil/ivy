@@ -695,10 +695,18 @@ object cpu = {
             with rf_track
         invariant [eb_trk]  (e_valid  & ~ex_stall & ~trace.st(trace.now).error) -> e_b  = trace.st(ecommit).b_val
             with rf_track
-        invariant [ea1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_a1 = trace.st(e1_tag).a_val
-            with rf_track
-        invariant [eb1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1 = trace.st(e1_tag).b_val
-            with rf_track
+        # lane 0's ALU result tracks the trace (from ea_trk/eb_trk + res
+        # consistency); needed so the intra-bundle bypass forwards the right value.
+        invariant [eres_trk] (e_valid & ~ex_stall & (e_opcode = 1 | e_opcode = 2 | e_opcode = 3) & ~trace.st(trace.now).error) -> e_res = trace.st(ecommit).res
+            with ea_trk, eb_trk
+        # lane 1's operands taken THROUGH the bypass mux (e_a1_fwd/e_b1_fwd): the
+        # forwarded case = e_res = st(ecommit).res = st(e1_tag).rf(source); the
+        # register-file case = st(commit).rf(source) = st(e1_tag).rf(source). While
+        # the bypass is dormant (e_indep) the mux picks the rf read, as before.
+        invariant [ea1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_a1_fwd = trace.st(e1_tag).a_val
+            with rf_track, eres_trk
+        invariant [eb1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1_fwd = trace.st(e1_tag).b_val
+            with rf_track, eres_trk
 
         # Intra-bundle independence: lane 0's destination differs from lane 1's
         # source and destination registers (established by f_indep at issue). This
