@@ -104,6 +104,13 @@ module isa_model(init_mem,init_imem) = {
     var b_val : word
     var mem_addr : addr          # address for LD/ST: low 8 bits of rf[ra]
 
+    # ---- destination register write value (combinational) ----
+    # The value a register-writing instruction (ADD/SUB/LI/LD) writes to rf[rd].
+    # Making it an explicit ISA intermediate lets the pipeline's result-tracking
+    # invariants read `st(tag).res` instead of re-deriving a per-opcode case split.
+
+    var res : word
+
     # ---- branch decision (BEQZ) ----
 
     var take_branch : bool
@@ -136,9 +143,16 @@ module isa_model(init_mem,init_imem) = {
         b_val := rf(rb);
         mem_addr  := a_val<<7:0>>;    # address for LD/ST: low 8 bits of rf[ra]
 
+        # ---- destination register write value ----
+
+        res := (a_val + b_val if opcode = 1 else            # ADD
+               (a_val - b_val if opcode = 2 else            # SUB
+               ((0:addr) :: target if opcode = 3 else       # LI
+               (mem(mem_addr) if opcode = 4 else 0))));     # LD
+
         # ---- branch decision (BEQZ) ----
 
-        take_branch := (opcode = 6) & (a_val = 0); 
+        take_branch := (opcode = 6) & (a_val = 0);
     }
 
     # Update the architectural state
@@ -206,6 +220,7 @@ isolate trace = {
             a_val : word,
             b_val : word,
             mem_addr  : addr,          # address for LD/ST: low 8 bits of rf[ra]
+            res : word,                # destination register write value
             take_branch : bool
         }
             
@@ -231,6 +246,7 @@ isolate trace = {
             res.a_val := arch.a_val;
             res.b_val := arch.b_val;
             res.mem_addr  := arch.mem_addr ;
+            res.res := arch.res;
             res.take_branch := arch.take_branch;
         }
 
@@ -274,6 +290,7 @@ isolate trace = {
         invariant st(now).a_val = arch.a_val
         invariant st(now).b_val = arch.b_val
         invariant st(now).mem_addr  = arch.mem_addr
+        invariant st(now).res = arch.res
         invariant st(now).take_branch = arch.take_branch
 
         # The invariants above only pin the *most recent* recorded state,
@@ -297,6 +314,10 @@ isolate trace = {
         invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
         invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
         invariant T <= now -> st(T).mem_addr = (st(T).a_val)<<7:0>>
+        invariant T <= now -> st(T).res = (st(T).a_val + st(T).b_val if st(T).opcode = 1 else
+                                          (st(T).a_val - st(T).b_val if st(T).opcode = 2 else
+                                          ((0:addr) :: st(T).target if st(T).opcode = 3 else
+                                          (st(T).mem(st(T).mem_addr) if st(T).opcode = 4 else 0))))
         invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
 
         # (b) Consecutive recorded states are related by one step of the ISA.
@@ -793,9 +814,12 @@ isolate cpu = {
                 invariant ex_stage.m_valid -> ex_stage.m_ir = trace.st(commit).fetched
                 invariant ex_stage.m_valid -> ex_stage.m_addr = trace.st(commit).mem_addr
                 invariant ex_stage.m_valid -> ex_stage.m_store = trace.st(commit).b_val
-                invariant (ex_stage.m_valid & trace.st(commit).opcode = 1) -> ex_stage.m_res = trace.st(commit).a_val + trace.st(commit).b_val
-                invariant (ex_stage.m_valid & trace.st(commit).opcode = 2) -> ex_stage.m_res = trace.st(commit).a_val - trace.st(commit).b_val
-                invariant (ex_stage.m_valid & trace.st(commit).opcode = 3) -> ex_stage.m_res = (0:addr) :: trace.st(commit).target
+                # m_res holds the ALU / LI result (opcodes ADD, SUB, LI); for
+                # those instructions that is exactly the destination write value
+                # res. (A LD's result is produced in MEM as w_val, not here.)
+                invariant (ex_stage.m_valid & (trace.st(commit).opcode = 1 | trace.st(commit).opcode = 2
+                                               | trace.st(commit).opcode = 3))
+                              -> ex_stage.m_res = trace.st(commit).res
 
 
             }  with cpu, trace, word, addr, reg, opc, id_ex, ex_stage, ex_mem
@@ -908,10 +932,11 @@ isolate cpu = {
 
                 # ---- the MEM/WB pipe register tracks the trace ----
                 invariant mem_stage.w_valid -> mem_stage.w_ir = trace.st(commit).fetched
-                invariant (mem_stage.w_valid & trace.st(commit).opcode = 1) -> mem_stage.w_val = trace.st(commit).a_val + trace.st(commit).b_val
-                invariant (mem_stage.w_valid & trace.st(commit).opcode = 2) -> mem_stage.w_val = trace.st(commit).a_val - trace.st(commit).b_val
-                invariant (mem_stage.w_valid & trace.st(commit).opcode = 3) -> mem_stage.w_val = (0:addr) :: trace.st(commit).target
-                invariant (mem_stage.w_valid & trace.st(commit).opcode = 4) -> mem_stage.w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
+                # w_val is the destination write value for every register-writing
+                # opcode (ADD, SUB, LI, LD), which is exactly res.
+                invariant (mem_stage.w_valid & (trace.st(commit).opcode = 1 | trace.st(commit).opcode = 2
+                                                | trace.st(commit).opcode = 3 | trace.st(commit).opcode = 4))
+                              -> mem_stage.w_val = trace.st(commit).res
 
             } with cpu, trace, word, addr, reg, opc, ex_mem, mem_stage, mem_wb
 
