@@ -595,13 +595,18 @@ isolate cpu = {
             }
 
             specification {
+                # ---- tag chain: the ID/EX register sits between the if_id and
+                #      id_ex boundaries, so this stage relates their tags ----
+                invariant e_valid -> id_ex.commit.succ(if_id.commit)
+                invariant ~e_valid -> if_id.commit = id_ex.commit
+
                 definition if_id.pc_writes_done = e_valid & trace.st(id_ex.commit).take_branch & ~ex_stall
 
                 invariant [pc_res] if_id.pc_reserved_onward <-> e_valid & trace.st(id_ex.commit).take_branch
 
             }
         } with cpu, trace, word, addr, reg, opc, if_id, id_ex
-    } 
+    }
 
     # Specification of the ID/EX stage interface
 
@@ -633,15 +638,14 @@ isolate cpu = {
                 # Guarantees of the ID stage at ID/EX boundary
 
                 isolate id_props = {
-                    # ---- tag chain at the EX boundary ----
-                    invariant id_stage.e_valid -> commit.succ(if_id.commit)
-                    invariant ~id_stage.e_valid -> if_id.commit = commit
+                    # (The tag-chain invariants relating if_id.commit and this
+                    # boundary's commit live in id_stage, which sits between them.)
                     invariant [commit_bound] commit <= trace.now
-                    
+
                     # ---- the ID/EX pipe register tracks the trace ----
                     invariant [e_ir_track] id_stage.e_valid -> id_stage.e_ir = trace.st(commit).fetched
 
-                } with cpu, trace, word, addr, reg, opc, if_id, id_ex, id_stage 
+                } with cpu, trace, word, addr, reg, opc, if_id, id_ex, id_stage
 
 
                 # Guarantees of the EX stage at ID/EX boundary
@@ -753,6 +757,13 @@ isolate cpu = {
                     m_store := e_b
                 }
             }
+
+            specification {
+                # ---- tag chain: the EX/MEM register sits between the id_ex and
+                #      ex_mem boundaries, so this stage relates their tags ----
+                invariant m_valid -> ex_mem.commit.succ(id_ex.commit)
+                invariant ~m_valid -> id_ex.commit = ex_mem.commit
+            }
         }  with cpu, trace, word, addr, reg, opc, id_ex, ex_mem
     }
         
@@ -786,9 +797,8 @@ isolate cpu = {
             # Guarantees of the EX stage the EX/MEM boundary
 
             isolate ex_props = {
-                # ---- tag chain at the MEM boundary ----
-                invariant ex_stage.m_valid -> commit.succ(id_ex.commit)
-                invariant ~ex_stage.m_valid -> id_ex.commit = commit
+                # (The tag-chain invariants relating id_ex.commit and this
+                # boundary's commit live in ex_stage, which sits between them.)
                 invariant [commit_bound] commit <= trace.now
 
                 # ---- the EX/MEM pipe register tracks the trace ----
@@ -874,6 +884,11 @@ isolate cpu = {
             }
             
             specification {
+                # ---- tag chain: the MEM/WB register sits between the ex_mem and
+                #      mem_wb boundaries, so this stage relates their tags ----
+                invariant w_valid -> mem_wb.commit.succ(ex_mem.commit)
+                invariant ~w_valid -> ex_mem.commit = mem_wb.commit
+
                 # ---- the data memory tracks the trace (at the MEM boundary) ----
                 invariant mem(A) = trace.st(ex_mem.commit).mem(A) with ex_mem.ex_props.commit_bound
             }
@@ -906,9 +921,8 @@ isolate cpu = {
             # Guarantees of the MEM stage at the MEM/WB boundary
             
             isolate mem_props = {
-                # ---- tag chain at the WB boundary ----
-                invariant mem_stage.w_valid -> commit.succ(ex_mem.commit)
-                invariant ~mem_stage.w_valid -> ex_mem.commit = commit
+                # (The tag-chain invariants relating ex_mem.commit and this
+                # boundary's commit live in mem_stage, which sits between them.)
                 invariant [commit_bound] commit <= trace.now
 
                 # ---- the MEM/WB pipe register tracks the trace ----
