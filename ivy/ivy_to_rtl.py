@@ -238,6 +238,29 @@ class Translator(object):
         self.top = self.top_object()
         self.compute_has_state()
 
+        # Scalar registers (state variables) indexed by name, and the set of
+        # those read from *outside* their owning object. A `register` may be
+        # read across an isolate boundary (a pipe register consumed by the next
+        # stage, or decoded in the parent); for RTL such a register must be an
+        # output port of its owner, wired up by the parent -- exactly as a
+        # cross-isolate combinational `wire` read is. (A plain `var` cannot be
+        # read across isolates without an interference error, so any cross-object
+        # state reference in a design that verifies is a register.)
+        self.state_by_name = {}
+        for _obj, _vs in self.state_vars.items():
+            for _v in _vs:
+                if not is_array_sort(_v.sort):
+                    self.state_by_name[_v.name] = _v
+        self.exported_reg_names = set()
+        for _r in self.objects:
+            for _name in self.references(_r):
+                if _name in self.state_by_name:
+                    _owner = self.owning_object(_name)
+                    # owner must export _name iff the reader _r lies outside the
+                    # owner's subtree (a sibling, the parent, etc.)
+                    if _r != _owner and not self.is_descendant(_r, _owner):
+                        self.exported_reg_names.add(_name)
+
     # -- specification filtering --------------------------------------------
 
     def has_attr(self, name, attr):
@@ -454,17 +477,32 @@ class Translator(object):
         return inputs, outputs, internals
 
     def foreign_inputs(self, obj):
-        """Wires referenced by obj's logic but owned by an object outside obj
-        (e.g. a sibling's output). Per the doc's implicit-I/O rule, such a wire
+        """Wires or registers referenced by obj's logic but owned by an object
+        outside obj (a sibling's output wire, or a sibling/upstream pipe register
+        read across an interface). Per the doc's implicit-I/O rule, such a symbol
         is an input of obj, wired up by the parent."""
         res, seen = [], set()
         for name in self.references(obj):
-            if name in self.wire_by_name and name not in seen:
-                owner = self.owning_object(name)
-                if owner != obj and not self.is_descendant(owner, obj):
-                    seen.add(name)
-                    res.append(self.wire_by_name[name])
+            if name in seen:
+                continue
+            sym = self.wire_by_name.get(name)
+            if sym is None:
+                sym = self.state_by_name.get(name)
+            if sym is None:
+                continue
+            owner = self.owning_object(name)
+            if owner != obj and not self.is_descendant(owner, obj):
+                seen.add(name)
+                res.append(sym)
         return sorted(res, key=lambda s: s.name)
+
+    def exported_registers(self, obj):
+        """Scalar registers owned by obj that are read from outside obj and so
+        must be emitted as output ports (each driven by its register's Q)."""
+        return sorted((v for v in self.state_vars.get(obj, [])
+                       if not is_array_sort(v.sort)
+                       and v.name in self.exported_reg_names),
+                      key=lambda s: s.name)
 
     # -- top-level driver ---------------------------------------------------
 
@@ -552,6 +590,13 @@ class Translator(object):
             net = pub_id(local_name(obj, w.name))
             m.add_wire(net, sort_width(w.sort))
             conns.append((pub_id(local_name(c, w.name)), net))
+        # exported registers of the child are output ports too: create the parent
+        # net (shared, by name, with any reading sibling's foreign input) and
+        # connect the child's register-output port to it
+        for v in self.exported_registers(c):
+            net = pub_id(local_name(obj, v.name))
+            m.add_wire(net, sort_width(v.sort))
+            conns.append((pub_id(local_name(c, v.name)), net))
         if c in self.has_state_set:
             for clk in self.clocks:
                 conns.append((pub_id(clk), pub_id(clk)))
@@ -560,7 +605,10 @@ class Translator(object):
 
     def emit_dff(self, m, obj, v):
         width = sort_width(v.sort)
-        qnet = m.add_wire(pub_id(local_name(obj, v.name)), width)
+        # A register read from outside its owner is an output port (its Q); the
+        # parent wires it to the reading isolate's foreign-input port.
+        direction = 'output' if v.name in self.exported_reg_names else None
+        qnet = m.add_wire(pub_id(local_name(obj, v.name)), width, direction)
         newsym = tr.new(v)
 
         # the action (clock) update value
