@@ -14,6 +14,10 @@ tests = [
     # The cache CPU: I/D caches, FLUSH, and a multi-cycle memory (see
     # add_cache_to_cpu.md). Larger, so a longer timeout.
     {'type': 'check', 'name': '5stage_cache_cpu_ref', 'expect': 'OK', 'timeout': 600},
+    # The stage-DECOMPOSITION 5-stage pipeline: each stage and each inter-stage
+    # interface is its own isolate, with `register` pipe outputs and ghost
+    # interface isolates (see doc/projects/decomposition.md).
+    {'type': 'check', 'name': '5stage_cpu_dec', 'expect': 'OK', 'timeout': 300},
 
     # A wire's post-state value must appear in a counterexample trace: the
     # invariant w ~= 5 fails when x reaches 4 (w = x+1 = 5), and the trace must
@@ -55,6 +59,18 @@ tests = [
     {'type': 'to_rtl', 'name': '5stage_cache_cpu_ref',
      'validate': _yosys_wf + ' && yosys -q cpu_equiv.ys',
      'timeout': 600, 'group': 'rtl'},
+
+    # The stage-decomposition CPU exercises cross-isolate `register` reads
+    # (pipe registers consumed by the next stage / decoded in the parent) and a
+    # separate imem/mem, so validation goes beyond a yosys read: it simulates
+    # prog.hex end to end via sim_cpu_dec.sh (inject the program into \imem,
+    # flatten the per-stage modules, run yosys sim) and checks the pc trace shows
+    # the pipeline filling (0..4) and the BEQZ redirecting back to 2.
+    {'type': 'to_rtl', 'name': '5stage_cpu_dec',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu_dec.sh {name} prog.hex 20'
+                 + ' | grep -q "0 -> 1 -> 2 -> 3 -> 4 -> 2 -> 3"',
+     'group': 'rtl'},
 
     # memtest: mem is initialized from a *defined* function init_mem(A)=5, so
     # the translation must emit a $meminit of 5 (DATA = repeated 0x05).
