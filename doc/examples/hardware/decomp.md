@@ -110,29 +110,31 @@ model determines how many instructions the ISA model executes in each clock cycl
 Now we will use a similar idea to drive the non-deterministic execution sequence.
 
 Our trace model has two changes from the previous examples. First, the
-instruction to execute is not fetched from a memory but is read from
-the primary input `inst_in`, a top-level `import wire` shared between
-the trace model and the pipeline (so both see the same instruction,
-exactly as they would a shared instruction memory). Second, the trace
-model delays computing the intermediate values of the instruction until
-the instruction is known, that is, until `step` is actually called.
-Thus, if the current tag is `t`, then calling `trace.step` first
-computes the intermediate values in `trace.st(t)`, then stores the next
-architectural state in `trace.st(t.next)`.
+instruction to execute is not fetched from a memory but comes from the
+primary input `inst_in`. To keep the ISA model independent of any
+particular hardware, the ISA does not refer to this input directly:
+its `decode` action takes the instruction word as an *argument*, and
+the implementation reads `inst_in` and threads it through `trace.step`
+to `arch.decode`. Second, the trace model delays computing the
+intermediate values of the instruction until the instruction is known,
+that is, until `step` is actually called. Thus, if the current tag is
+`t`, then calling `trace.step` first computes the intermediate values
+in `trace.st(t)`, then stores the next architectural state in
+`trace.st(t.next)`.
 
 Here is the relevant part of the trace model. The `decode` action
-computes the intermediate values of the current instruction (its
-decoded fields, the operand read `a_val` and the result `res`) against
-the current register file, while `writeback` performs the register
-write. Keeping them separate lets `step` snapshot the intermediates
-*before* the write is applied:
+computes the intermediate values of the given instruction (its decoded
+fields, the operand read `a_val` and the result `res`) against the
+current register file, while `writeback` performs the register write.
+Keeping them separate lets `step` snapshot the intermediates *before*
+the write is applied:
 
 ```
-action decode = {
-    ir  := inst_in;
-    op  := inst_in<<7:6>>;
-    dst := inst_in<<5:4>>;
-    s1  := inst_in<<3:2>>;
+action decode(inst : word) = {
+    ir  := inst;
+    op  := inst<<7:6>>;
+    dst := inst<<5:4>>;
+    s1  := inst<<3:2>>;
     a_val := rf(s1);
     res   := (a_val + 1 if op = 1 else 0);
 }
@@ -142,14 +144,14 @@ action writeback = {
 }
 ```
 
-The `step` action reads the current instruction from `inst_in` (via
-`decode`), records it together with its freshly computed intermediates
-as `st(now)`, applies its write, advances `now`, and snapshots the new
-current register file:
+The `step` action takes the instruction word (supplied by the
+implementation from `inst_in`), decodes it, records it together with
+its freshly computed intermediates as `st(now)`, applies its write,
+advances `now`, and snapshots the new current register file:
 
 ```
-action step = {
-    arch.decode;          # compute intermediates for the current instruction
+action step(inst : word) = {
+    arch.decode(inst);    # compute intermediates for the given instruction
     st(now) := current;   # record the instruction as st(now)
     arch.writeback;       # apply its register write
     now := now.next;
@@ -158,10 +160,11 @@ action step = {
 ```
 
 Because `decode` is called inside `step`, the intermediate values are
-computed only when the instruction on `inst_in` is actually issued, and
-not before. This is what lets us drive the trace model according to the
-instructions received at the input of our design, resolving the
-nondeterministic choice lazily.
+computed only when the instruction is actually issued, and not before.
+The implementation supplies the instruction by calling
+`trace.step(inst_in)` in the `cpu` isolate. This is what lets us drive
+the trace model according to the instructions received at the input of
+our design, resolving the nondeterministic choice lazily.
 
 One consequence of this lazy scheme deserves emphasis, because it
 shapes the interface invariants below. The state `st(now)` is only a
@@ -377,7 +380,7 @@ isolate cpu = {
 
         after posedge {
             if ~x.stall_in {
-                trace.step
+                trace.step(inst_in)
             }
         }
     }

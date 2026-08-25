@@ -41,17 +41,21 @@ interpret opc -> bv[2]
 # The clock: one exported action driven by the environment.
 export action posedge
 
-# The instruction to issue this cycle is a primary input.  It is a top-level
-# `import wire` so that both the reference model (trace) and the implementation
-# (cpu) read the same value, exactly as they would share an instruction memory.
+# The instruction to issue this cycle is a primary input, read by the
+# implementation (cpu).  The cpu passes it to `trace.step`, which forwards it to
+# the ISA model's `decode`; the ISA never refers to this hardware input itself.
 import wire inst_in : word
 
 # =====================================================================
 # The ISA reference model.
 #
 # `decode` computes the intermediate values of one instruction against the
-# current register file; `apply` performs its register write.  These are kept
-# separate so the trace (below) can snapshot the intermediates before the write.
+# current register file; `writeback` performs its register write.  These are
+# kept separate so the trace (below) can snapshot the intermediates before the
+# write.  `decode` takes the instruction word as an argument rather than reading
+# a hardware input directly: the ISA is independent of any particular hardware
+# implementation, and the implementation supplies the instruction (see how
+# `inst_in` is threaded through `trace.step` to `arch.decode` below).
 # =====================================================================
 
 module isa_model = {
@@ -70,11 +74,11 @@ module isa_model = {
         rf(R) := 0
     }
 
-    action decode = {
-        ir  := inst_in;
-        op  := inst_in<<7:6>>;
-        dst := inst_in<<5:4>>;
-        s1  := inst_in<<3:2>>;
+    action decode(inst : word) = {
+        ir  := inst;
+        op  := inst<<7:6>>;
+        dst := inst<<5:4>>;
+        s1  := inst<<3:2>>;
         a_val := rf(s1);
         res   := (a_val + 1 if op = 1 else 0);
     }
@@ -127,9 +131,11 @@ isolate trace = {
         }
 
         # Issue instruction `inst`: record it as st(now), apply it, advance, and
-        # snapshot the new current rf as st(new now).
-        action step = {
-            arch.decode;
+        # snapshot the new current rf as st(new now).  The instruction word is
+        # passed in by the implementation (from `inst_in`) and forwarded to the
+        # ISA model's `decode`.
+        action step(inst : word) = {
+            arch.decode(inst);
             st(now) := current;
             arch.writeback;
             now := now.next;
@@ -180,7 +186,7 @@ isolate cpu = {
         # not stalled.
         after posedge {
             if ~rd_stall {
-                trace.step
+                trace.step(inst_in)
             }
         }
     }
