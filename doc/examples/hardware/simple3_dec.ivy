@@ -1,0 +1,404 @@
+#lang ivy1.8
+
+# A minimal 3-stage pipeline illustrating the SIMPLE read-after-write hazard
+# pattern of the stage-decomposition method (doc/projects/decomposition.md).
+#
+# There is no instruction memory and no program counter: one instruction per
+# cycle arrives on a primary input `inst_in` and is issued in order. The only
+# architectural state is a register file `rf`.
+#
+#   instruction word (8 bits):  [7:6] op   [5:4] dst   [3:2] s1   (bits [1:0] unused)
+#     op = 1  ADD1  rf[dst] := rf[s1] + 1
+#     op = 0  NOP   (does nothing; reads and writes no register)
+#
+# Pipeline stages:
+#   rd  (read)      : read operand rf[s1] and latch it (the RD/ALU register)
+#   alu (execute)   : compute the result rf[s1] + 1  (the ALU/WB register)
+#   wb  (writeback) : write rf[dst]
+#
+# rf is read in `rd` and written in `wb`, so an instruction whose source `s1`
+# is the destination of an instruction still in `alu` or `wb` reads a stale
+# value: a read-after-write hazard.  Following the simple-hazard pattern, the
+# register file lives in the writing stage (`wb`); `rd` sends the read address
+# to `wb` and the value flows back (forwarding); and `rd` STALLS while a matching
+# writer is in flight.
+#
+# Decomposition structure: each stage is an isolate (in `implementation`), and
+# between consecutive stages there is a ghost `interface` isolate (in `private`)
+# carrying the reference tag and the assume/guarantee split.  For a pipeline
+# this small the decomposition is far more machinery than the problem needs; it
+# is here purely to exhibit the pattern in isolation.
+
+include order   # unbounded_sequence, used for the reference tags
+
+type word
+interpret word -> bv[8]
+type reg
+interpret reg -> bv[2]
+type opc
+interpret opc -> bv[2]
+
+# The clock: one exported action driven by the environment.
+export action posedge
+
+# The instruction to issue this cycle is a primary input.  It is a top-level
+# `import wire` so that both the reference model (trace) and the implementation
+# (cpu) read the same value, exactly as they would share an instruction memory.
+import wire inst_in : word
+
+# =====================================================================
+# The ISA reference model.
+#
+# `decode` computes the intermediate values of one instruction against the
+# current register file; `apply` performs its register write.  These are kept
+# separate so the trace (below) can snapshot the intermediates before the write.
+# =====================================================================
+
+module isa_model = {
+
+    var rf(R:reg) : word          # architectural register file
+
+    # intermediate values of the current instruction (combinational)
+    var ir  : word                # the instruction word
+    var op  : opc
+    var dst : reg
+    var s1  : reg
+    var a_val : word              # the source operand rf[s1]
+    var res   : word              # the value written to rf[dst]
+
+    after init {
+        rf(R) := 0
+    }
+
+    action decode = {
+        ir  := inst_in;
+        op  := inst_in<<7:6>>;
+        dst := inst_in<<5:4>>;
+        s1  := inst_in<<3:2>>;
+        a_val := rf(s1);
+        res   := (a_val + 1 if op = 1 else 0);
+    }
+
+    action writeback = {
+        if op = 1 { rf(dst) := res }
+    }
+}
+
+# =====================================================================
+# The trace: the sequence of ISA states produced by the issued instructions.
+# `now` is the number of instructions issued so far; `st(T)` is the recorded
+# state of instruction T (its register file *before* it executes, plus its
+# decoded intermediate values).  `st(now)` always holds the current rf.
+# =====================================================================
+
+isolate trace = {
+
+    specification {
+
+        instance arch : isa_model
+        instance tag  : unbounded_sequence
+
+        type state_t = struct {
+            rf(R:reg) : word,
+            ir  : word,
+            op  : opc,
+            dst : reg,
+            s1  : reg,
+            a_val : word,
+            res   : word
+        }
+
+        var now : tag
+        var st(T:tag) : state_t
+
+        action current returns (r:state_t) = {
+            r.rf(R:reg) := arch.rf(R:reg);
+            r.ir  := arch.ir;
+            r.op  := arch.op;
+            r.dst := arch.dst;
+            r.s1  := arch.s1;
+            r.a_val := arch.a_val;
+            r.res   := arch.res;
+        }
+
+        after init {
+            now := 0;
+            st(now).rf(R:reg) := arch.rf(R:reg);   # st(0).rf = current (initial) rf
+        }
+
+        # Issue instruction `inst`: record it as st(now), apply it, advance, and
+        # snapshot the new current rf as st(new now).
+        action step = {
+            arch.decode;
+            st(now) := current;
+            arch.writeback;
+            now := now.next;
+            st(now) := current;
+        }
+
+        # st(now) always mirrors the current architectural rf.
+        invariant st(now).rf(R:reg) = arch.rf(R:reg)
+
+        # Every issued instruction's intermediates are the correct decode of its
+        # own instruction word against its own register file.
+        invariant T < now -> st(T).op    = (st(T).ir)<<7:6>>
+        invariant T < now -> st(T).dst   = (st(T).ir)<<5:4>>
+        invariant T < now -> st(T).s1    = (st(T).ir)<<3:2>>
+        invariant T < now -> st(T).a_val = st(T).rf(st(T).s1)
+        invariant T < now -> st(T).res   = (st(T).a_val + 1 if st(T).op = 1 else 0)
+
+        # Consecutive recorded states are related by one ISA step.
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).rf(R) = (st(T).res if (st(T).op = 1 & R = st(T).dst)
+                                     else st(T).rf(R))
+
+    }
+} with word, reg, opc
+
+# =====================================================================
+# The pipeline.
+# =====================================================================
+
+isolate cpu = {
+
+    # ---- decode of the issuing instruction (combinational) ----
+    wire in_op  : opc
+    wire in_dst : reg
+    wire a_reg  : reg
+    definition in_op  = inst_in<<7:6>>
+    definition in_dst = inst_in<<5:4>>
+    definition a_reg  = inst_in<<3:2>>
+
+    # ---- control wires (defined below, after the stage objects) ----
+    wire rd_stall  : bool     # read stage stalls on a RAW hazard
+    wire alu_stall : bool     # hazard contribution from the ALU/WB register
+    wire a_val      : word     # forwarded operand rf[a_reg] (from wb); named here
+                              # so the interface invariants can refer to it
+
+    specification {
+        # Issue an instruction (advance the trace) whenever the read stage is
+        # not stalled.
+        after posedge {
+            if ~rd_stall {
+                trace.step
+            }
+        }
+    }
+
+    # ---- read stage (RD) ---------------------------------------------------
+    # Owns the RD/ALU pipe register: the decoded destination, the latched source
+    # operand, and a valid bit.  On issue it captures the operand forwarded from
+    # `wb`; on a stall it inserts a bubble.
+
+    implementation {
+        isolate rd_stage = {
+
+            # ---- interface wires ----
+            wire in_op   : opc      # input: issuing instruction's op
+            wire in_dst  : reg      # input:                        dst
+            wire a_val    : word     # input: forwarded operand rf[s1] (from wb)
+            wire rd_stall : bool    # input: stall (RAW hazard)
+
+            # ---- RD/ALU pipe register (registered output) ----
+            register r_is_add : bool     # the instruction writes a register
+            register r_dst    : reg
+            register r_a      : word     # the latched source operand
+            register r_valid  : bool
+
+            after init { r_valid := false }
+
+            after posedge {
+                if ~rd_stall {
+                    r_is_add := (in_op = 1);
+                    r_dst    := in_dst;
+                    r_a      := a_val;
+                    r_valid  := true
+                } else {
+                    r_valid  := false
+                }
+            }
+
+            specification {
+                # ---- tag chain: the RD/ALU register sits between the issue
+                #      boundary (trace.now) and the rd_alu boundary ----
+                invariant r_valid  -> rd_alu.commit.succ(trace.now)
+                invariant ~r_valid -> rd_alu.commit = trace.now
+            }
+        } with cpu, trace, word, reg, opc, rd_alu
+    }
+
+    # ---- interface at the RD/ALU boundary ----------------------------------
+
+    private {
+        isolate rd_alu = {
+            specification {
+
+                var commit : trace.tag     # tag of the instruction in the RD/ALU register
+
+                after init { commit := 0 }
+                after posedge {
+                    if old rd_stage.r_valid { commit := commit.next }
+                }
+
+                # Guarantees of the read stage: the RD/ALU register tracks the trace.
+                isolate rd_props = {
+                    invariant [commit_bound] commit <= trace.now
+                                             & (rd_stage.r_valid -> commit < trace.now)
+                    invariant [r_dst_track] rd_stage.r_valid ->
+                                  (rd_stage.r_dst = trace.st(commit).dst
+                                   & (rd_stage.r_is_add <-> trace.st(commit).op = 1))
+                    # For a register-reading instruction the latched operand equals
+                    # the source value it must see: captured at issue from the
+                    # forwarded read (a_val_track, valid because the read did not stall)
+                    # and frozen thereafter.
+                    invariant [r_a_track] (rd_stage.r_valid & rd_stage.r_is_add) ->
+                                  rd_stage.r_a = trace.st(commit).a_val
+                } with cpu, trace, word, reg, opc, rd_alu, rd_stage
+
+                # Guarantees of the ALU stage seen at this boundary: the forwarded
+                # read is propagated one step (through the ALU/WB register) -- when
+                # that register does not write the issuing source, a_val still
+                # reflects rf at THIS boundary's tag.
+                isolate alu_props = {
+                    invariant [a_val_track] ~cpu.alu_stall ->
+                                  cpu.a_val = trace.st(commit).rf(cpu.a_reg)
+                        with alu_wb.wb_props.a_val_track,
+                             rd_props.commit_bound
+                } with cpu, trace, word, reg, opc, rd_alu, alu_stage, alu_wb, rd_stage
+            }
+        }
+    }
+
+    # ---- ALU stage (EXECUTE) -----------------------------------------------
+    # Owns the ALU/WB pipe register.  Computes the result rf[s1] + 1 from the
+    # latched operand and forwards a hazard signal for the register it will write.
+
+    implementation {
+        isolate alu_stage = {
+
+            # ---- interface wires ----
+            wire a_reg : reg       # input: issuing instruction's source (for the hazard check)
+            wire alu_stall : bool  # output: this stage's contribution to the RAW hazard
+
+            # ---- ALU/WB pipe register (registered output) ----
+            register a_is_add : bool
+            register a_dst    : reg
+            register a_res    : word
+            register a_valid  : bool
+
+            after init { a_valid := false }
+
+            # A valid register-writer in the ALU/WB register whose destination is
+            # the issuing source forces the read stage to stall.
+            definition alu_stall = a_valid & a_is_add & (a_dst = a_reg)
+
+            after posedge {
+                # The ALU/WB register always advances (it is downstream of the
+                # stall point): latch the pre-edge RD/ALU register, computing the
+                # result from the latched operand.
+                a_is_add := old rd_stage.r_is_add;
+                a_dst    := old rd_stage.r_dst;
+                a_res    := old rd_stage.r_a + 1;
+                a_valid  := old rd_stage.r_valid
+            }
+
+            specification {
+                # ---- tag chain: the ALU/WB register sits between the rd_alu and
+                #      alu_wb boundaries ----
+                invariant a_valid  -> alu_wb.commit.succ(rd_alu.commit)
+                invariant ~a_valid -> rd_alu.commit = alu_wb.commit
+            }
+        } with cpu, trace, word, reg, opc, rd_alu, alu_wb
+    }
+
+    # ---- interface at the ALU/WB boundary ----------------------------------
+
+    private {
+        isolate alu_wb = {
+            specification {
+
+                var commit : trace.tag     # tag of the instruction in the ALU/WB register
+
+                after init { commit := 0 }
+                after posedge {
+                    if old alu_stage.a_valid { commit := commit.next }
+                }
+
+                # Guarantees of the ALU stage: the ALU/WB register tracks the trace.
+                isolate alu_props = {
+                    invariant [commit_bound] commit <= trace.now & (alu_stage.a_valid -> commit < trace.now)
+                    invariant [a_dst_track] alu_stage.a_valid ->
+                                  (alu_stage.a_dst = trace.st(commit).dst
+                                   & (alu_stage.a_is_add <-> trace.st(commit).op = 1))
+                    # The latched result equals the destination write value; it is
+                    # r_a + 1, and r_a tracked the source operand at capture.
+                    invariant [a_res_track] (alu_stage.a_valid & alu_stage.a_is_add) ->
+                                  alu_stage.a_res = trace.st(commit).res
+                } with cpu, trace, word, reg, opc, rd_alu, rd_stage, alu_wb, alu_stage
+
+                # Guarantees of the writeback stage: the forwarded read of the
+                # issuing source reflects rf at this boundary's tag.
+                isolate wb_props = {
+                    invariant [a_val_track] cpu.a_val = trace.st(commit).rf(cpu.a_reg)
+                        with alu_props.commit_bound, wb_stage.rf_track
+                } with cpu, trace, word, reg, opc, alu_wb, wb_stage
+            }
+        }
+    }
+
+    # ---- writeback stage (WB) ----------------------------------------------
+    # Owns the register file.  Writes rf[dst] from the ALU/WB register, and
+    # serves the forwarded operand read for `rd`.  Terminal stage: no pipe
+    # register of its own.
+
+    implementation {
+        isolate wb_stage = {
+
+            wire a_reg : reg      # input: read address (issuing source)
+            wire a_val  : word     # output: forwarded operand rf[a_reg]
+            wire wb_we : bool     # output: register write enable
+            wire d_reg : reg      # output: write index
+            wire a_wb_val : word    # output: write value
+
+            register rf(R:reg) : word
+
+            definition a_val   = rf(a_reg)
+            definition wb_we  = alu_stage.a_valid & alu_stage.a_is_add
+            definition d_reg  = alu_stage.a_dst
+            definition a_wb_val = alu_stage.a_res
+
+            after init { rf(R) := 0 }
+
+            after posedge {
+                if wb_we {
+                    rf(d_reg) := a_wb_val
+                }
+            }
+
+            specification {
+                # ---- the register file tracks the committed architectural state ----
+                invariant [rf_track] rf(R) = trace.st(alu_wb.commit).rf(R)
+            }
+        } with cpu, trace, word, reg, opc, alu_wb
+    }
+
+    # ---- stage-output-dependent combinational wires ------------------------
+    definition a_val = wb_stage.a_val
+    definition alu_stall = alu_stage.alu_stall
+    # The read stage stalls if the issuing instruction reads a register (it is an
+    # ADD1) whose source is the destination of a writer still in the RD/ALU
+    # register or the ALU/WB register.
+    definition rd_stall = (in_op = 1) &
+        ( (rd_stage.r_valid & rd_stage.r_is_add & (rd_stage.r_dst = a_reg))
+          | alu_stall )
+
+    # ---- connect the stage inputs ------------------------------------------
+    definition rd_stage.in_op   = in_op
+    definition rd_stage.in_dst  = in_dst
+    definition rd_stage.a_val    = a_val
+    definition rd_stage.rd_stall = rd_stall
+
+    definition alu_stage.a_reg  = a_reg
+
+    definition wb_stage.a_reg   = a_reg
+}
