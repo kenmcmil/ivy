@@ -1,0 +1,442 @@
+#lang ivy1.8
+
+# A minimal 3-stage pipeline illustrating the COMPLEX hazard pattern of the
+# stage-decomposition method (doc/projects/decomposition.md) with a late write
+# whose CONDITION depends on the register being written.  It is a variant of
+# complex3_cload_dec.ivy in which the write predicate is resolved in mid-pipe.
+#
+# One instruction per cycle arrives on a primary input `inst_in` and is issued
+# in order. The only architectural state is a single register `r`.
+#
+#   instruction word (8 bits):  [7:6] op   [5:0] imm
+#     op = 1  INC    r := r + 1                     (reads r; writes r EARLY)
+#     op = 2  CMAX   r := imm  IF r < imm           (reads r; writes r LATE)
+#     op = 0  NOP    (does nothing; reads and writes no register)
+#
+# CMAX rounds r up to imm: it writes r := imm exactly when r < imm (its effect
+# is r := max(r, imm)).  Unlike complex3_cload_dec, where the write condition
+# (imm != 0) was fixed at decode, here the condition `r < imm` depends on the
+# register `r`, so whether the CMAX writes -- the predicate `wl` -- is not a
+# property of the opcode alone.
+#
+# We must be careful how the comparator gets its `r` operand.  The register is
+# WRITTEN in the late stage (lw) and READ (for the increment / comparison) at
+# issue.  If we let the late stage read `r` directly out of ew we would create a
+# write-after-read hazard between a younger instruction's early write and an
+# older instruction's late read -- a hazard this pattern does not handle.  So we
+# read `r` ONLY at issue: CMAX (like INC) reads r in ew and captures the value
+# it sees into the pipe register (`a_r`).  The middle stage then computes the
+# comparison `a_r < imm` and stores the resulting write predicate in `wl`; the
+# late stage merely consumes `wl`.  So `r` is read in exactly one stage, and
+# the write predicate is resolved in mid-pipe rather than at decode.
+#
+# Because CMAX reads r, it -- like INC -- stalls behind a pending writer; NOP,
+# which reads nothing, does not.  The reservation is EXACT (the ghost reads the
+# trace's `wl`), while the real read stall is conservative on the a_* slot (it
+# stalls behind any CMAX there, whose write predicate is not yet computed) and
+# exact on the b_* slot (where `wl` is known); r_resv_stall bridges them.
+#
+# Decoding is placed in the stage that uses each field: `ew` decodes the opcode
+# (for the early write and the reader/hazard check) and carries the raw
+# instruction word `ir` forward; `md` decodes the immediate and computes the
+# write predicate `wl`.
+#
+# Pipeline stages:
+#   ew  (early write) : owns r.  On INC, r := r + 1; every instruction captures
+#                       the r it reads into a_r and carries its word in ir.
+#   md  (middle)      : decodes imm and computes the CMAX comparison into wl;
+#                       also the one "intermediate" interface (ew_md) is here.
+#   lw  (late write)  : if wl, writes r := imm; forwarded back to ew.
+
+include order   # unbounded_sequence, used for the reference tags
+
+type word
+interpret word -> bv[8]
+type opc
+interpret opc -> bv[2]
+type immf                 # the 6-bit immediate field
+interpret immf -> bv[6]
+
+# The clock: one exported action driven by the environment.
+export action posedge
+
+# The instruction to issue this cycle is a primary input, read by the
+# implementation (cpu).  The cpu passes it to `trace.step`, which forwards it to
+# the ISA model's `decode`; the ISA never refers to this hardware input itself.
+import wire inst_in : word
+
+# =====================================================================
+# The ISA reference model.
+#
+# `decode` computes the intermediate values of one instruction against the
+# current register; `writeback` performs its (possibly conditional) update.
+# The predicate `wl` records whether this instruction performs a LATE write
+# (a CMAX whose condition r < imm holds against the r it sees).
+# =====================================================================
+
+module isa_model = {
+
+    var r : word                  # the single architectural register
+
+    # intermediate values of the current instruction (combinational)
+    var ir  : word                # the instruction word
+    var op  : opc
+    var imm : word                # the CMAX bound (value a writing CMAX writes)
+    var wl  : bool                # this instruction writes r LATE (CMAX, r < imm)
+
+    after init {
+        r := 0
+    }
+
+    action decode(inst : word) = {
+        ir  := inst;
+        op  := inst<<7:6>>;
+        imm := (0:opc) :: (inst<<5:0>>:immf);
+        wl  := (op = 2) & (r < imm)         # condition depends on the current r
+    }
+
+    action writeback = {
+        r := (imm if wl else (r + 1 if op = 1 else r))
+    }
+}
+
+# =====================================================================
+# The trace: the sequence of ISA states produced by the issued instructions.
+# `now` is the number of instructions issued so far; `st(T)` is the recorded
+# state of instruction T (the register `r` *before* it executes, plus its
+# decoded intermediate values).  `st(now)` always holds the current r.
+# =====================================================================
+
+isolate trace = {
+
+    specification {
+
+        instance arch : isa_model
+        instance tag  : unbounded_sequence
+
+        type state_t = struct {
+            r   : word,
+            ir  : word,
+            op  : opc,
+            imm : word,
+            wl  : bool
+        }
+
+        var now : tag
+        var st(T:tag) : state_t
+
+        action current returns (s:state_t) = {
+            s.r   := arch.r;
+            s.ir  := arch.ir;
+            s.op  := arch.op;
+            s.imm := arch.imm;
+            s.wl  := arch.wl;
+        }
+
+        after init {
+            now := 0;
+            st(now).r := arch.r;          # st(0).r = current (initial) r
+        }
+
+        # Issue instruction `inst`: record it as st(now), apply it, advance, and
+        # snapshot the new current r as st(new now).
+        action step(inst : word) = {
+            arch.decode(inst);
+            st(now) := current;
+            arch.writeback;
+            now := now.next;
+            st(now) := current;
+        }
+
+        # st(now) always mirrors the current architectural r.
+        invariant st(now).r = arch.r
+
+        # Every issued instruction's intermediates are the correct decode of its
+        # own instruction word against the r it sees.
+        invariant T < now -> st(T).op  = (st(T).ir)<<7:6>>
+        invariant T < now -> st(T).imm = (0:opc) :: ((st(T).ir)<<5:0>>:immf)
+        invariant T < now -> st(T).wl  = ((st(T).op = 2) & (st(T).r < st(T).imm))
+
+        # Consecutive recorded states are related by one ISA step: r takes the
+        # CMAX bound on a late write, the INC increment, or is unchanged.
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).r = (st(T).imm if st(T).wl
+                                 else (st(T).r + 1 if st(T).op = 1 else st(T).r))
+
+    }
+} with word, opc
+
+# =====================================================================
+# The pipeline.
+# =====================================================================
+
+isolate cpu = {
+
+    # ---- control wires (defined below, after the stage objects) ----
+    wire issue_stall : bool    # issue stalls: a reader (INC/CMAX) behind an in-flight writer
+    wire lw_we       : bool     # late write enable (a CMAX that actually writes, in lw)
+    wire lw_wval     : word     # late write value (forwarded back to ew's r)
+
+    specification {
+        # Issue an instruction (advance the trace) whenever the issue is not
+        # stalled.
+        after posedge {
+            if ~issue_stall {
+                trace.step(inst_in)
+            }
+        }
+    }
+
+    # ---- early-write stage (EW) --------------------------------------------
+    # Owns the architectural register `r` and the EW/MD pipe register.  It decodes
+    # the opcode of the issuing instruction (for the early write and the reader
+    # check), and on an INC does r := r + 1.  EVERY instruction captures the r it
+    # reads into a_r and carries its raw word into ir (for md to decode the
+    # immediate).  It also applies the forwarded late write from lw (which
+    # overrides the early write).
+
+    implementation {
+        isolate ew_stage = {
+
+            # ---- interface wires ----
+            wire ir_in : word         # input: the issuing instruction word
+            wire issue_stall : bool   # input: hold on a reservation stall
+            wire lw_we   : bool       # input: forwarded late write enable (from lw)
+            wire lw_wval : word       # input: forwarded late write value  (from lw)
+
+            # ---- opcode decode of the issuing instruction (op is decoded here) ----
+            wire in_op      : opc
+            wire in_reads_r : bool    # output: the issuing instruction reads r (INC or CMAX)
+            definition in_op      = ir_in<<7:6>>
+            definition in_reads_r = (in_op = 1) | (in_op = 2)
+
+            register r : word         # the architectural register lives here
+
+            # ---- EW/MD pipe register (registered output) ----
+            register is_cmax : bool   # the instruction is a CMAX (opcode, decoded here)
+            register ir      : word   # the raw instruction word (md decodes its immediate)
+            register a_r     : word   # the r this instruction read at issue (a_ prefix
+                                      # kept: bare `r` is the architectural register above)
+            register valid   : bool
+
+            after init { r := 0; valid := false }
+
+            after posedge {
+                # issue: latch the instruction into the EW/MD register (bubble on
+                # a stall), capturing the r it reads and its word, and on an INC do
+                # the early write.  A reader issues only when unreserved, so a_r is
+                # the r it actually sees.
+                if ~issue_stall {
+                    is_cmax := (in_op = 2);          # opcode decoded in ew
+                    ir      := ir_in;
+                    a_r       := r;                    # capture r read at issue
+                    valid   := true;
+                    if in_op = 1 { r := r + 1 }        # early write (INC)
+                } else {
+                    valid   := false
+                };
+                # forwarded late write from lw; overrides the early write when a
+                # CMAX actually writes this cycle (they never both apply, since a
+                # reader that would early-write while r is reserved stalls).
+                if lw_we { r := lw_wval }
+            }
+
+            specification {
+                # ---- tag chain: the EW/MD register sits between the issue
+                #      boundary (trace.now) and the ew_md boundary ----
+                invariant valid  -> ew_md.commit.succ(trace.now)
+                invariant ~valid -> ew_md.commit = trace.now
+
+                # ---- r tracks the current architectural r, except while a late
+                #      write is pending (r reserved) ----
+                invariant [r_track]
+                    ~(ew_md.r_reserved | valid & trace.st(ew_md.commit).wl)
+                    -> r = trace.st(trace.now).r
+            }
+        } with cpu, trace, word, opc, ew_md
+    }
+
+    # ---- interface at the EW/MD boundary (the one INTERMEDIATE interface) ---
+
+    private {
+        isolate ew_md = {
+            specification {
+
+                var commit : trace.tag        # tag of the instruction in the EW/MD register
+                var r_reserved : bool   # a late write is pending in a LATER stage (lw)
+                wire r_writes_done : bool        # the last downstream late write is completing
+
+
+                after init {
+                    commit := 0;
+                    r_reserved := false
+                }
+
+                after posedge {
+                    if r_writes_done {
+                        r_reserved := false
+                    };
+                    if old ew_stage.valid {
+                        if trace.st(commit).wl {
+                            r_reserved := true
+                        };
+                        commit := commit.next
+                    }
+                }
+
+                # Guarantees of the EW stage at this boundary.
+                isolate ew_props = {
+                    invariant [commit_bound] commit <= trace.now
+                                             & (ew_stage.valid -> commit < trace.now)
+                    # the EW/MD pipe register tracks the opcode (is-CMAX) and
+                    # carries this instruction's word (from which md decodes imm)
+                    invariant [a_track] ew_stage.valid ->
+                                  ((ew_stage.is_cmax <-> trace.st(commit).op = 2)
+                                   & ew_stage.ir = trace.st(commit).ir)
+                    # the captured operand is the r a reading CMAX sees
+                    invariant [a_r_track] ew_stage.valid & ew_stage.is_cmax ->
+                                  ew_stage.a_r = trace.st(commit).r
+                    # while r is reserved, the EW/MD instruction is not an early
+                    # writer (an INC would have stalled at issue -- r_resv_stall)
+                    invariant [r_no_early] r_reserved & ew_stage.valid ->
+                                  ~(trace.st(commit).op = 1)
+                } with cpu, trace, word, opc, ew_md, ew_stage
+
+                # Guarantees of the MD stage at this boundary.
+                isolate md_props = {
+                    # a reader must stall while ANY CMAX occupies a_* (its write
+                    # predicate is not yet computed) or a writing CMAX occupies b_*.
+                    # This is coarser than the exact reservation, so it suffices.
+                    invariant [r_resv_stall] ew_stage.in_reads_r & r_reserved -> cpu.issue_stall
+                        with ew_props.commit_bound, ew_props.a_track,
+                             md_stage.r_res, md_lw.md_props.b_track
+                    # the forwarded late write enable implies the reservation ...
+                    invariant [r_we_track] cpu.lw_we -> r_reserved
+                        with md_lw.lw_props.r_we_track, md_lw.lw_props.r_wval_track,
+                             ew_props.commit_bound, ew_props.r_no_early
+                    # ... and when the last downstream write completes, it writes
+                    # the correct final value for this boundary's tag.
+                    invariant [r_wval_track] r_writes_done ->
+                                  cpu.lw_we & cpu.lw_wval = trace.st(commit).r
+                        with md_lw.lw_props.r_we_track, md_lw.lw_props.r_wval_track,
+                             ew_props.commit_bound, ew_props.r_no_early
+                } with cpu, trace, word, opc, ew_md, md_stage, md_lw
+            }
+        }
+    }
+
+    # ---- middle stage (MD) -------------------------------------------------
+    # Owns the MD/LW pipe register.  It decodes the immediate from the carried
+    # instruction word and computes the CMAX comparison a_r < imm on the value
+    # captured at issue, storing the write predicate in wl.  It also defines the
+    # ew_md reservation-bookkeeping signals.
+
+    implementation {
+        isolate md_stage = {
+
+            # ---- MD/LW pipe register (registered output) ----
+            register wl    : bool     # this instruction writes r late (computed here)
+            register imm   : word
+            register valid : bool
+
+            after init { valid := false }
+
+            after posedge {
+                # MD always advances (nothing downstream stalls): latch EW's
+                # pre-edge output register.  Decode the immediate from the carried
+                # word and compute the write predicate from the captured operand.
+                imm   := (0:opc) :: (old ew_stage.ir<<5:0>>:immf);
+                wl    := old ew_stage.is_cmax & (old ew_stage.a_r < imm);
+                valid := old ew_stage.valid
+            }
+
+            specification {
+                # ---- tag chain: the MD/LW register sits between the ew_md and
+                #      md_lw boundaries ----
+                invariant valid  -> md_lw.commit.succ(ew_md.commit)
+                invariant ~valid -> ew_md.commit = md_lw.commit
+
+                # The last downstream late write completes this cycle iff a writing
+                # CMAX is in the MD/LW register (it writes r in lw next).
+                definition ew_md.r_writes_done =
+                    valid & trace.st(md_lw.commit).wl
+
+                # The onward reservation holds iff a writing CMAX is in the MD/LW register.
+                invariant [r_res] ew_md.r_reserved <->
+                                  valid & trace.st(md_lw.commit).wl
+            }
+        } with cpu, trace, word, opc, ew_md, md_lw
+    }
+
+    # ---- interface at the MD/LW boundary (incoming to the late writer) ------
+
+    private {
+        isolate md_lw = {
+            specification {
+
+                var commit : trace.tag        # tag of the instruction in the MD/LW register
+
+                after init { commit := 0 }
+                after posedge {
+                    if old md_stage.valid { commit := commit.next }
+                }
+
+                # Guarantees of the MD stage: the MD/LW register tracks the trace.
+                # wl is the middle-stage comparison, which equals the trace's wl.
+                isolate md_props = {
+                    invariant [commit_bound] commit <= trace.now
+                                             & (md_stage.valid -> commit < trace.now)
+                    invariant [b_track] md_stage.valid ->
+                                  ((md_stage.wl <-> trace.st(commit).wl)
+                                   & (trace.st(commit).wl ->
+                                          md_stage.imm = trace.st(commit).imm))
+                } with cpu, trace, word, opc, ew_md, ew_stage, md_lw, md_stage
+
+                # Guarantees of the LW stage: the late write port tracks the trace.
+                isolate lw_props = {
+                    invariant [r_we_track] cpu.lw_we <->
+                                  md_stage.valid & trace.st(commit).wl
+                        with md_props.b_track, md_props.commit_bound
+                    invariant [r_wval_track] cpu.lw_we ->
+                                  cpu.lw_wval = trace.st(commit).imm
+                        with md_props.b_track, md_props.commit_bound
+                } with cpu, trace, word, opc, md_lw, lw_stage
+            }
+        }
+    }
+
+    # ---- late-write stage (LW) ---------------------------------------------
+    # Combinational: reads the MD/LW pipe register (owned by md) and produces the
+    # late write port.  The write predicate wl was already computed in md, so lw
+    # reads no register -- avoiding a write-after-read hazard on r.  Terminal
+    # stage: no pipe register of its own.
+
+    implementation {
+        isolate lw_stage = {
+
+            wire lw_we   : bool     # output: late write enable
+            wire lw_wval : word     # output: late write value
+
+            definition lw_we   = md_stage.valid & md_stage.wl
+            definition lw_wval = md_stage.imm
+
+        } with cpu, trace, word, opc, md_lw
+    }
+
+    # ---- stage-output-dependent combinational wires ------------------------
+    definition lw_we   = lw_stage.lw_we
+    definition lw_wval = lw_stage.lw_wval
+    # The issue stalls if the issuing instruction reads r (INC or CMAX) and a
+    # write is (conservatively) in flight: ANY CMAX in the EW/MD register (its
+    # write predicate is not yet computed) or a writing CMAX (wl) in the MD/LW
+    # register.  A NOP reads nothing and never stalls.
+    definition issue_stall = ew_stage.in_reads_r &
+        ( (ew_stage.valid & ew_stage.is_cmax)
+          | (md_stage.valid & md_stage.wl) )
+
+    # ---- connect the stage inputs ------------------------------------------
+    definition ew_stage.ir_in      = inst_in
+    definition ew_stage.issue_stall = issue_stall
+    definition ew_stage.lw_we       = lw_we
+    definition ew_stage.lw_wval     = lw_wval
+}

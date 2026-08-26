@@ -19,6 +19,15 @@ tests = [
     # interface isolates (see doc/projects/decomposition.md).
     {'type': 'check', 'name': '5stage_cpu_dec', 'expect': 'OK', 'timeout': 300},
 
+    # The small stage-decomposition tutorial pipelines (doc/examples/hardware/
+    # decomp.md): a 3-stage simple read-after-write hazard, and three complex
+    # (early/late write) hazard variants -- unconditional, decode-time
+    # conditional, and register-dependent (late-resolved) conditional writes.
+    {'type': 'check', 'name': 'simple3_dec', 'expect': 'OK'},
+    {'type': 'check', 'name': 'complex3_dec', 'expect': 'OK'},
+    {'type': 'check', 'name': 'complex3_cload_dec', 'expect': 'OK'},
+    {'type': 'check', 'name': 'complex3_cmax_dec', 'expect': 'OK'},
+
     # A wire's post-state value must appear in a counterexample trace: the
     # invariant w ~= 5 fails when x reaches 4 (w = x+1 = 5), and the trace must
     # end with the post-state value w = 5.
@@ -70,6 +79,21 @@ tests = [
      'validate': _yosys_wf
                  + ' && ./sim_cpu_dec.sh {name} prog.hex 20'
                  + ' | grep -q "0 -> 1 -> 2 -> 3 -> 4 -> 2 -> 3"',
+     'group': 'rtl'},
+
+    # The input-driven CMAX pipeline (decomp.md's register-dependent complex
+    # hazard). It has no instruction memory -- instructions arrive on the primary
+    # input inst_in -- and its late write uses the `<` operator, so this exercises
+    # the ivy_to_rtl relational-operator support. Validation simulates cmax_prog
+    # via sim_cpu_input.sh (a feedback harness whose pointer advances only when
+    # ~issue_stall) and checks the r trace (INC early writes, CMAX 5 rounds 1->5,
+    # CMAX 4 does not write) and that a stall actually occurred.
+    {'type': 'to_rtl', 'name': 'complex3_cmax_dec',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu_input.sh {name} cmax_prog.hex 16 issue_stall r'
+                 + ' > {name}.simout'
+                 + ' && grep -q "0 -> 1 -> 5 -> 6 -> 7" {name}.simout'
+                 + ' && grep -q "stalls observed: yes" {name}.simout',
      'group': 'rtl'},
 
     # memtest: mem is initialized from a *defined* function init_mem(A)=5, so

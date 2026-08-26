@@ -1,0 +1,17 @@
+# CMAX demo program: op[7:6] 0=NOP 1=INC 2=CMAX ; imm[5:0]
+40   # INC     r: 0 -> 1
+85   # CMAX 5   1<5  -> r=5   (a reading INC behind this must stall)
+40   # INC     r: 5 -> 6
+84   # CMAX 4   6<4? no -> r=6 (no write; a reader still stalls conservatively)
+40   # INC     r: 6 -> 7
+00
+00
+00
+00
+00
+00
+00
+00
+00
+00
+00
