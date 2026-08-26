@@ -1005,11 +1005,17 @@ class Translator(object):
         return data
 
     _binops = {'+': '$add', '-': '$sub', '*': '$mul', '/': '$div'}
+    # Relational operators. These yield a 1-bit boolean, so they map to yosys
+    # comparison cells (via emit_cmp) rather than the arithmetic cells above.
+    # bit-vector comparison is unsigned (emit_cmp emits A_SIGNED/B_SIGNED = 0).
+    _cmpops = {'<': '$lt', '<=': '$le', '>': '$gt', '>=': '$ge'}
 
     def emit_op(self, ctx, term):
         op = term.rep.name
         if op in self._binops:
             return self.emit_arith(ctx, self._binops[op], term)
+        if op in self._cmpops:
+            return self.emit_cmp(ctx, self._cmpops[op], term.args[0], term.args[1])
         if op.startswith('bfe['):
             return self.emit_bfe(ctx, op, term)
         if op == 'concat':
