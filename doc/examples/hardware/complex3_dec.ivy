@@ -13,10 +13,10 @@
 #     op = 0  NOP   (does nothing; reads and writes no register)
 #
 # Pipeline stages:
-#   ew  (early write) : owns r.  On INC, reads r and writes r := r + 1 here.
-#   md  (middle)      : a pass-through stage (its only role is to create one
-#                       "intermediate" interface, ew_md, where the reservation
-#                       bookkeeping lives).
+#   ew  (early write) : owns r.  Decodes the opcode; on INC, reads r and writes
+#                       r := r + 1 here; carries the raw instruction word forward.
+#   md  (middle)      : decodes the immediate; also the one "intermediate"
+#                       interface, ew_md, where the reservation bookkeeping lives.
 #   lw  (late write)  : on LOAD, writes r := imm here; the value is forwarded
 #                       back to `r` in the ew stage.
 #
@@ -149,12 +149,6 @@ isolate trace = {
 
 isolate cpu = {
 
-    # ---- decode of the issuing instruction (combinational) ----
-    wire in_op  : opc
-    wire in_imm : word
-    definition in_op  = inst_in<<7:6>>
-    definition in_imm = (0:opc) :: (inst_in<<5:0>>:immf)
-
     # ---- control wires (defined below, after the stage objects) ----
     wire issue_stall : bool    # issue stalls: an INC whose read of r is reserved
     wire lw_we       : bool     # late write enable (a LOAD completing in lw)
@@ -171,39 +165,46 @@ isolate cpu = {
     }
 
     # ---- early-write stage (EW) --------------------------------------------
-    # Owns the architectural register `r` and the EW/MD pipe register.  On an INC
-    # issue it reads r and performs the early write r := r + 1; it also applies
-    # the forwarded late write from lw (which overrides the early write).
+    # Owns the architectural register `r` and the EW/MD pipe register.  It decodes
+    # the opcode of the issuing instruction (for the early write and the reader
+    # check), and on an INC does r := r + 1.  It carries the raw instruction word
+    # `ir` forward (md decodes its immediate).  It also applies the forwarded late
+    # write from lw (which overrides the early write).
 
     implementation {
         isolate ew_stage = {
 
             # ---- interface wires ----
-            wire in_op  : opc         # input: issuing instruction's op
-            wire in_imm : word        # input:                        immediate
+            wire ir_in : word         # input: the issuing instruction word
             wire issue_stall : bool   # input: hold on a reservation stall
             wire lw_we   : bool       # input: forwarded late write enable (from lw)
             wire lw_wval : word       # input: forwarded late write value  (from lw)
 
+            # ---- opcode decode of the issuing instruction (op is decoded here) ----
+            wire in_op      : opc
+            wire in_reads_r : bool    # output: the issuing instruction reads r (INC)
+            definition in_op      = ir_in<<7:6>>
+            definition in_reads_r = (in_op = 1)
+
             register r : word         # the architectural register lives here
 
             # ---- EW/MD pipe register (registered output) ----
-            register a_is_load : bool   # the instruction is a LOAD (a late writer)
-            register a_imm     : word   # its immediate
-            register a_valid   : bool
+            register is_load : bool   # the instruction is a LOAD (opcode, decoded here)
+            register ir      : word   # the raw instruction word (md decodes its immediate)
+            register valid   : bool
 
-            after init { r := 0; a_valid := false }
+            after init { r := 0; valid := false }
 
             after posedge {
                 # issue: latch the instruction into the EW/MD register (bubble on
                 # a stall) and, on an INC, perform the early write.
                 if ~issue_stall {
-                    a_is_load := (in_op = 2);
-                    a_imm     := in_imm;
-                    a_valid   := true;
+                    is_load := (in_op = 2);            # opcode decoded in ew
+                    ir      := ir_in;
+                    valid   := true;
                     if in_op = 1 { r := r + 1 }        # early write (INC)
                 } else {
-                    a_valid   := false
+                    valid   := false
                 };
                 # forwarded late write from lw; overrides the early write when a
                 # LOAD completes this cycle (they never both apply, since an INC
@@ -214,13 +215,13 @@ isolate cpu = {
             specification {
                 # ---- tag chain: the EW/MD register sits between the issue
                 #      boundary (trace.now) and the ew_md boundary ----
-                invariant a_valid  -> ew_md.commit.succ(trace.now)
-                invariant ~a_valid -> ew_md.commit = trace.now
+                invariant valid  -> ew_md.commit.succ(trace.now)
+                invariant ~valid -> ew_md.commit = trace.now
 
                 # ---- r tracks the current architectural r, except while a late
                 #      write is pending (r reserved) ----
                 invariant [r_track]
-                    ~(ew_md.r_reserved_onward | a_valid & trace.st(ew_md.commit).op = 2)
+                    ~(ew_md.r_reserved_onward | valid & trace.st(ew_md.commit).op = 2)
                     -> r = trace.st(trace.now).r
             }
         } with cpu, trace, word, opc, ew_md
@@ -239,7 +240,7 @@ isolate cpu = {
 
                 # reserved here-or-later: a LOAD in the EW/MD register, or reserved onward.
                 definition r_reserved =
-                    ew_stage.a_valid & trace.st(commit).op = 2 | r_reserved_onward
+                    ew_stage.valid & trace.st(commit).op = 2 | r_reserved_onward
 
                 after init {
                     commit := 0;
@@ -254,7 +255,7 @@ isolate cpu = {
                     };
                     # ... then, if the EW/MD instruction advances and is itself a
                     # late writer, it becomes the (new) pending downstream write.
-                    if old ew_stage.a_valid {
+                    if old ew_stage.valid {
                         if trace.st(commit).op = 2 {
                             r_reserved_onward := true
                         };
@@ -265,22 +266,22 @@ isolate cpu = {
                 # Guarantees of the EW stage at this boundary.
                 isolate ew_props = {
                     invariant [commit_bound] commit <= trace.now
-                                             & (ew_stage.a_valid -> commit < trace.now)
-                    # the EW/MD pipe register tracks the trace
-                    invariant [a_track] ew_stage.a_valid ->
-                                  ((ew_stage.a_is_load <-> trace.st(commit).op = 2)
-                                   & (trace.st(commit).op = 2 ->
-                                          ew_stage.a_imm = trace.st(commit).imm))
+                                             & (ew_stage.valid -> commit < trace.now)
+                    # the EW/MD pipe register tracks the opcode (is-LOAD) and
+                    # carries this instruction's word (from which md decodes imm)
+                    invariant [a_track] ew_stage.valid ->
+                                  ((ew_stage.is_load <-> trace.st(commit).op = 2)
+                                   & ew_stage.ir = trace.st(commit).ir)
                     # while r is reserved, the EW/MD instruction is not an early
                     # writer (an INC would have stalled at issue -- r_resv_stall)
-                    invariant [r_no_early] r_reserved & ew_stage.a_valid ->
+                    invariant [r_no_early] r_reserved & ew_stage.valid ->
                                   ~(trace.st(commit).op = 1)
                 } with cpu, trace, word, opc, ew_md, ew_stage
 
                 # Guarantees of the MD stage at this boundary.
                 isolate md_props = {
                     # a read of a reserved r must stall the issue (only INC reads r)
-                    invariant [r_resv_stall] (cpu.in_op = 1) & r_reserved -> cpu.issue_stall
+                    invariant [r_resv_stall] ew_stage.in_reads_r & r_reserved -> cpu.issue_stall
                         with ew_props.commit_bound, ew_props.a_track,
                              md_stage.r_res, md_lw.md_props.b_track
                     # the forwarded late write enable implies the reservation ...
@@ -299,42 +300,43 @@ isolate cpu = {
     }
 
     # ---- middle stage (MD) -------------------------------------------------
-    # A pass-through: owns the MD/LW pipe register, carrying the instruction from
-    # ew to lw.  It defines the ew_md reservation-bookkeeping signals in terms of
-    # its own register (the "onward" state and the writes-done signal).
+    # Owns the MD/LW pipe register.  It decodes the immediate from the carried
+    # instruction word (the only per-field work it does; it forwards is_load) and
+    # defines the ew_md reservation-bookkeeping signals in terms of its own
+    # register (the "onward" state and the writes-done signal).
 
     implementation {
         isolate md_stage = {
 
             # ---- MD/LW pipe register (registered output) ----
-            register b_is_load : bool
-            register b_imm     : word
-            register b_valid   : bool
+            register is_load : bool
+            register imm     : word
+            register valid   : bool
 
-            after init { b_valid := false }
+            after init { valid := false }
 
             after posedge {
                 # MD always advances (nothing downstream stalls): latch EW's
-                # pre-edge output register.
-                b_is_load := old ew_stage.a_is_load;
-                b_imm     := old ew_stage.a_imm;
-                b_valid   := old ew_stage.a_valid
+                # pre-edge output register, decoding the immediate from its word.
+                is_load := old ew_stage.is_load;
+                imm     := (0:opc) :: (old ew_stage.ir<<5:0>>:immf);
+                valid   := old ew_stage.valid
             }
 
             specification {
                 # ---- tag chain: the MD/LW register sits between the ew_md and
                 #      md_lw boundaries ----
-                invariant b_valid  -> md_lw.commit.succ(ew_md.commit)
-                invariant ~b_valid -> ew_md.commit = md_lw.commit
+                invariant valid  -> md_lw.commit.succ(ew_md.commit)
+                invariant ~valid -> ew_md.commit = md_lw.commit
 
                 # The last downstream late write completes this cycle iff a LOAD
                 # is in the MD/LW register (it writes r in lw next).
                 definition ew_md.r_writes_done =
-                    b_valid & trace.st(md_lw.commit).op = 2
+                    valid & trace.st(md_lw.commit).op = 2
 
                 # The onward reservation holds iff a LOAD is in the MD/LW register.
                 invariant [r_res] ew_md.r_reserved_onward <->
-                                  b_valid & trace.st(md_lw.commit).op = 2
+                                  valid & trace.st(md_lw.commit).op = 2
             }
         } with cpu, trace, word, opc, ew_md, md_lw
     }
@@ -349,23 +351,23 @@ isolate cpu = {
 
                 after init { commit := 0 }
                 after posedge {
-                    if old md_stage.b_valid { commit := commit.next }
+                    if old md_stage.valid { commit := commit.next }
                 }
 
                 # Guarantees of the MD stage: the MD/LW register tracks the trace.
                 isolate md_props = {
                     invariant [commit_bound] commit <= trace.now
-                                             & (md_stage.b_valid -> commit < trace.now)
-                    invariant [b_track] md_stage.b_valid ->
-                                  ((md_stage.b_is_load <-> trace.st(commit).op = 2)
+                                             & (md_stage.valid -> commit < trace.now)
+                    invariant [b_track] md_stage.valid ->
+                                  ((md_stage.is_load <-> trace.st(commit).op = 2)
                                    & (trace.st(commit).op = 2 ->
-                                          md_stage.b_imm = trace.st(commit).imm))
+                                          md_stage.imm = trace.st(commit).imm))
                 } with cpu, trace, word, opc, ew_md, ew_stage, md_lw, md_stage
 
                 # Guarantees of the LW stage: the late write port tracks the trace.
                 isolate lw_props = {
                     invariant [r_we_track] cpu.lw_we <->
-                                  md_stage.b_valid & trace.st(commit).op = 2
+                                  md_stage.valid & trace.st(commit).op = 2
                         with md_props.b_track, md_props.commit_bound
                     invariant [r_wval_track] cpu.lw_we ->
                                   cpu.lw_wval = trace.st(commit).imm
@@ -386,8 +388,8 @@ isolate cpu = {
             wire lw_we   : bool     # output: late write enable
             wire lw_wval : word     # output: late write value
 
-            definition lw_we   = md_stage.b_valid & md_stage.b_is_load
-            definition lw_wval = md_stage.b_imm
+            definition lw_we   = md_stage.valid & md_stage.is_load
+            definition lw_wval = md_stage.imm
 
         } with cpu, trace, word, opc, md_lw
     }
@@ -397,13 +399,12 @@ isolate cpu = {
     definition lw_wval = lw_stage.lw_wval
     # The issue stalls if the issuing instruction reads r (it is an INC) and a
     # late write is still pending (a LOAD is in the EW/MD or MD/LW register).
-    definition issue_stall = (in_op = 1) &
-        ( (ew_stage.a_valid & ew_stage.a_is_load)
-          | (md_stage.b_valid & md_stage.b_is_load) )
+    definition issue_stall = ew_stage.in_reads_r &
+        ( (ew_stage.valid & ew_stage.is_load)
+          | (md_stage.valid & md_stage.is_load) )
 
     # ---- connect the stage inputs ------------------------------------------
-    definition ew_stage.in_op       = in_op
-    definition ew_stage.in_imm      = in_imm
+    definition ew_stage.ir_in       = inst_in
     definition ew_stage.issue_stall = issue_stall
     definition ew_stage.lw_we       = lw_we
     definition ew_stage.lw_wval     = lw_wval
