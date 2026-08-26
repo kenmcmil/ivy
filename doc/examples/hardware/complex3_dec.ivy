@@ -221,7 +221,7 @@ isolate cpu = {
                 # ---- r tracks the current architectural r, except while a late
                 #      write is pending (r reserved) ----
                 invariant [r_track]
-                    ~(ew_md.r_reserved_onward | valid & trace.st(ew_md.commit).op = 2)
+                    ~(ew_md.r_reserved | valid & trace.st(ew_md.commit).op = 2)
                     -> r = trace.st(trace.now).r
             }
         } with cpu, trace, word, opc, ew_md
@@ -234,30 +234,25 @@ isolate cpu = {
             specification {
 
                 var commit : trace.tag        # tag of the instruction in the EW/MD register
-                var r_reserved_onward : bool   # a late write is pending in a LATER stage (lw)
-                wire r_reserved : bool          # a late write is pending here (EW/MD) or later
+                var r_reserved : bool   # a late write is pending in a LATER stage (lw)
                 wire r_writes_done : bool        # the last downstream late write is completing
-
-                # reserved here-or-later: a LOAD in the EW/MD register, or reserved onward.
-                definition r_reserved =
-                    ew_stage.valid & trace.st(commit).op = 2 | r_reserved_onward
 
                 after init {
                     commit := 0;
-                    r_reserved_onward := false
+                    r_reserved := false
                 }
 
                 after posedge {
                     # clear the onward reservation when the last downstream late
                     # write completes ...
                     if r_writes_done {
-                        r_reserved_onward := false
+                        r_reserved := false
                     };
                     # ... then, if the EW/MD instruction advances and is itself a
                     # late writer, it becomes the (new) pending downstream write.
                     if old ew_stage.valid {
                         if trace.st(commit).op = 2 {
-                            r_reserved_onward := true
+                            r_reserved := true
                         };
                         commit := commit.next
                     }
@@ -285,7 +280,7 @@ isolate cpu = {
                         with ew_props.commit_bound, ew_props.a_track,
                              md_stage.r_res, md_lw.md_props.b_track
                     # the forwarded late write enable implies the reservation ...
-                    invariant [r_we_track] cpu.lw_we -> r_reserved_onward
+                    invariant [r_we_track] cpu.lw_we -> r_reserved
                         with md_lw.lw_props.r_we_track, md_lw.lw_props.r_wval_track,
                              ew_props.commit_bound, ew_props.r_no_early
                     # ... and when the last downstream write completes, it writes
@@ -335,7 +330,7 @@ isolate cpu = {
                     valid & trace.st(md_lw.commit).op = 2
 
                 # The onward reservation holds iff a LOAD is in the MD/LW register.
-                invariant [r_res] ew_md.r_reserved_onward <->
+                invariant [r_res] ew_md.r_reserved <->
                                   valid & trace.st(md_lw.commit).op = 2
             }
         } with cpu, trace, word, opc, ew_md, md_lw
