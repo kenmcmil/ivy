@@ -310,18 +310,22 @@ private {
         # Specify guarantees of stage x
 
         isolate x_props = {
-            invariant [commit_bound] commit <= trace.now & (x.valid -> commit < trace.now)
+            invariant [commit_bound] commit <= trace.now
+                                     & (x.valid -> commit < trace.now)
 
             # tracking invariants
 
             invariant [r1_track] x.valid -> x.r1 = trace.st(commit).r1
             ...
-        } with cpu, trace, <types>, w_x, x, x_y   # w_x is incoming interface of x, if any 
+        } with cpu, trace, <types>, w_x, x, x_y
+                              # w_x is incoming interface of x, if any 
 
         isolate y_props = {
-            # Here, specify any needed properties of x.stall_in and other feedback signals in the pipe
+            # Here, specify any needed properties of x.stall_in and
+            # other feedback signals in the pipe
 
-        } with cpu, trace, <types>, x_y, y, y_z   # y_z is outgoing interface of y, if any 
+        } with cpu, trace, <types>, x_y, y, y_z
+                              # y_z is outgoing interface of y, if any 
     }
 }
 ```
@@ -401,8 +405,8 @@ isolate cpu = {
 ```
 
 
-Handling simple pipeline hazards
---------------------------------
+Handling read-after-write pipeline hazards
+------------------------------------------
 
 The most complex question in decomposing the proof of a pipeline is
 the handling of pipeline hazards.  We consider first the simple hazard
@@ -432,7 +436,8 @@ contains the following guarantee for the 'm' stage:
 
 ```
 isolate m_props = {
-    invariant [a_val_track] ~x.stall_in -> a_val = trace.st(commit).rf(a_reg)
+    invariant [a_val_track]
+        ~x.stall_in -> a_val = trace.st(commit).rf(a_reg)
     with x_props.commit_bound, m_w.w_props.a_val_track
 }
 ```
@@ -523,7 +528,7 @@ Here is the logic in the 'w' stage isolate dealing with the register file:
         };
     }
     specification {
-        # ---- the register file tracks the committed architectural state ----
+        # the register file tracks the committed architectural state
         invariant [rf_track] rf(R) = trace.st(m_w.commit).rf(R)
     }
 ```
@@ -547,71 +552,149 @@ interface's write-value tracking with *unit* delay (the value was
 latched a cycle earlier), so even though `rf` and the forwarded `a_val`
 refer to each other, there is no zero-delay cycle to worry about.
 
-Complex pipeline hazards
-------------------------
+Adding write-after-write hazards
+--------------------------------
 
 A more complex situation occurs when an architectural register can be
-written at multiple stages of the pipeline. A common case of this the
+written at multiple stages of the pipeline. A common case of this is
 the program counter, which can be incremented in the fetch stage or
 updated to a branch target in the execute stage, in case of a
-conditional branch. In this case we will call the fetch stage the
-'early write stage' and the execute stage the 'late write stage'.
+conditional branch. This introduces a potential write-after-write
+hazard. In this case we will call the fetch stage the
+'early write stage' and the execute stage the 'late write stage'. 
+This situation can be complicated by the fact that the condition
+for a late write to occur may not be computed until the late-writing
+stage. This occurs in the case of a program counter when the branch
+condition is not computed until late in the pipeline. 
 
-To handle the hazard caused by such a case, we will use a stragey in
+A simple example with a write-after-write hazard
+================================================
+
+The example is in `complex3_dec.ivy`.  As in the simple-hazard example,
+one instruction per cycle arrives on the primary input `inst_in`, and
+the only architectural state is a single register `r` (one register is
+enough to exhibit the hazard).  The instruction word is
+
+```
+[7:6] op    [5:0] imm
+```
+
+with three instructions:
+
+  * `op = 1` (INC):  `r := r + 1`   -- writes r EARLY, at issue
+  * `op = 2` (LOAD): `r := imm`     -- writes r LATE, in the last stage
+  * `op = 0` (NOP):  reads and writes nothing
+
+Here, `imm` is an immediate value in the instruction.
+The pipeline has three stages: `ew` (early write), `md` (middle), and
+`lw` (late write).  The register `r` lives in `ew`.  An INC reads `r`
+and performs its write `r := r + 1` at issue, in `ew`; a LOAD's write
+`r := imm` happens only when it reaches `lw`, from where the value is
+forwarded back to `r` in `ew`.  So `r` is written at two different
+stages -- early by INC, late by LOAD -- which is the write-after-write
+hazard: while a LOAD is in flight, the `r` held in `ew` is stale until
+that LOAD's late write lands.
+
+The middle stage `md` is a plain pass-through; the additional pipeline
+delay will allow us to illustrate the full generality of the proof
+pattern.
+
+Note that only the INC instruction reads register `r`.  Also note that
+the NOP and LOAD instructions read nothing, so they need not stall
+behind a pending late write.
+
+A decomposition pattern for write-after-write hazards
+=====================================================
+
+To handle the hazard caused by such a case, we will use a strategy in
 which writes to the register are forwarded from the late write stage
 to the early write stage. At each interface, we maintain ghost state
-the remember whether a write to the register is pending beyond that
+that remembers whether a write to the register is pending beyond that
 stage. In this case, we say the register is 'reserved' at that
 interface. When all of the pending writes have completed, the register
-is no longer reserved. A read of a reserved register requires a stall at
+is no longer reserved.
+
+### Tracking of architectural registers
+
+A read of a reserved register requires a stall at
 the interface if the register is reserved. The tracking invariant
 is also modified so that the register only needs to track current tag
 when it is not reserved. In other words, the tracking invariant for
 register 'r' in early write stage 'x' should look like:
 
 ```
-invariant [r_track] ~(x_y.r_reserved | valid & trace.st(y_z.commit).writes_r) -> r = trace.st(w_x.commit).r
+invariant [r_track]
+    ~(x_y.r_reserved | valid & trace.st(x_y.commit).writes_r)
+        -> r = trace.st(w_x.commit).r
 ```
-
 or, if 'x' is the first stage, `w_x.commit` should be replaced with
 'trace.now'.
 
+In our example, the tracking invariant for the architectural register `r` is:
 
-In the case of the program counter, the reserved flag has predicts
-whether a pending branch is taken. If it is not taken, then the
-current pc value is up to date, and a write of the pc in the execution
-stage will not occur, thus the pc is not reserved. The branch taken
-condition is obtained from the trace, allowing the pc reserved
-condition to be set correctly.
+```
+invariant [r_track]
+    ~(ew_md.r_reserved | valid & trace.st(ew_md.commit).op = 2)
+        -> r = trace.st(trace.now).r
+```
+
+In other words the condition for executing a late write is that the
+instruction opcode is 2 (LOAD). This invariant is found in the `ew` stage,
+where the architectural register is implemented. Since this is the
+first stage, the commit tag for `r` is `trace.now`.
+
+In the case of a program counter, the reserved flag predicts
+whether a pending branch is taken. In the case of our simple example,
+the register `r` becomes reserved when a LOAD instruction passes
+through the interface.  If there is no late write, then the register
+is not reserved and its value is up-to-date.
+
+### Reserved flag invariants
 
 The key invariant maintained by the reserved flags for register 'r' in
 stage 'y' is the following:
 
 ```
-invariant [r_res] x_y.r_reserved <-> y.valid & trace.st(y_z.commit).writes_r | y_z.r_reserved
+invariant [r_res]
+    x_y.r_reserved
+        <-> y.valid & trace.st(y_z.commit).writes_r | y_z.r_reserved
 ```
 
 That is, 'r' is reserved at the incoming interface of 'y' iff 'y'
-contains an instruction that writes 'r' or 'r' is reserved at the
+contains an instruction that writes 'r' late or 'r' is reserved at the
 outgoing interface. Here the predicate 'writes_r' indicates that the
 instruction in a given trace state writes register 'r'. If 'x' is the
 late writing stage, then 'y_z.r_reserved' is by definition false,
-since no later stage can write 'r'.
+since no later stage can write 'r'. 
 
-The question is how to update the reserved bits at each interface to
+In our example, this invariant occurs in the middle stage `md` and
+relates the `r_reserved` flags at the interfaces `ew_md` and `md_lw`:
+
+```
+invariant [r_res]
+    ew_md.r_reserved
+        <-> valid & trace.st(md_lw.commit).op = 2
+```
+Because `lw` is the late writing stage, the `r_reserved` flag at
+the `md_lw` interface is just `false`.
+
+### Reserved flag updates
+
+The question is how to update the reserved flags at each interface to
 maintain this invariant.  If a writing instruction moves forward at
 the interface 'x_y', then the flag must be set. On the other hand, if
 the flag at the following interface 'y_z' is reset and there is no
-writing instruction in stage 'y', the the flag at 'x_y' must be reset.
+writing instruction in stage 'y', then the flag at 'x_y' must be reset.
 One way to implement this is using a ghost wire 'y.r_writes_done' that
 indicates to 'x_y' that the last write downstream is completing.
 
 Suppose 'w' is the early writing stage and 'z' is the late writing
 stage. Then we say an interface 'x_y' is "intermediate" if it is after
-'w' and before 'z', but 'y' is not equal to z'.  For example, if the
+'w' and before 'z', but 'y' is not equal to 'z'.  For example, if the
 stages are 'w,x,y,z', the 'w_x' and 'x_y' are intermediate, but 'y_z'
 is not intermediate, because it is the incoming interface of the late
-writing stage 'z'.
+writing stage 'z'. In our example, the only intermediate interface is
+`ew_md`.
 
 The logic for r_reserved in each intermediate interface 'x_y' looks
 like this :
@@ -633,64 +716,191 @@ like this :
     }
 ```
 
+
+In our example, in interface `ew_md`, the `writes_r` predicate is `op = 2`.
+
 The logic for y.r_writes_done in stage 'y' looks like this:
 
 ```
-    specification {
-        definition x_y.r_writes_done = y_z.r_writes_done & ~(valid & trace.st(y_z.commit).writes_r)
-    }
+specification {
+    definition x_y.r_writes_done =
+        y_z.r_writes_done & ~(valid & trace.st(y_z.commit).writes_r)
+}
 ```
+
+However, this occurs only if stage `y` is between two intermediate
+interfaces. In our example, there are no such stages. If `y` is the
+stage immediately before the late writing stage `z`, then there cannot
+be any writes beyond `y_z`. Rather, we consider the writes to complete
+at `x_y` when the write pending in stage `y` executes. Thus, we
+have:
+
+```
+specification {
+    definition x_y.r_writes_done =
+        valid & trace.st(y_z.commit).writes_r & ~y.stall_in
+}
+```
+
+In stage `md` in our example, since this stage doesn't stall, we have:
+```
+specification {
+    definition ew_md.r_writes_done =
+        valid & trace.st(md_lw.commit).op = 2
+}
+```
+
+Notice that `r_writes_done` is declared in the interface isolate
+`ew_md`, but defined in the stage `md`. This is because it is defined
+in terms of the ghost variable `md_lw.commit`, which is visible to
+stage `md`, but not to the interface `ew_md`.
+
+### Interface guarantees for write forwarding
 
 At an intermediate interface 'x_y', the 'r_writes_done' condition should satisfy these
 guarantees in 'x_y.y_props':
 
 ```
-    invariant [r_we_track] r_z_we -> r_reserved
-        with commit_bound, y_z.r_we_track, x_props.r_no_early
-    invariant [r_wval_track] r_writes_done -> r_z_we & r_z_wval = trace.st(commit).r
-        with commit_bound, y_z.r_we_track, y_z.r_wval_track, x_props.r_no_early
+invariant [r_we_track] r_z_we -> r_reserved
+    with commit_bound, y_z.r_we_track, x_props.r_no_early
+
+invariant [r_wval_track]
+    r_writes_done -> r_z_we & r_z_wval = trace.st(commit).r
+    with commit_bound, y_z.r_we_track, y_z.r_wval_track,
+         x_props.r_no_early
 ```
 
 where 'y_z' is the interface after 'y', 'r_z_we' is the late write
 enable condition for 'r' and 'r_z_wval' is the value written. The
 second invariant says that, when all downstream writes to 'r'
-complete, the correct final value of 'r' is correctly written.
+complete, the correct final value of 'r' is correctly written. Note
+that these invariants depend with zero delay on the corresponding
+invariants downstream.
 
-This should be a guarantee if 'x_y.x_props':
-```
-    invariant [r_no_early] r_reserved & x.valid -> ~trace.st(x_y.commit).r_early_write 
-```
-It states that the value of a
-late write downstream is not out of date because it is over-written by
-an early write. Here, 'early_write' is a predicate that is true of an instruction
-that writes 'r' in the early write stage. 
+In our example, these invariants are used in `ew_md.md_props`,
+substituting `ew` for `x`, `md` for `y` and `lw` for `z`, and adding a
+zero-delay dependency on the tracking invariant for the `md` pipe
+registers.
 
-If 'x' is the early write stage (that contains register 'r') we also
-have to prove this as a guarantee in 'x_y.y_props':
+At the interface 'y_z', where z is the late writing stage, the guarantees
+for the forwarded writes occur in 'y_z.z_props' and look like this:
 
 ```
-    invariant [r_resv_stall] r_x_re & r_reserved -> x.stall_in
-    with commit_bound
-```
-
-where 'r_x_re' is the early read enable condition for register 'r'
-(which my be just 'true').  This says that we have to stall a read of
-a reserved register, and when all downstream writes to 'r' complete,
-the final value of 'r' is written. A similar invariant may be needed
-at all of the intermediate interfaces, if stalls propagate backward.
-
-Finally, the interface 'y_z', where z is the late writing stage, should
-satisfy these guarantees in 'y_z.z_props'.
-
-```
-    invariant [r_we_track] r_z_we <-> y.valid & ~y.stall_in & trace.st(y_z.commit).writes_r
+    invariant [r_we_track]
+        r_z_we <-> y.valid & ~y.stall_in & trace.st(y_z.commit).writes_r
     with commit_bound, <tracking invariants>
+    
     invariant [r_wval_track] r_z_we -> r_z_wval = trace.st(commit).r
     with commit_bound, <tracking invariants>
 ```
 
 Here, <tracking invariants> is the list of tracking invariants on
 which the wires 'r_z_we' and 'r_z_wval' depend combinationally. 
+
+In our example, these invariants appear in `md_lw.lw_props`. 
+
+### Write-after-write invariant
+
+This should be a guarantee in 'x_y.x_props':
+```
+invariant [r_no_early]
+    r_reserved & x.valid -> ~trace.st(x_y.commit).r_early_write 
+```
+It states that the value of a
+late write downstream is not out of date because it is over-written by
+an early write. Here, 'early_write' is a predicate that is true of an instruction
+that writes 'r' in the early write stage. 
+
+In our example, this invariant is in `ew_md.ew_props` and looks like this:
+
+```
+invariant [r_no_early]
+    r_reserved & ew_stage.valid -> ~(trace.st(commit).op = 1)
+```
+Here, '1' is the opcode for INC.
+
+### Read-after-write invariant
+
+If 'x' is the early write stage (that contains register 'r') we also
+have to prove this as a guarantee in 'x_y.y_props' to make sure we do not create
+a read-after-write hazard:
+
+```
+invariant [r_resv_stall] r_x_re & r_reserved -> x.stall_in
+    with commit_bound
+```
+
+where 'r_x_re' is the early read enable condition for register 'r'
+(which may be just 'true').  This says that we have to stall a read of
+a reserved register. A similar invariant may be needed
+at all of the intermediate interfaces, if stalls propagate backward.
+
+In our example, we have the following in `ew_md.md_props`:
+
+```
+invariant [r_resv_stall]
+    ew_stage.in_reads_r & r_reserved -> cpu.issue_stall
+    with ew_props.commit_bound
+```
+
+
+
+Conditional write-after-write hazards
+=====================================
+
+We now consider applying this decomposition pattern in the case where
+the late write is conditional, and the condition is not yet computed
+in the early write stage. Typically, this means that the `writes_r`
+condition depends on data and that the stall signal is conservative,
+in the sense that an instruction in the early write stage is stalled
+if later instruct *may* execute a late write.
+
+The example is in `complex3_cmax_dec.ivy`.  It is the same three-stage
+pipeline as `complex3_dec.ivy`, with LOAD replaced by CMAX, which rounds
+`r` up to its immediate: `CMAX imm` writes `r := imm` exactly when
+`r < imm` (its effect is `r := max(r, imm)`).  The essential difference
+is that whether the late write occurs now depends on the register value
+`r`, not on the opcode alone -- so, unlike a LOAD, a CMAX may or may not
+write, and the condition is genuine data that is not available until the
+comparison is done in mid-pipe.
+
+In this example, the condition for a late write to occur is captured
+in the intermedate value `wl` in the ISA model. The only real change
+in the proof, except for adding trackng invariants for new pipeline
+registers, is to use this condition as the `writes_r` predicate and to
+modify the `in_reads_r` condition so it is true for the CMAX
+operation.  The `r_reserved` flag is still true exactly when a write
+will occur at a later stage. It now uses information from the trace
+model to predict this.  The same comment applies to a program counter
+register that is updated at a late stage in case a branch is taken.
+
+Note that this pattern doesn't apply in the case that there is an
+early write and a late read of the register. This entails a potential
+write-after-read hazard. Because we haven't dealt with this case yet,
+the `complex3_cmax_dec` example reads register `r` only in the early
+stage.
+
+
+
+Five-stage pipeline example
+---------------------------
+
+The file '5stage_cpu_dec.ivy' contains an example of these proof
+patterns applied to the simple 5-stage pipeline example with no caches
+or speculation.
+
+The register file in this example is written only in the write-back
+stage 'wb_stage'.  Thus, we use the simple read-after-write hazard pattern. The
+architectural register file 'rf' lives in 'wb_stage' and we forward
+the two operand reads from the execute stage 'ex_stage' to 'wb_stage'.
+
+Since the pc is written both in the fetch stage 'if_stage' and in
+'ex_stage', we use the write-after-write hazard pattern for the pc. The architectural pc
+lives in the fetch stage and we forward writes from 'ex_stage' in case
+of a taken branch.  The 'pc_writes' condition, indicating a late
+write, is exactly 'take_branch' frome the trace model. The only
+"intermediate" interface is the 'if_id' interface, between the fecth
+and execute stages.
 
 Speculation pattern
 -------------------
@@ -702,26 +912,6 @@ actually occur or not. We can reduce stalls by speculating that the late write
 does not occur, allowing instructions that are shadowed behind a late write to proceed in the pipeline and then squashing them
 when the late write actually occurs. 
 
-
-Five-stage pipeline example
----------------------------
-
-The file '5stage_cpu_dec.ivy' contains an example of these proof
-patterns applied to the simple 5-stage pipeline example with no caches
-or speculation.
-
-The register file in this example is written only in the write-back
-stage 'wb_stage'.  Thus, we use the simple hazard pattern. The
-architectural register file 'rf' lives in 'wb_stage' and we forward
-the two operand reads from the execute stage 'ex_stage' to 'wb_stage'.
-
-Since the pc is written both in the fetch stage 'if_stage' and in
-'ex_stage', we use the complex hazard pattern. The architectural pc
-lives in the fetch stage and we forward writes from 'ex_stage' in case
-of a taken branch.  The 'pc_writes' condition, indicating a late
-write, is exactly 'take_branch' frome the trace model. The only
-"intermediate" interface is the 'if_id' interface, between the fecth
-and execute stages.
 
 
 
