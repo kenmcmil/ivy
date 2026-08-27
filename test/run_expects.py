@@ -173,11 +173,56 @@ class Ivyc(Test):
 # yosys). ---
 
 class IvyToRtl(Test):
+    # Suffixes of the artifacts a to_rtl test (translation + its validation,
+    # e.g. the sim scripts) can generate. Files with these suffixes that did
+    # not exist before the test are removed afterwards, so the tree is left
+    # clean. Note some `.il` files are tracked golden models that a test
+    # regenerates and validates against -- those existed before the test, so
+    # the newly-created-only rule leaves them in place.
+    ARTIFACT_SUFFIXES = ('.il', '.vcd', '_tb.v', '.simout')
+
     def __init__(self, dir, spec):
         Test.__init__(self, dir, spec)
         self.validate = spec.get('validate')
 
     def run_expect(self):
+        # Snapshot the artifact files present before the test, including their
+        # contents. Afterwards, remove the ones this test newly generated and
+        # restore any pre-existing one it overwrote -- e.g. a tracked golden
+        # .il that the test regenerates (ivy_to_rtl's emission order is not
+        # stable across runs, so a regeneration reorders lines even when the
+        # design is unchanged). The tree is thus left exactly as it was.
+        before = {}
+        for f in os.listdir('.'):
+            if f.endswith(self.ARTIFACT_SUFFIXES) and os.path.isfile(f):
+                try:
+                    with open(f, 'rb') as fh:
+                        before[f] = fh.read()
+                except OSError:
+                    before[f] = None
+        try:
+            return self.run_translate()
+        finally:
+            for f in os.listdir('.'):
+                if not f.endswith(self.ARTIFACT_SUFFIXES) or f in before:
+                    continue
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+            for f, data in before.items():
+                if data is None:
+                    continue
+                try:
+                    with open(f, 'rb') as fh:
+                        if fh.read() == data:
+                            continue
+                    with open(f, 'wb') as fh:
+                        fh.write(data)
+                except OSError:
+                    pass
+
+    def run_translate(self):
         cmd = 'ivy_to_rtl {} {}.ivy'.format(' '.join(self.opts), self.name)
         print(cmd)
         child = spawn(cmd, timeout=self.timeout)
