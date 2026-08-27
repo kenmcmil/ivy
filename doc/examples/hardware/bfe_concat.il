@@ -49,9 +49,9 @@ end
 module \top.swap
   wire width 8 input 1 \inp
   wire width 8 output 2 \out
-  wire width 4 \hi
   wire width 4 \lo
+  wire width 4 \hi
   connect \out { \lo \hi }
-  connect \hi \inp [7:4]
   connect \lo \inp [3:0]
+  connect \hi \inp [7:4]
 end
