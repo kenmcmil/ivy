@@ -1230,22 +1230,11 @@ class IvyDomainSetup(IvyDeclInterp):
         except ValueError:
             raise IvyError(df,"definition of derived relation must be a cube")
     def definition(self,ldf):
-        label = ldf.label
-        df = ldf.formula
-        df = compile_defn(df)
-        self.add_definition(ldf.clone([label,df]))
-        # Wires do not update: their value is frozen at the pre-action value
-        # throughout an action. A DerivedUpdate would instead thread the wire
-        # through sequential composition, so it would track intervening register
-        # updates (e.g. `pc := pc+1; ir := fetched` would read the post-pc
-        # value of `fetched`). This mirrors the inline `wire x = e` case in
-        # wire() above, and is needed for the split `wire x : t` + `definition
-        # x = e` form.
-        if df.args[0].rep not in self.domain.wires:
-            self.domain.updates.append(DerivedUpdate(df))
-        self.domain.symbol_order.append(df.args[0].rep)
-        if not self.domain.sig.contains_symbol(df.args[0].rep):
-            add_symbol(df.args[0].rep.name,df.args[0].rep.sort)
+        # postpone compiling definitions so they can have forward references
+        defs = self.domain.native_definitions if isinstance(ldf.formula.args[1],ivy_ast.NativeExpr) else self.domain.labeled_props
+        defs.append(ldf)
+        self.last_fact = ldf
+
             
     def proof(self,pf):
         if isinstance(pf,ivy_ast.LabeledFormula):   # proof has a label
@@ -1838,7 +1827,7 @@ def check_definitions(mod):
     prover = ivy_proof.ProofChecker(mod.labeled_axioms,[],mod.schemata)
     for scc in sccs:
         if len(scc) > 1:
-            raise iu.IvyError(None,'these definitions form a dependency cycle: {}'.format(','.join(scc)))
+            raise iu.IvyError(None,'these definitions form a dependency cycle: {}'.format(','.join(str(x) for x in scc)))
         d = dmap[scc[0]]
         if d.id not in pmap:
             raise iu.IvyError(d,'definition of {} requires a recursion schema'.format(d.formula.defines()))
@@ -1970,7 +1959,31 @@ def create_constructor_schemata(mod):
             if sortname not in mod.sort_destructors:
                 raise iu.IvyError(cons,"Cannot define constructor {} for type {} because {} is not a structure type".format(cons,sortname,sortname))
     
-        
+# compile the definitions that haven't been compiled yet
+def fix_definitions(mod):
+    def fix(ldf):
+        label = ldf.label
+        df = ldf.formula
+        if isinstance(df,ivy_ast.Definition):
+            df = compile_defn(df)
+            ldf = ldf.clone([label,df])
+            # Wires do not update: their value is frozen at the pre-action value
+            # throughout an action. A DerivedUpdate would instead thread the wire
+            # through sequential composition, so it would track intervening register
+            # updates (e.g. `pc := pc+1; ir := fetched` would read the post-pc
+            # value of `fetched`). This mirrors the inline `wire x = e` case in
+            # wire() above, and is needed for the split `wire x : t` + `definition
+            # x = e` form.
+            mod.symbol_order.append(df.args[0].rep)
+            if not mod.sig.contains_symbol(df.args[0].rep):
+                add_symbol(df.args[0].rep.name,df.args[0].rep.sort)
+            if df.args[0].rep not in mod.wires:
+                mod.updates.append(DerivedUpdate(df))
+        return ldf
+    mod.labeled_props = [fix(x) for x in mod.labeled_props]
+    mod.native_definitions = [fix(x) for x in mod.native_definitions]
+
+            
 def fix_constructors(mod):
     for sortname,destrs in mod.sort_destructors.items():
         if any(len(f.sort.dom) > 1 for f in destrs):
@@ -2272,6 +2285,7 @@ def ivy_compile(decls,mod=None,create_isolate=True,**kwargs):
         #        infer_parameters(decls.decls)
         with TopContext(collect_actions(decls.decls)):
             IvyDomainSetup(mod)(decls)
+            fix_definitions(mod)
             fix_constructors(mod)
             IvyConjectureSetup(mod)(decls)
             IvyARGSetup(mod)(decls)
