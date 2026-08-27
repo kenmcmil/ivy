@@ -277,8 +277,7 @@ isolate cpu = {
                 isolate md_props = {
                     # a read of a reserved r must stall the issue (only INC reads r)
                     invariant [r_resv_stall] ew_stage.in_reads_r & r_reserved -> cpu.issue_stall
-                        with ew_props.commit_bound, ew_props.a_track,
-                             md_stage.r_res, md_lw.md_props.b_track
+                        with ew_props.commit_bound
                     # the forwarded late write enable implies the reservation ...
                     invariant [r_we_track] cpu.lw_we -> r_reserved
                         with md_lw.lw_props.r_we_track, md_lw.lw_props.r_wval_track,
