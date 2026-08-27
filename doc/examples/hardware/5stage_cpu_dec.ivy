@@ -458,7 +458,7 @@ isolate cpu = {
                 invariant ~if_stage.d_valid -> if_id.commit = trace.now
 
                 # ----- architectural state tracking -----
-                invariant [pc_track] ~(if_id.pc_reserved_onward | d_valid & trace.st(if_id.commit).take_branch)
+                invariant [pc_track] ~(if_id.pc_reserved | d_valid & trace.st(if_id.commit).take_branch)
                                      -> pc = trace.st(trace.now).pc
                 invariant if_stage.imem(A) = trace.st(trace.now).imem(A)
             }
@@ -482,15 +482,12 @@ isolate cpu = {
                 # equals commit when the register is empty, or commit + 1 when it
                 # holds a valid instruction.
                 var commit : trace.tag
-                var pc_reserved : bool   # pc is shadowed by instruction here or later
-                var pc_reserved_onward : bool # pc is shadowed by instruction in later stage
+                var pc_reserved : bool # pc is shadowed by instruction in later stage
                 wire pc_writes_done : bool    # true if last downstream pc write finished
-
-                definition pc_reserved = if_stage.d_valid & trace.st(commit).take_branch | pc_reserved_onward 
 
                 after init {
                     commit := 0;
-                    pc_reserved_onward := false;    
+                    pc_reserved := false;    
                 }
 
                 # When ID advances (EX not stalled) and the pipe register held a
@@ -502,11 +499,11 @@ isolate cpu = {
                 after posedge {
                     if ~ex_stall {
                         if pc_writes_done {
-                            pc_reserved_onward := false;
+                            pc_reserved := false;
                         }
                         if old if_stage.d_valid {
                             if trace.st(commit).take_branch {
-                                pc_reserved_onward := true;
+                                pc_reserved := true;
                             }
                             commit := commit.next;
                         }
@@ -530,7 +527,7 @@ isolate cpu = {
                     # While the pc is reserved by a downstream taken branch, IF
                     # does not fetch, so any valid instruction still in IF/ID must
                     # itself be that pending taken branch.
-                    invariant [pc_no_early] pc_reserved_onward & if_stage.d_valid -> trace.st(commit).take_branch
+                    invariant [pc_no_early] pc_reserved & if_stage.d_valid -> trace.st(commit).take_branch
                 }
             } with cpu, trace, word, addr, reg, opc, if_id, if_stage
 
@@ -539,9 +536,9 @@ isolate cpu = {
             isolate id_props = {
 
                 specification {
-                    invariant [pc_resv_stall]  pc_reserved_onward -> if_stage.id_fetch_stall with if_props.commit_bound
+                    invariant [pc_resv_stall]  pc_reserved -> if_stage.id_fetch_stall with if_props.commit_bound
 
-                    invariant [pc_we_track] ex_stage.pc_ex_we -> pc_reserved_onward
+                    invariant [pc_we_track] ex_stage.pc_ex_we -> pc_reserved
                         with id_ex.ex_props.pc_we_track, id_ex.ex_props.pc_wval_track, if_props.commit_bound, if_props.pc_no_early
                     invariant [pc_wval_track] pc_writes_done -> ex_stage.pc_ex_we & ex_stage.pc_ex_wval = trace.st(commit).pc
                         with id_ex.ex_props.pc_we_track, id_ex.ex_props.pc_wval_track, if_props.commit_bound, if_props.pc_no_early
@@ -602,7 +599,7 @@ isolate cpu = {
 
                 definition if_id.pc_writes_done = e_valid & trace.st(id_ex.commit).take_branch & ~ex_stall
 
-                invariant [pc_res] if_id.pc_reserved_onward <-> e_valid & trace.st(id_ex.commit).take_branch
+                invariant [pc_res] if_id.pc_reserved <-> e_valid & trace.st(id_ex.commit).take_branch
 
             }
         } with cpu, trace, word, addr, reg, opc, if_id, id_ex

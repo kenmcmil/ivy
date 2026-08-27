@@ -7,20 +7,20 @@ module \cpu
   wire input 2 \posedge
   wire input 3 \rst
   wire width 8 \mem_addr
-  wire width 3 \rd
-  wire \take_branch
   wire width 16 \fetched
-  wire width 16 \a_val
+  wire \take_branch
   wire width 16 \b_val
-  wire width 8 \target
   wire width 3 \opcode
+  wire width 16 \a_val
+  wire width 3 \rd
   wire width 3 \rb
   wire width 3 \ra
-  wire $1
-  wire $2
+  wire width 8 \target
+  wire width 16 $1
   wire $3
   wire $4
-  wire width 16 $5
+  wire $5
+  wire $6
   wire width 16 $7
   wire width 16 $9
   wire \ir_valid
@@ -98,49 +98,7 @@ module \cpu
   wire width 16 $92
   connect \pc_out \pc
   connect \mem_addr \a_val [7:0]
-  connect \rd \ir [12:10]
-  cell $eq $eq$1
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 3
-    parameter \B_WIDTH 3
-    parameter \Y_WIDTH 1
-    connect \A \opcode
-    connect \B 3'110
-    connect \Y $1
-  end
-  cell $and $and$2
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \B_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A \ir_valid
-    connect \B $1
-    connect \Y $2
-  end
-  cell $eq $eq$3
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 16
-    parameter \B_WIDTH 16
-    parameter \Y_WIDTH 1
-    connect \A \a_val
-    connect \B 16'0000000000000000
-    connect \Y $3
-  end
-  cell $and $and$4
-    parameter \A_SIGNED 0
-    parameter \B_SIGNED 0
-    parameter \A_WIDTH 1
-    parameter \B_WIDTH 1
-    parameter \Y_WIDTH 1
-    connect \A $2
-    connect \B $3
-    connect \Y $4
-  end
-  connect \take_branch $4
-  cell $memrd $memrd$imem$6
+  cell $memrd $memrd$imem$2
     parameter \MEMID "\\imem"
     parameter \ABITS 8
     parameter \WIDTH 16
@@ -150,9 +108,50 @@ module \cpu
     connect \CLK 1'x
     connect \EN 1'x
     connect \ADDR \pc
-    connect \DATA $5
+    connect \DATA $1
   end
-  connect \fetched $5
+  connect \fetched $1
+  cell $eq $eq$3
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 3
+    parameter \B_WIDTH 3
+    parameter \Y_WIDTH 1
+    connect \A \opcode
+    connect \B 3'110
+    connect \Y $3
+  end
+  cell $and $and$4
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A \ir_valid
+    connect \B $3
+    connect \Y $4
+  end
+  cell $eq $eq$5
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 16
+    parameter \B_WIDTH 16
+    parameter \Y_WIDTH 1
+    connect \A \a_val
+    connect \B 16'0000000000000000
+    connect \Y $5
+  end
+  cell $and $and$6
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $4
+    connect \B $5
+    connect \Y $6
+  end
+  connect \take_branch $6
   cell $memrd $memrd$rf$8
     parameter \MEMID "\\rf"
     parameter \ABITS 3
@@ -162,10 +161,11 @@ module \cpu
     parameter \TRANSPARENT 0
     connect \CLK 1'x
     connect \EN 1'x
-    connect \ADDR \ra
+    connect \ADDR \rb
     connect \DATA $7
   end
-  connect \a_val $7
+  connect \b_val $7
+  connect \opcode \ir [15:13]
   cell $memrd $memrd$rf$10
     parameter \MEMID "\\rf"
     parameter \ABITS 3
@@ -175,14 +175,14 @@ module \cpu
     parameter \TRANSPARENT 0
     connect \CLK 1'x
     connect \EN 1'x
-    connect \ADDR \rb
+    connect \ADDR \ra
     connect \DATA $9
   end
-  connect \b_val $9
-  connect \target \ir [7:0]
-  connect \opcode \ir [15:13]
+  connect \a_val $9
+  connect \rd \ir [12:10]
   connect \rb \ir [6:4]
   connect \ra \ir [9:7]
+  connect \target \ir [7:0]
   connect $11 \take_branch
   cell $not $not$12
     parameter \A_SIGNED 0
