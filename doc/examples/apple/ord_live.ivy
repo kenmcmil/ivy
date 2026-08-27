@@ -1865,8 +1865,10 @@ module isolate split_queue2(nat) with nat = {
     # skolem symbols in the model checker. These invariants are proved
     # by Z3, not by the model checker. 
 
-    invariant lastq < X & begun(X) -> false
-    invariant begun(X) -> begun(lastq)
+    private {
+        invariant lastq < X & begun(X) -> false
+        invariant begun(X) -> begun(lastq)
+    }
     invariant begun(X) & done(X) & Y < X & begun(Y) -> done(Y)
     invariant done(X) -> begun(X)
     invariant ~(X:nat < 0)
@@ -2487,7 +2489,7 @@ private {
             }
         }
 
-    } with this, lclock, tar_clock, tar_cf_clock
+    } with this, rfn, lclock, tar_clock, tar_cf_clock
 
     isolate cf_pio_live = {
         
