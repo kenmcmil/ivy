@@ -867,10 +867,6 @@ def l2s_tactic_int(prover,goals,proof,tactic_name):
         for vs, t in to_wait
     ]
 
-    print ('reset_w:')
-    for x in reset_w:
-        print (x)
-        
     fair_cycle = [l2s_saved]
     fair_cycle += done_waiting
     # projection of relations
