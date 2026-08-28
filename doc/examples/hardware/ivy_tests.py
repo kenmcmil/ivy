@@ -18,6 +18,13 @@ tests = [
     # interface is its own isolate, with `register` pipe outputs and ghost
     # interface isolates (see doc/projects/decomposition.md).
     {'type': 'check', 'name': '5stage_cpu_dec', 'expect': 'OK', 'timeout': 300},
+    # The SPECULATING 5-stage pipeline (decomp.md "Speculation pattern"): the
+    # control-hazard stall on the pc is replaced by speculation. _spec makes the
+    # fixed "not taken" guess (flush + squash on a taken branch); _bp adds a real
+    # branch predictor as an isolate with no interface spec, so the proof holds
+    # for any prediction.
+    {'type': 'check', 'name': '5stage_spec_cpu_dec', 'expect': 'OK', 'timeout': 300},
+    {'type': 'check', 'name': '5stage_bp_cpu_dec', 'expect': 'OK', 'timeout': 300},
 
     # The small stage-decomposition tutorial pipelines (doc/examples/hardware/
     # decomp.md): a 3-stage simple read-after-write hazard, and three complex
@@ -79,6 +86,25 @@ tests = [
      'validate': _yosys_wf
                  + ' && ./sim_cpu_dec.sh {name} prog.hex 20'
                  + ' | grep -q "0 -> 1 -> 2 -> 3 -> 4 -> 2 -> 3"',
+     'group': 'rtl'},
+
+    # The speculating pipelines. The proof says nothing about prediction quality
+    # (correctness holds for ANY prediction), so simulation is the only check on
+    # the predictor's behavior -- see the note at the end of decomp.md's
+    # "Adding a branch predictor". prog.hex loops on an always-taken BEQZ, so the
+    # pc traces distinguish the two: _spec fetches past the branch (4 -> 5) and
+    # redirects EVERY iteration (always-mispredict signature), while _bp does so
+    # once and then, after the 2-bit counter saturates, predicts correctly with
+    # no further wrong-path fetches (learning signature).
+    {'type': 'to_rtl', 'name': '5stage_spec_cpu_dec',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu_dec.sh {name} prog.hex 30'
+                 + ' | grep -q "4 -> 5 -> 2 -> 3 -> 4 -> 5 -> 2"',
+     'group': 'rtl'},
+    {'type': 'to_rtl', 'name': '5stage_bp_cpu_dec',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu_dec.sh {name} prog.hex 30'
+                 + ' | grep -q "4 -> 5 -> 2 -> 3 -> 2 -> 3"',
      'group': 'rtl'},
 
     # The input-driven CMAX pipeline (decomp.md's register-dependent complex

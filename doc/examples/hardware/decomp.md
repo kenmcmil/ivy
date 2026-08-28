@@ -906,15 +906,357 @@ Speculation pattern
 -------------------
 
 The late/early write pattern above has the disadvantage that it
-requires us to stall any instruction that reads a register that *may* have
-is reserved (i.e., has a pending late write) whether the write will
-actually occur or not. We can reduce stalls by speculating that the late write
-does not occur, allowing instructions that are shadowed behind a late write to proceed in the pipeline and then squashing them
-when the late write actually occurs. 
+requires us to stall any instruction that reads a register that *may*
+be reserved (i.e., has a pending late write) whether the write
+will actually occur or not. We can reduce stalls by speculating that
+the late write does not occur, allowing instructions that are shadowed
+behind a late write to proceed in the pipeline and then squashing them
+when the late write actually occurs.
 
+Recall what the reserved flag meant in the late/early write pattern:
+the flag at an interface (for example `pc_reserved` at the `if_id`
+interface) marks that the register is spoken for by a pending late
+write in a downstream stage, so its value at the reading stage cannot
+yet be trusted. In the speculating pipeline this same flag becomes a
+*shadow* bit: it now marks that the instruction sitting in the pipe
+register is on the *wrong path* -- it was fetched behind an unresolved
+late write whose effect it did not see. The examples below speculate on
+the program counter, where the late write is a taken branch; the running
+example is `5stage_bp_cpu_dec.ivy`.
 
+Four ideas take us from the stalling pipeline to the speculating one:
 
+1. *Guess and squash instead of stall.* Rather than freezing the
+reading stage while a late write is pending, we let the shadowed
+instructions proceed on a *guessed* path and undo them when the late
+write resolves: the wrong-path fetch is flushed, and the wrong-path
+instruction is squashed before it reaches the late-writing stage.
+Correctness then rests on a single fact -- every shadowed instruction is
+killed before it can affect architectural state. For the pc this holds
+because a branch resolves in the execute stage, ahead of the memory and
+write-back stages where the register file and memory are written.
 
+2. *The trace follows only the correct path.* The ghost trace records
+instructions in program order along the *architectural* path, so it
+must never step for a speculative wrong-path instruction; otherwise it
+would have to backtrack. We therefore introduce a ghost predicate
+`spec_wrong`, true exactly when fetch is running behind an unresolved
+misprediction, and gate the trace step on `~spec_wrong`. As a
+consequence, a tracking invariant relates a pipe register to the trace
+only for a *real* instruction -- one whose valid bit is set *and* which
+is not shadowed.
+
+3. *The shadow bit is the reserved bit.* Because the shadow bit is just
+the reserved flag reinterpreted, the speculating pipeline is
+structurally the stalling one with the stall removed and replaced by a
+shadow. The bookkeeping that set and cleared the reserved flag -- a late
+write reserves the register, its resolution clears it -- is reused
+unchanged to set and clear the shadow.
+
+4. *The guess is separate from correctness.* The simplest guess is
+fixed: assume the late write never occurs. It mispredicts in only one
+direction (the write did in fact occur). More generally a *predictor*
+supplies the guess and can be wrong either way, so we carry the
+prediction, and the instruction's own pc, down the pipe and let the
+late-writing stage compute the correct repair in both cases. The
+predictor is a separate isolate with *no interface specification*: its
+output is left arbitrary, so the proof holds for *any* prediction. A
+predictor is thus a pure performance optimization that cannot affect
+correctness.
+
+### Speculating with a fixed prediction
+
+We build the speculating pipeline in two steps. In this first step we
+make the *fixed* prediction that no branch is taken: fetch always
+continues in sequence, and we repair the pc only when a branch turns
+out to be taken. In the next step we will replace this fixed guess with
+an actual predictor. The example for this step is
+`5stage_spec_cpu_dec.ivy`, obtained from the stalling pipeline
+`5stage_cpu_dec.ivy` by the changes below.
+
+**Fetch: replace the stall with a flush.** In the stalling pipeline the
+fetch stage bubbled whenever a branch was pending (`fetch_stall`). We
+delete that machinery: the fetch stage now always fetches the next
+sequential word, and separately flushes the wrong-path word when a
+taken branch shows up in EX.
+
+    after posedge {
+        if ~ex_stall {
+            # IF -> ID: speculatively fetch the next word and advance the
+            # PC (predict-not-taken -- we never stall for a branch).
+            d_ir := fetched;
+            d_valid := true;
+            pc := pc + 1
+        };
+        # Forwarded "late" pc write: a taken branch in EX is a
+        # misprediction. Redirect the pc to the target and flush the
+        # wrong-path word just fetched into IF/ID.
+        if pc_ex_we {
+            pc := pc_ex_wval;
+            d_valid := false             # flush the mispredicted fetch
+        }
+    }
+
+Here `pc_ex_we` is the same forwarded late-write enable as before -- it
+fires when a taken branch resolves in EX -- but now, besides redirecting
+the pc, it clears `d_valid` to flush the instruction that was
+speculatively fetched behind the branch.
+
+**Decode: squash the shadowed instruction.** Flushing IF/ID is not
+enough. When the branch resolves in EX, the instruction *directly
+behind* it is sitting in IF/ID and on this same clock edge would advance
+into ID/EX -- and so into EX the next cycle. We must squash it too, in
+the decode stage, on the same `pc_ex_we` signal:
+
+    if ~ex_stall {
+        if pc_ex_we {
+            e_valid := false
+        } else {
+            e_ir := old if_stage.d_ir;
+            e_valid := old if_stage.d_valid
+        }
+    }
+
+Together, the flush in fetch and the squash in decode kill the two
+wrong-path instructions that are in flight when a branch resolves. Since
+a branch resolves in EX, no shadowed instruction ever reaches the memory
+or write-back stages, which is what makes the write-back of the register
+file and memory safe.
+
+**Trace stepping: step only on the correct path.** The trace records
+instructions along the architectural path, so it must not step for a
+speculatively fetched wrong-path instruction. We introduce a ghost wire
+`spec_wrong`, true exactly when fetch is running behind an unresolved
+taken branch, and step the trace only when it is false:
+
+    wire spec_wrong : bool
+    definition spec_wrong = if_id.pc_reserved
+                          | (if_stage.d_valid & trace.st(if_id.commit).take_branch)
+
+    after posedge {
+        if ~ex_stall {
+            if ~spec_wrong { trace.step }
+        }
+    }
+
+This replaces the old gate `~fetch_stall`. The difference is exactly the
+not-taken branches: the old gate stalled (and so did not step) for *any*
+branch in IF/ID, while `spec_wrong` consults the trace's `take_branch`
+and so skips only *taken* branches. A branch predicted correctly as
+not-taken is now issued just like any other instruction. Note that
+it is helpful to define `spec_wrong` as a ghost wire so that its value remains
+constant during state updates on `posedge`. 
+
+**Shadow bookkeeping: don't advance the boundary for a shadowed
+instruction.** Recall that `pc_reserved` is now the shadow bit. A
+shadowed instruction in IF/ID is on the wrong path and does real instruction
+executed by the ISA. Thus, we must not advance the boundary tag `commit` for it. In
+the `if_id` interface monitor we guard the advance with the *pre-edge*
+shadow bit:
+
+    if ~ex_stall {
+        if old if_stage.d_valid & ~(old pc_reserved) {
+            if trace.st(commit).take_branch {
+                pc_reserved := true;
+            }
+            commit := commit.next;
+        };
+        # When the reserving branch resolves in EX, un-shadow.
+        if pc_writes_done {
+            pc_reserved := false;
+        }
+    }
+
+The advance is now conditioned on `~(old pc_reserved)`. We must read the
+*old* (pre-edge) value because `pc_writes_done` clears `pc_reserved` on
+this same edge; using the post-edge value would wrongly count the
+shadowed instruction as it is being un-shadowed.
+
+**Invariants: track only real instructions.** A shadowed IF/ID register
+holds a wrong-path word that does not match the trace, so every tracking
+invariant on the IF/ID register is now conditioned on the instruction
+being real -- valid *and* not shadowed:
+
+    invariant (if_stage.d_valid & ~if_id.pc_reserved)
+                -> if_id.commit.succ(trace.now)
+    invariant (~if_stage.d_valid | if_id.pc_reserved)
+                -> if_id.commit = trace.now
+    ...
+    invariant (if_stage.d_valid & ~pc_reserved)
+                -> if_stage.d_ir = trace.st(commit).fetched
+
+Only the *IF/ID* valid bit needs this qualification. The valid bits of
+the later stages (`e_valid`, `m_valid`, `w_valid`) never need it,
+because a shadowed instruction is always squashed before it becomes a
+valid instruction in EX and beyond. Put another way, `pc_reserved` is
+always false in these stages.
+
+Finally, two invariants from the stalling pipeline are simply removed.
+The invariant `pc_resv_stall` (which said a reserved pc forces a fetch
+stall) is gone, since there is no longer a stall. And `pc_no_early`
+(which said a valid IF/ID instruction under a reserved pc must be the
+pending taken branch) becomes a tautology once "real" means valid and
+not shadowed, so it too is dropped. Notably, the pc tracking invariant
+`pc_track` needs *no* change at all: its antecedent was already exactly
+`~spec_wrong`, and it continues to say that the pc holds the correct
+fetch address whenever fetch is not on a speculative path.
+
+### Adding a branch predictor
+
+In the second step we replace the fixed "not taken" guess with an actual
+predictor. The example is `5stage_bp_cpu_dec.ivy`, obtained from
+`5stage_spec_cpu_dec.ivy` by the changes below. The unifying idea is that
+the guess is no longer fixed, so a misprediction can go in *either*
+direction -- a branch predicted taken may fall through, or one predicted
+not-taken may branch -- and the notion of "wrong path" shifts from *taken
+branch* to *mispredicted branch*, i.e. `prediction ~= outcome`.
+
+**Carry the prediction and the pc down the pipe.** So that the execute
+stage can tell whether it mispredicted, and can recover the correct
+address either way, each instruction now carries its predicted-taken bit
+and its own pc alongside it. We add pipe registers `d_pred`/`d_pc` in the
+fetch stage and `e_pred`/`e_pc` in the decode stage, latched together
+with the instruction. The fetch stage computes the prediction and
+advances the pc to the predicted address rather than always to the next
+sequential word:
+
+    definition f_ptaken = f_is_branch & predicted_taken
+    definition pred_next_pc = (f_target if f_ptaken else pc + 1)
+    ...
+    d_ir := fetched;
+    d_valid := true;
+    d_pred := f_ptaken;
+    d_pc := pc;
+    pc := pred_next_pc
+
+Here `predicted_taken` is a new input driven by the predictor (below).
+Note that only a branch is ever predicted taken (`f_ptaken` conjoins
+`f_is_branch`), so on a non-branch we still fetch in sequence.
+
+**Detect a two-sided misprediction and repair it.** The execute stage
+now compares the carried prediction `e_pred` against the true,
+operand-based decision `e_take`. The forwarded late write `pc_ex_we`
+fires on a *disagreement* rather than on a taken branch, and the value it
+writes is the *corrected* next pc -- the target if the branch is really
+taken, otherwise the fall-through address, which is the branch's own pc
+plus one:
+
+    definition e_take = (e_opcode = 6) & (e_a = 0)
+    definition pc_ex_we = ~ex_stall & id_stage.e_valid & (e_opcode = 6) & (e_pred ~= e_take)
+    definition pc_ex_wval = (e_target if e_take else e_pc + 1)
+
+(The low-8 immediate field, previously read out of `pc_ex_wval`, now has
+its own wire `e_target`, which is also what a taken branch redirects to.)
+The flush in fetch and the squash in decode are unchanged -- they still
+key off `pc_ex_we` -- but `pc_ex_we` now means "misprediction" rather
+than "taken branch", so speculation is repaired in both directions with
+no new datapath control.
+
+**Substitute "mispredicted" for "taken" in the ghost logic.** Every place
+the fixed-prediction proof tested the trace's `take_branch`, the
+predictor version tests `prediction ~= take_branch`. For example
+`spec_wrong` becomes
+
+    definition spec_wrong =
+        if_id.pc_reserved
+        | (if_stage.d_valid
+           & (if_stage.d_pred ~= trace.st(if_id.commit).take_branch))
+
+and the reserved/shadow flag's meaning is generalized the same way:
+
+    invariant [pc_res]
+        if_id.pc_reserved
+        <-> e_valid & (e_pred ~= trace.st(id_ex.commit).take_branch)
+
+The identical substitution applies to the `pc_track` antecedent, the
+shadow-set condition in the `if_id` monitor, and `pc_writes_done`. It is
+worth checking that the fixed-prediction pipeline is exactly the special
+case `d_pred = false`: then `d_pred ~= take_branch` is just `take_branch`,
+and every one of these conditions collapses back to its previous form.
+
+The two guarantees EX at the ID/EX boundary generalize
+correspondingly. The write enable is mispredict-driven, and the written
+value is the conditional corrected pc:
+
+    invariant [pc_we_track] ex_stage.pc_ex_we <->
+        id_stage.e_valid & ~ex_stall
+          & (id_stage.e_pred ~= trace.st(commit).take_branch)
+    invariant [pc_wval_track] ex_stage.pc_ex_we ->
+        ex_stage.pc_ex_wval =
+          (trace.st(commit).target if trace.st(commit).take_branch
+            else trace.st(commit).pc + 1)
+
+**Track the new pipe registers.** Because `pc_wval_track` uses the
+carried pc to form the fall-through address, we add tracking invariants
+`e_pc_track` (and its IF/ID twin) saying the carried pc matches the
+trace. We also need to know that the mispredict test cannot fire
+spuriously on a non-branch. This relies on an invariant of the pipeline
+registers. For example, at the ID/EX boundary, we have:
+
+    invariant [e_pred_branch]
+        (id_stage.e_valid & id_stage.e_pred) -> (id_stage.e_ir<<15:13>>:opc = 6)
+
+and similarly at the IF/ID boundary. These are local invariants of the hardware
+and don't relate to the abstract trace model. They state that if there is an instruction
+in a stage (shadowed or not) that predicts a taken branch, then the instruction in that
+stage is actually a branch. Generally, invariants relating pipeline registers in the
+same stage are conditioned on the valid bit, since otherwise the register values
+are "don't cares". 
+
+**The predictor is a separate isolate with no interface specification.**
+Finally we add the predictor itself as a sub-isolate `bp`. It
+communicates only through its own ports -- a fetch pc in, a resolved
+branch outcome in, and a `predicted_taken` bit out -- and its logic (here
+a table of two-bit saturating counters) is entirely inside its own hidden
+implementation:
+
+    isolate bp = {
+        wire fetch_pc : addr          # input: PC being fetched (to predict)
+        wire br_valid : bool          # input: a conditional branch resolves this cycle
+        wire br_pc : addr             # input: the resolving branch's PC
+        wire br_taken : bool          # input: its true outcome
+        wire predicted_taken : bool   # output: the prediction for fetch_pc
+
+        implementation {
+            # ... a 16-entry table of 2-bit saturating counters ...
+        }
+    } with cpu, word, addr, reg, opc
+
+We connect it in the parent -- the CPU's prediction input reads its
+output, and its inputs are driven from the fetch pc and the EX branch
+resolution:
+
+    definition if_stage.predicted_taken = bp.predicted_taken
+    definition bp.fetch_pc  = if_stage.pc
+    definition bp.br_valid  = id_stage.e_valid & (ex_stage.e_opcode = 6) & ~ex_stall
+    definition bp.br_pc     = id_stage.e_pc
+    definition bp.br_taken  = ex_stage.e_take
+
+Crucially, `bp` has *no interface specification* and appears in no other
+stage's proof as anything but an arbitrary source of `predicted_taken`.
+Because its implementation is hidden, every stage is verified with the
+prediction left completely unconstrained. The proof therefore holds for
+*any* predictor whatsoever: the counter table could be replaced by a
+coin flip, a static hint, or a perfect oracle without touching a single
+invariant. This is the precise sense in which a predictor affects only
+performance and never correctness -- and it is why we were free to bolt
+on a real predictor as the very last step, after the speculating
+pipeline was already proved correct.
+
+The flip side is that the proof says nothing about whether the
+predictor is any *good*. Correctness holds even for a coin flip --
+which would mispredict half the time, leaving the pipeline forever
+flushing and re-fetching. Whether the predictor actually *learns*, so
+that a repeated branch is soon predicted correctly and the speculation
+pays off, is a performance property that lies entirely outside what we
+have proved, and it must be validated by simulation.  Running
+`5stage_bp_cpu_dec.ivy` on a small loop shows the expected pattern --
+the first time a taken branch is reached it is mispredicted (the pc
+trace fetches past the branch and then redirects), but once the
+two-bit counter saturates the branch is predicted correctly and the
+wrong-path fetches disappear. The proof guarantees we never compute a
+wrong result; only the simulation confirms we arrive at it
+efficiently.
 
 
 
