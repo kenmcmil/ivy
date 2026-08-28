@@ -371,12 +371,13 @@ isolate cpu = {
         # path (spec_wrong) the fetched word is wrong-path and the trace must
         # not step for it.
         #
-        # spec_wrong holds exactly when a taken branch is unresolved in ID/EX
-        # (pc_reserved) or in IF/ID (a valid, non-shadowed taken branch). This
-        # is the antecedent of pc_track: while it holds, pc is speculative.
+        # spec_wrong holds exactly when a MISPREDICTED branch is unresolved in
+        # ID/EX (pc_reserved) or in IF/ID (a valid instruction whose carried
+        # prediction d_pred disagrees with the true outcome). This is the
+        # antecedent of pc_track: while it holds, pc is speculative.
         wire spec_wrong : bool
         definition spec_wrong = if_id.pc_reserved
-                              | (if_stage.d_valid & trace.st(if_id.commit).take_branch)
+                              | (if_stage.d_valid & (if_stage.d_pred ~= trace.st(if_id.commit).take_branch))
 
         # The per-stage tag advances live in the stage specs; here we only
         # advance the trace (issue a new instruction) on a correct-path fetch.
@@ -419,11 +420,14 @@ isolate cpu = {
             register imem(A:addr) : word         # instruction memory (ROM; never written)
             register d_ir : word                 # IF/ID pipe register (registered output)
             register d_valid : bool
+            register d_pred : bool               #   predicted-taken bit carried with the instruction
+            register d_pc : addr                 #   the instruction's own PC
 
             # ---- interface wires ----
             wire ex_stall : bool            # input:  EX is stalled -> freeze fetch
-            wire pc_ex_we : bool            # input:  EX writes the pc this cycle (taken branch)
-            wire pc_ex_wval : addr          # input:  the value EX writes to the pc (branch target)
+            wire pc_ex_we : bool            # input:  EX repairs the pc this cycle (misprediction)
+            wire pc_ex_wval : addr          # input:  the value EX writes to the pc (corrected next pc)
+            wire predicted_taken : bool     # input:  the predictor's guess for the fetch PC
 
             # ---- fetch output (combinational, internal) ----
             wire fetched : word
@@ -432,24 +436,39 @@ isolate cpu = {
 
             definition fetched = imem(pc)
 
+            # ---- prediction of the instruction being fetched ----
+            wire f_is_branch : bool
+            definition f_is_branch = ((fetched<<15:13>>:opc) = 6)
+            wire f_ptaken : bool             # predicted-taken for the fetched instruction
+            definition f_ptaken = f_is_branch & predicted_taken
+            wire f_target : addr
+            definition f_target = fetched<<7:0>>
+            wire pred_next_pc : addr         # the predicted next fetch address
+            definition pred_next_pc = (f_target if f_ptaken else pc + 1)
+
             after init {
                 pc := 0;
                 imem(A) := init_imem(A);
-                d_valid := false
+                d_valid := false;
+                d_pred := false
             }
 
             after posedge {
                 if ~ex_stall {
                     # IF -> ID: speculatively fetch the next word and advance the
-                    # PC (predict-not-taken -- we never stall for a branch).
+                    # PC to the PREDICTED next address (we never stall for a
+                    # branch). Carry the prediction and this instruction's own PC
+                    # down the pipe so EX can repair a misprediction.
                     d_ir := fetched;
                     d_valid := true;
-                    pc := pc + 1                 # sequential / fall-through address
+                    d_pred := f_ptaken;
+                    d_pc := pc;
+                    pc := pred_next_pc           # predicted next fetch address
                 };
-                # Forwarded "late" pc write: a taken branch in EX is a
-                # misprediction. Redirect the pc to the target and flush the
-                # wrong-path word just fetched into IF/ID. pc_ex_we already
-                # implies ~ex_stall, so it overrides the fall-through above.
+                # Forwarded "late" pc write: a mispredicted branch in EX. Redirect
+                # the pc to the corrected next address and flush the wrong-path
+                # word just fetched into IF/ID. pc_ex_we already implies ~ex_stall,
+                # so it overrides the predicted fetch above.
                 if pc_ex_we {
                     pc := pc_ex_wval;
                     d_valid := false             # flush the mispredicted fetch
@@ -464,7 +483,7 @@ isolate cpu = {
                 invariant (~if_stage.d_valid | if_id.pc_reserved) -> if_id.commit = trace.now
 
                 # ----- architectural state tracking -----
-                invariant [pc_track] ~(if_id.pc_reserved | d_valid & trace.st(if_id.commit).take_branch)
+                invariant [pc_track] ~(if_id.pc_reserved | (d_valid & (d_pred ~= trace.st(if_id.commit).take_branch)))
                                      -> pc = trace.st(trace.now).pc
                 invariant if_stage.imem(A) = trace.st(trace.now).imem(A)
             }
@@ -510,12 +529,15 @@ isolate cpu = {
                         # test the PRE-edge shadow value because pc_writes_done
                         # clears pc_reserved on this same edge.
                         if old if_stage.d_valid & ~(old pc_reserved) {
-                            if trace.st(commit).take_branch {
+                            # A MISPREDICTED instruction passing the ID boundary
+                            # (its carried prediction disagrees with the true
+                            # outcome) shadows the wrong-path followers behind it.
+                            if (old if_stage.d_pred) ~= trace.st(commit).take_branch {
                                 pc_reserved := true;
                             }
                             commit := commit.next;
                         };
-                        # When the reserving branch resolves in EX, un-shadow.
+                        # When the mispredicted branch resolves in EX, un-shadow.
                         if pc_writes_done {
                             pc_reserved := false;
                         }
@@ -537,6 +559,14 @@ isolate cpu = {
                     # Only a non-shadowed instruction matches the trace; a
                     # shadowed one holds a wrong-path word.
                     invariant (if_stage.d_valid & ~pc_reserved) -> if_stage.d_ir = trace.st(commit).fetched
+                    invariant (if_stage.d_valid & ~pc_reserved) -> if_stage.d_pc = trace.st(commit).pc
+
+                    # A valid instruction is predicted taken only if it is a
+                    # branch: d_pred and d_ir are latched together from the same
+                    # fetched word, and f_ptaken = f_is_branch & predicted. For an
+                    # invalid slot the carried prediction is irrelevant. (The
+                    # ID/EX twin e_pred_branch inducts from this.)
+                    invariant [d_pred_branch] (if_stage.d_valid & if_stage.d_pred) -> (if_stage.d_ir<<15:13>>:opc = 6)
                 }
             } with cpu, trace, word, addr, reg, opc, if_id, if_stage
 
@@ -574,15 +604,18 @@ isolate cpu = {
             # ---- state ----
             register e_ir : word                 # ID/EX pipe register (registered output)
             register e_valid : bool
+            register e_pred : bool               #   carried prediction (from d_pred)
+            register e_pc : addr                 #   the instruction's own PC (from d_pc)
 
             # ---- interface wires ----
             wire ex_stall : bool            # input:  EX is stalled -> hold the register
-            wire pc_ex_we : bool            # input:  taken branch resolving in EX -> squash
+            wire pc_ex_we : bool            # input:  misprediction resolving in EX -> squash
 
             # ---- implementation (hidden from other stages) ----
 
             after init {
-                e_valid := false
+                e_valid := false;
+                e_pred := false
             }
 
             after posedge {
@@ -590,15 +623,17 @@ isolate cpu = {
                 # register into this stage's ID/EX pipe register, unless EX is
                 # stalled (then hold). The input register lives in if_stage and is
                 # updated by its own edge this cycle, so read pre-edge with `old`.
-                # On a misprediction (a taken branch resolving in EX, pc_ex_we)
-                # the instruction moving in behind the branch is on the wrong
-                # path, so squash it instead of latching it.
+                # On a misprediction (pc_ex_we) the instruction moving in behind
+                # the branch is on the wrong path, so squash it instead of
+                # latching it.
                 if ~ex_stall {
                     if pc_ex_we {
                         e_valid := false
                     } else {
                         e_ir := old if_stage.d_ir;
-                        e_valid := old if_stage.d_valid
+                        e_valid := old if_stage.d_valid;
+                        e_pred := old if_stage.d_pred;
+                        e_pc := old if_stage.d_pc
                     }
                 }
             }
@@ -609,9 +644,9 @@ isolate cpu = {
                 invariant e_valid -> id_ex.commit.succ(if_id.commit)
                 invariant ~e_valid -> if_id.commit = id_ex.commit
 
-                definition if_id.pc_writes_done = e_valid & trace.st(id_ex.commit).take_branch & ~ex_stall
+                definition if_id.pc_writes_done = e_valid & (e_pred ~= trace.st(id_ex.commit).take_branch) & ~ex_stall
 
-                invariant [pc_res] if_id.pc_reserved <-> e_valid & trace.st(id_ex.commit).take_branch
+                invariant [pc_res] if_id.pc_reserved <-> e_valid & (e_pred ~= trace.st(id_ex.commit).take_branch)
 
             }
         } with cpu, trace, word, addr, reg, opc, if_id, id_ex
@@ -653,6 +688,14 @@ isolate cpu = {
 
                     # ---- the ID/EX pipe register tracks the trace ----
                     invariant [e_ir_track] id_stage.e_valid -> id_stage.e_ir = trace.st(commit).fetched
+                    invariant [e_pc_track] id_stage.e_valid -> id_stage.e_pc = trace.st(commit).pc
+
+                    # A valid instruction is predicted taken only if it is a
+                    # branch (f_ptaken = f_is_branch & predicted). A valid ID/EX
+                    # instruction is never shadowed, so this keeps the mispredict
+                    # test e_pred ~= take_branch from firing spuriously on a
+                    # non-branch. Inducts from the IF-level twin.
+                    invariant [e_pred_branch] (id_stage.e_valid & id_stage.e_pred) -> (id_stage.e_ir<<15:13>>:opc = 6)
 
                 } with cpu, trace, word, addr, reg, opc, if_id, id_ex, id_stage
 
@@ -662,13 +705,16 @@ isolate cpu = {
                 isolate ex_props = {
                     # This is the incoming interface of the late (EX) pc-write
                     # stage, so its guarantees are the doc's r_z_we / r_z_wval for
-                    # r = pc. The write enable pc_ex_we (a genuine enable, gated on
-                    # ~ex_stall) holds iff a valid, non-stalled taken branch is in
-                    # EX (writes_r == take_branch); the written value is the target.
-                    invariant [pc_we_track] ex_stage.pc_ex_we <-> id_stage.e_valid & ~ex_stall & trace.st(commit).take_branch
-                    with id_props.e_ir_track, id_props.commit_bound, ex_mem.mem_props.a_track
-                    invariant [pc_wval_track] ex_stage.pc_ex_we -> ex_stage.pc_ex_wval = trace.st(commit).target
-                    with id_props.e_ir_track, id_props.commit_bound
+                    # r = pc. The write enable pc_ex_we (gated on ~ex_stall) now
+                    # holds iff a valid, non-stalled MISPREDICTED branch is in EX
+                    # (its carried prediction disagrees with the true outcome);
+                    # the written value is the CORRECTED next pc -- the target if
+                    # actually taken, else the branch's own PC + 1 (fall-through).
+                    invariant [pc_we_track] ex_stage.pc_ex_we <-> id_stage.e_valid & ~ex_stall & (id_stage.e_pred ~= trace.st(commit).take_branch)
+                    with id_props.e_ir_track, id_props.e_pred_branch, id_props.commit_bound, ex_mem.mem_props.a_track
+                    invariant [pc_wval_track] ex_stage.pc_ex_we ->
+                        ex_stage.pc_ex_wval = (trace.st(commit).target if trace.st(commit).take_branch else trace.st(commit).pc + 1)
+                    with id_props.e_ir_track, id_props.e_pc_track, id_props.commit_bound, ex_mem.mem_props.a_track
                 } with cpu, trace, word, addr, reg, opc, id_ex, ex_mem, ex_stage
             }
         }
@@ -705,10 +751,13 @@ isolate cpu = {
             wire wb_we  : bool              # input:  WB write enable
             wire wb_rd  : reg               # input:  WB write index
             wire wb_val : word              # input:  WB write value
-            wire mem_stall : bool           # input:  stall signal from M stage 
+            wire mem_stall : bool           # input:  stall signal from M stage
+            wire e_pred : bool              # input:  carried prediction (id_stage.e_pred)
+            wire e_pc : addr                # input:  the EX instruction's own PC (id_stage.e_pc)
             wire e_opcode : opc             # output: opcode of the instruction in EX
-            wire pc_ex_wval : addr          # output: value EX writes to pc (branch target); also LI immediate
-            wire pc_ex_we : bool            # output: EX writes the pc this cycle (a taken branch, gated on ~ex_stall)
+            wire e_take : bool              # output: the true (operand-based) branch decision
+            wire pc_ex_wval : addr          # output: corrected next pc on a misprediction
+            wire pc_ex_we : bool            # output: EX repairs the pc this cycle (misprediction, gated on ~ex_stall)
             wire m_opcode : opc             # output: opcode of the instruction in MEM
             wire ex_stall : bool            # output: data hazard -> stall EX
 
@@ -717,20 +766,25 @@ isolate cpu = {
             # ---- EX decode (of id_stage's ID/EX pipe register) ----
             wire e_ra : reg
             wire e_rb : reg
+            wire e_target : addr
             definition e_opcode  = id_stage.e_ir<<15:13>>
             definition e_ra      = id_stage.e_ir<<9:7>>
             definition e_rb      = id_stage.e_ir<<6:4>>
-            definition pc_ex_wval = id_stage.e_ir<<7:0>>    # low-8 field: branch target / LI immediate
+            definition e_target  = id_stage.e_ir<<7:0>>     # low-8 field: branch target / LI immediate
 
             # ---- EX operands (read from the register file) ----
             wire e_a : word
             wire e_b : word
 
-            # ---- pc late write (BEQZ redirect), resolved in EX ----
-            # pc_ex_we is a write ENABLE: it is gated on ~ex_stall so that, per the
-            # decomposition write-forwarding scheme, it means "EX writes the pc
-            # this cycle" rather than merely "a taken branch is present".
-            definition pc_ex_we = ~ex_stall & id_stage.e_valid & (e_opcode = 6) & (e_a = 0)
+            # ---- branch resolution and pc repair, resolved in EX ----
+            # e_take is the true branch decision; pc_ex_we fires only on a
+            # MISPREDICTION (the carried prediction disagrees with e_take), and
+            # then pc_ex_wval is the corrected next pc: the target if actually
+            # taken, else the fall-through (this instruction's PC + 1). pc_ex_we
+            # is gated on ~ex_stall so it means "EX repairs the pc this cycle".
+            definition e_take = (e_opcode = 6) & (e_a = 0)
+            definition pc_ex_we = ~ex_stall & id_stage.e_valid & (e_opcode = 6) & (e_pred ~= e_take)
+            definition pc_ex_wval = (e_target if e_take else e_pc + 1)
 
             # ---- MEM decode (of this stage's own EX/MEM pipe register) ----
             wire m_rd : reg
@@ -761,7 +815,7 @@ isolate cpu = {
                     m_valid := old id_stage.e_valid;
                     m_res := (e_a + e_b if e_opcode = 1 else
                              (e_a - e_b if e_opcode = 2 else
-                             ((0:addr) :: pc_ex_wval if e_opcode = 3 else 0)));   # LI immediate
+                             ((0:addr) :: e_target if e_opcode = 3 else 0)));   # LI immediate
                     m_addr := e_a<<7:0>>;
                     m_store := e_b
                 }
@@ -1001,6 +1055,58 @@ isolate cpu = {
         } with cpu, trace, word, addr, reg, opc, mem_wb
     } 
 
+    # ---- branch predictor (sub-isolate `bp`) ----
+    # bp declares its own input/output wires and its logic uses only those; it
+    # never reaches into the CPU. We connect it in the parent below: its inputs
+    # are driven from the fetch PC and the EX branch resolution, and IF's
+    # prediction input reads its output. Because bp's implementation is hidden,
+    # every stage is verified with bp.predicted_taken left arbitrary -- so
+    # correctness holds for ANY prediction (a predictor affects only
+    # performance, not correctness). bp therefore needs no interface spec.
+
+    implementation {
+        isolate bp = {
+            wire fetch_pc : addr          # input: PC being fetched (to predict)
+            wire br_valid : bool          # input: a conditional branch resolves this cycle
+            wire br_pc : addr             # input: the resolving branch's PC
+            wire br_taken : bool          # input: its true outcome
+            wire predicted_taken : bool   # output: the prediction for fetch_pc
+
+            implementation {
+                type bhtidx
+                interpret bhtidx -> bv[4]  # 16-entry branch history table
+                type ctr
+                interpret ctr -> bv[2]     # 2-bit saturating counter, states 0..3
+
+                var bht(I:bhtidx) : ctr
+
+                wire pred_idx : bhtidx
+                definition pred_idx = fetch_pc<<3:0>>
+                wire upd_idx : bhtidx
+                definition upd_idx = br_pc<<3:0>>
+
+                # predict taken when the indexed counter is in a taken state (2 or 3)
+                definition predicted_taken = (bht(pred_idx) = 2) | (bht(pred_idx) = 3)
+
+                after init {
+                    bht(I) := 1            # weakly not-taken
+                }
+
+                # on a resolved branch, nudge its counter toward the outcome,
+                # saturating at 0 and 3
+                after posedge {
+                    if br_valid {
+                        if br_taken {
+                            if bht(upd_idx) ~= 3 { bht(upd_idx) := bht(upd_idx) + 1 }
+                        } else {
+                            if bht(upd_idx) ~= 0 { bht(upd_idx) := bht(upd_idx) - 1 }
+                        }
+                    }
+                }
+            }
+        } with cpu, word, addr, reg, opc
+    }
+
     # ---- stage-output-dependent combinational wires ----
     # These read the stage objects' registers / outputs, so they are defined here
     # (after all stage objects).
@@ -1010,6 +1116,7 @@ isolate cpu = {
     definition if_stage.ex_stall    = ex_stall
     definition if_stage.pc_ex_we    = ex_stage.pc_ex_we
     definition if_stage.pc_ex_wval  = ex_stage.pc_ex_wval
+    definition if_stage.predicted_taken = bp.predicted_taken
 
     definition id_stage.ex_stall    = ex_stall
     definition id_stage.pc_ex_we    = ex_stage.pc_ex_we
@@ -1017,6 +1124,14 @@ isolate cpu = {
     definition ex_stage.wb_we       = wb_stage.wb_we
     definition ex_stage.wb_rd       = wb_stage.wb_rd
     definition ex_stage.wb_val      = wb_stage.wb_val
+    definition ex_stage.e_pred      = id_stage.e_pred
+    definition ex_stage.e_pc        = id_stage.e_pc
+
+    # connect the predictor (inputs from fetch PC and EX branch resolution)
+    definition bp.fetch_pc  = if_stage.pc
+    definition bp.br_valid  = id_stage.e_valid & (ex_stage.e_opcode = 6) & ~ex_stall
+    definition bp.br_pc     = id_stage.e_pc
+    definition bp.br_taken  = ex_stage.e_take
     
     definition mem_stage.ra = ex_stage.e_ra
     definition mem_stage.rb = ex_stage.e_rb
