@@ -343,6 +343,11 @@ assumptions of 'x'). Notice that 'x_props' is proved using isolate 'x'
 and both its incoming and outgoing interfaces. Similarly, 'y_props' is
 proved using 'y' and both its incoming and outgoing interfaces.
 
+It is important to note this structure: an invarant that is guaranteed
+by 'x' and assumed by 'y' *must* be placed in `x_props` for it to be
+visible to 'y'. An invariant should be placed in stage 'x' itself when
+it is used only for proving the guarantees of 'x' and not by any other isolate.
+
 In our example, the interface `rd_alu` contains an isolate `rd_props`
 representing the guarantees of the `rd` stage (which is `x` in the
 pattern) and `alu_props` representing guarantees of the `alu` stage

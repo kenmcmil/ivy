@@ -371,6 +371,27 @@ project spec is `doc/projects/isolate_icache.md`.)
   `private` — still used to prove cpu's own obligations, just not dumped into
   `ic`'s VC, keeping it small.
 
+- **A cross-stage fact must live in the shared interface (`*_props`) isolate,
+  not in one stage's implementation isolate — or a sibling cannot assume it.**
+  In the per-stage decomposition style (each pipeline stage is an implementation
+  isolate; each inter-stage interface is a ghost `*_props` isolate carrying that
+  boundary's tracking invariants), an isolate assumes the invariants of the
+  *props* isolates it depends on, but **not** the private invariants of a sibling
+  stage's implementation isolate. So when stage `Y`'s proof needs a fact about
+  stage `X`'s registers, state that fact as an invariant of the shared
+  `X`-interface `*_props` isolate, not inside `X`'s stage isolate. Symptom of
+  getting this wrong: the invariant proves fine where you put it, but the
+  sibling's *consecution* FAILs for want of it, and moving the **identical**
+  invariant into the props isolate fixes it — nothing else changes. (In
+  `5stage_bp_cpu_dec.ivy`, `d_pred_branch` — "a valid predicted-taken IF/ID
+  instruction is a branch" — had to move from the `if_stage` implementation
+  isolate into the `if_id.if_props` interface isolate before
+  `id_ex.id_props.e_pred_branch` could assume it. The tell was that the sibling
+  `e_pc_track` already consumes `if_props`'s tracking invariants without trouble
+  — props-isolate facts are assumable across the boundary, stage-isolate ones are
+  not.) Corollary: only assert an invariant where both its subject (the register)
+  and the reference it is compared to (the boundary tag / trace) are in scope.
+
 - **When a component isolate is slow, localize its dependencies before you reach
   for type abstraction.** `with this` makes the sub-isolate depend on the *entire*
   parent — including cpu's whole ghost monitor (every tag/shadow update and the
