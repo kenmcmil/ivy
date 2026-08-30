@@ -1463,6 +1463,11 @@ module keyval(index,key,data) = {
             assert key_at(old s,I,X) -> value_at(s,I) = value_at(old s,I);
             assert value_at(s,end(old s)) = d
         }
+        after find {
+            assert s.key_at(I, k) -> s.key_at(i, k);
+            assert (forall I. ~s.key_at(I, k)) <-> s.end = i;
+        }
+
     }
 
     object impl = {
@@ -1507,9 +1512,11 @@ module keyval(index,key,data) = {
             }
         }
         implement find {
-            i := repr(s).begin;
-            var end := repr(s).end;
-            while i < end & repr(s).value(i).p_key ~= k {
+            i := 0;
+            while i < s.end & ~s.key_at(i, k)
+            invariant ~s.key_at(i, k) & I < i -> ~s.key_at(I, k)
+            invariant i <= s.end
+            {
                 i := i.next;
             }
         }
