@@ -507,7 +507,19 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None):
     checkers = []
     for c in lcs:
         depnames = set(mod.invardeps.get(c.name,[])) if c.label is not None else set([])
-        deps = [x.formula for x in mod.assumed_invariants if x.name in depnames]  
+        # Every zero-delay dependency named in this invariant's `with` clause must
+        # refer to an invariant that is actually visible (assumed) in this isolate.
+        # A named dependency that is not visible -- typically because the isolate's
+        # own `with` clause omits the isolate that owns it -- would otherwise be
+        # silently dropped from `deps`, so the invariant is checked without it.
+        available = set(x.name for x in mod.assumed_invariants)
+        missing = sorted(n for n in depnames if n not in available)
+        if missing:
+            raise iu.IvyError(c,
+                "zero-delay dependency {} of this invariant is not visible in this isolate "
+                "(this can be caused by a missing entry in the `with` clause of the isolate)".format(
+                    ', '.join(missing)))
+        deps = [x.formula for x in mod.assumed_invariants if x.name in depnames]
         if deps:
             c = c.clone([c.label,lg.Implies(lg.And(*deps),c.formula)])
         checkers.append(ConjChecker(c,indent,action=action))
