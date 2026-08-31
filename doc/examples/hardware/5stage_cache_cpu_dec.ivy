@@ -639,10 +639,10 @@ isolate cpu = {
                     # d_ir at the fetch edge. (Zero-delay on the id_ex forward and
                     # the ID/EX tag chain.)
                     invariant [fetch_track] (~trace.st(trace.now).error & ~trace.st(commit).ddirty(if_stage.pc) & ~flush_in_pipe) ->
-                        mem_stage.fetch_data = trace.st(commit).mem(if_stage.pc)
+                        ic.fetch_data = trace.st(commit).mem(if_stage.pc)
                     with id_ex.ex_props.fetch_track, id_stage.e_tag_lo, id_stage.e_tag_eq, if_props.commit_bound
                 }
-            } with cpu, trace, word, addr, reg, opc, if_id, id_stage, id_ex
+            } with cpu, trace, word, addr, reg, opc, if_id, id_stage, id_ex, ic
             
         }
     }
@@ -794,13 +794,13 @@ isolate cpu = {
                     # reached mem, so we do not claim coherence then. (Zero-delay on the
                     # ex_mem base and the EX/MEM tag chain.)
                     invariant [fetch_track] (~trace.st(trace.now).error & ~trace.st(commit).ddirty(if_stage.pc) & ~flush_in_pipe) ->
-                        mem_stage.fetch_data = trace.st(commit).mem(if_stage.pc)
-                    with ex_mem.mem_props.fetch_track, ex_stage.m_tag_lo, ex_stage.m_tag_eq, id_props.commit_bound
-                } with cpu, trace, word, addr, reg, opc, id_ex, ex_mem, ex_stage
+                        ic.fetch_data = trace.st(commit).mem(if_stage.pc)
+                    with mem_ic.ic_props.icache_output, ex_stage.m_tag_lo, ex_stage.m_tag_eq, id_props.commit_bound
+                } with cpu, trace, word, addr, reg, opc, id_ex, ex_mem, ex_stage, mem_ic
             }
         }
     }
-    
+
     # ---- execute stage (EX) ------------------------------------------------
     # The execute stage owns the EX/MEM pipe register (m_ir/m_valid/m_res/
     # m_addr/m_store) -- its registered output -- the register file, and the
@@ -970,14 +970,8 @@ isolate cpu = {
                 invariant (~mem_stage.mem_stall & ~trace.st(trace.now).error) -> wb_stage.wb_b = trace.st(commit).rf(ex_stage.e_rb)
                 with mem_wb.wb_props.wb_b_track, ex_props.commit_bound
 
-                # ---- fetch data tracks the trace (base case, at the MEM boundary) ----
-                # fetch_data reads mem combinationally, and mem tracks the trace at
-                # ex_mem.commit, so fetch_data = the trace's memory at ex_mem.commit
-                # and the fetch address. No dirty condition is needed: mem is read
-                # exactly at this tag. (Zero-delay on mem_track.)
-                invariant [fetch_track] ~trace.st(trace.now).error ->
-                    mem_stage.fetch_data = trace.st(commit).mem(if_stage.pc)
-                    with mem_stage.mem_track, ex_props.commit_bound
+                # (The fetch-data base case at the MEM boundary now lives in the
+                # mem_ic interface isolate as the I-cache guarantee icache_output.)
             } with cpu, trace, word, addr, reg, opc, ex_mem, mem_stage, mem_wb
 
             # TODO guarantess of MEM stage at EX/MEM boundary
@@ -1003,8 +997,6 @@ isolate cpu = {
             wire ra : reg          # input: reagister read address from ex_stage
             wire rb : reg          # input: reagister read address from ex_stage
             wire mem_stall : bool  # output: stall signal to ex_stage
-            wire fetch_addr : addr # input:  the pc, presented by if_stage for fetch
-            wire fetch_data : word # output: the instruction word mem(fetch_addr)
 
             # ---- state ----
             register w_ir : word                 # MEM/WB pipe register (registered output)
@@ -1028,10 +1020,6 @@ isolate cpu = {
 
             wire is_reg_write = w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
             definition mem_stall = is_reg_write & (ra = w_rd | rb = w_rd)
-
-            # Fetch read port: a second, combinational read of the unified memory
-            # at the address if_stage presents (its pc).
-            definition fetch_data = mem(fetch_addr)
 
             after posedge {
                 # MEM: read ex_stage's EX/MEM pipe register (pre-edge, via `old`),
@@ -1110,6 +1098,53 @@ isolate cpu = {
             } with cpu, trace, word, addr, reg, opc, mem_wb, wb_stage
 
         }
+    }
+
+    # ---- instruction cache (IC) --------------------------------------------
+    # The read-only instruction cache sits between fetch and the unified memory:
+    # if_stage presents the pc on fetch_addr and reads the instruction word back
+    # on fetch_data. STAGE A (interface skeleton): `ic` is a combinational
+    # PASS-THROUGH -- it reads mem directly and always "hits" (fetch_valid =
+    # true), so there are no fills and IF never stalls for fetch. This exists to
+    # establish the ic/mem_ic isolate boundary and the icache_output guarantee
+    # that fetch consumes. STAGE B will replace the body with the real two-word-
+    # line cache, a two-cycle fill port, and FLUSH eviction, keeping mem_ic fixed.
+
+    implementation {
+        isolate ic = {
+            wire fetch_addr : addr          # input:  the pc being fetched
+            wire fetch_data : word          # output: the instruction word at fetch_addr
+            wire fetch_valid : bool         # output: fetch_data is valid this cycle
+
+            # ---- implementation (pass-through; hidden from other isolates) ----
+            definition fetch_data  = mem_stage.mem(fetch_addr)
+            definition fetch_valid = true
+        } with cpu, word, addr, mem_stage
+    }
+
+    # ---- the memory / I-cache interface (mem_ic) ---------------------------
+    # The interface between the memory (mem_stage) and the I-cache (ic), in the
+    # standard two-sided form. ic_props holds the cache's GUARANTEE icache_output
+    # (a valid fetch word equals the reference memory at the MEM boundary). The
+    # memory's ASSUMPTION icache_input (that a fill returns coherent data) will be
+    # added to a mem_props sub-isolate in STAGE B, when fills exist.
+
+    private {
+        isolate mem_ic = {
+            isolate ic_props = {
+                # ---- I-cache output guarantee (base fetch-coherence case) ----
+                # The fetched word equals the reference memory at the MEM
+                # boundary tag ex_mem.commit. In STAGE A this is exactly the old
+                # base fetch_track (pass-through: fetch_data is a direct read of
+                # mem, which tracks the trace), so the if_id/id_ex forwards that
+                # consume it are unchanged. STAGE B will weaken it with the
+                # fetch_valid (hit) and ~ddirty(fetch_addr) premises the real
+                # cache needs, and rework the forwards to match.
+                invariant [icache_output] ~trace.st(trace.now).error
+                              -> ic.fetch_data = trace.st(ex_mem.commit).mem(if_stage.pc)
+                    with mem_stage.mem_track, ex_mem.ex_props.commit_bound
+            } with cpu, trace, word, addr, reg, opc, ic, mem_stage, ex_mem
+        } with cpu
     }
 
     # ---- writeback stage (WB) ----------------------------------------------
@@ -1232,10 +1267,10 @@ isolate cpu = {
     definition if_stage.pc_ex_we    = ex_stage.pc_ex_we
     definition if_stage.pc_ex_wval  = ex_stage.pc_ex_wval
     definition if_stage.predicted_taken = bp.predicted_taken
-    definition if_stage.fetch_data  = mem_stage.fetch_data
+    definition if_stage.fetch_data  = ic.fetch_data
 
     # fetch reads the unified memory (in mem_stage) at the current pc
-    definition mem_stage.fetch_addr = if_stage.pc
+    definition ic.fetch_addr = if_stage.pc
 
     definition id_stage.ex_stall    = ex_stall
     definition id_stage.pc_ex_we    = ex_stage.pc_ex_we

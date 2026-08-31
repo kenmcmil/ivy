@@ -371,6 +371,25 @@ project spec is `doc/projects/isolate_icache.md`.)
   `private` — still used to prove cpu's own obligations, just not dumped into
   `ic`'s VC, keeping it small.
 
+- **Two Ivy `with`-clause misfeatures to work around (both silent).** (1) *Give
+  every isolate a `with` clause that includes `cpu`* (the top-level object that
+  owns `posedge`). Without it, Ivy does not treat `posedge` as an action of the
+  isolate, so a combinational invariant that merely *reads* a register another
+  action writes is reported as a spurious interference — "External call to
+  posedge may have visible effect on cpu.<reg>". This bites interface/`*_props`
+  wrapper isolates that hold no state of their own (e.g. a `mem_ic` whose only
+  content is a nested `ic_props`): add `with cpu` to the wrapper too. (2) *To
+  cite an invariant `A.B.inv` in an individual invariant's `with`, the enclosing
+  isolate's own `with` clause must list `A.B` (or `A`) as a dependency* — else
+  the citation is **silently ignored** and the invariant is checked without it
+  (you see the proof fail, or fall back to some other cited fact, with no error
+  about the missing citation). Symptom: an invariant that should follow from a
+  guarantee you cited fails, and the cited guarantee is absent from the isolate's
+  "properties assumed" list in the check output. Fix: add the guarantee's owning
+  isolate to the consuming isolate's `with`. (Diagnose by grepping the isolate's
+  section of `ivy_check` output for the guarantee name; if it is not listed as
+  assumed, the citation did not take.)
+
 - **A cross-stage fact must live in the shared interface (`*_props`) isolate,
   not in one stage's implementation isolate — or a sibling cannot assume it.**
   In the per-stage decomposition style (each pipeline stage is an implementation
