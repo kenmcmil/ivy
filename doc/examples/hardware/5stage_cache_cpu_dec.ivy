@@ -1022,21 +1022,6 @@ isolate cpu = {
             register w_ir : word                 # MEM/WB pipe register (registered output)
             register w_valid : bool
             register w_val : word                #   value to write to rf
-            register mem(A:addr) : word          # unified memory (two-port: data + I-fill)
-
-            # ---- I-fill memory port (shared with the I-cache) ----
-            # A memory read takes two cycles: it is initiated when ~mbusy and a fill
-            # is requested (mfa latches the fill address); the value is available on
-            # the next (busy) cycle as mem(mfa). For now mem is treated as a two-port
-            # RAM, so a data LD/ST and an I-fill read can proceed in the same cycle
-            # without arbitration.
-            register mbusy : bool                # a fill read is in its busy (return) cycle
-            register mfa : addr                  # the fill read address latched last cycle
-            register mfi : bool                  # the busy read is for the I-cache
-            wire fill_addr : addr                # input:  address ic wants read (ic.ifill_addr)
-            wire fill_req  : bool                # input:  ic is requesting a read (ic.ifill_addr_valid)
-            wire ifill_data : word               # output: the returned word (this-cycle busy read)
-            wire ifill_data_valid : bool         # output: an I-read completes this cycle
 
             # ---- MEM/WB decode (of this stage's own register), exposed to wb_stage ----
             wire w_opcode : opc
@@ -1048,32 +1033,71 @@ isolate cpu = {
             definition w_opcode = w_ir<<15:13>>
             definition w_rd     = w_ir<<12:10>>
 
-            definition ifill_data = mem(mfa)
-            definition ifill_data_valid = mbusy & mfi
-
             after init {
-                w_valid := false;
-                mem(A) := init_mem(A);
-                mbusy := false;
-                mfi := false
+                w_valid := false
             }
 
             wire is_reg_write = w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
             definition mem_stall = is_reg_write & (ra = w_rd | rb = w_rd)
 
             after posedge {
-                # MEM: read ex_stage's EX/MEM pipe register (pre-edge, via `old`),
-                # access data memory (a LD reads current memory, a ST writes it),
-                # and latch the writeback value into the MEM/WB pipe register.
-                # Reading before storing keeps w_val a function of pre-edge memory.
+                # MEM: read ex_stage's EX/MEM pipe register (pre-edge, via `old`)
+                # and latch the writeback value into the MEM/WB pipe register. A LD
+                # reads the (pre-edge) main memory (in main_mem); a ST is applied to
+                # main memory by the main_mem isolate, driven from ex_stage.m_*.
                 w_ir := old ex_stage.m_ir;
                 w_valid := old ex_stage.m_valid;
-                w_val := (mem(old ex_stage.m_addr) if m_opcode = 4
-                         else old ex_stage.m_res);      # LD loads; else ALU/LI result
-                if old ex_stage.m_valid & (m_opcode = 5) {          # ST
-                    mem(old ex_stage.m_addr) := old ex_stage.m_store
+                w_val := (main_mem.mem(old ex_stage.m_addr) if m_opcode = 4
+                         else old ex_stage.m_res)       # LD loads; else ALU/LI result
+            }
+
+            specification {
+                # ---- tag chain: the MEM/WB register sits between the ex_mem and
+                #      mem_wb boundaries, so this stage relates their tags ----
+                invariant w_valid -> mem_wb.commit.succ(ex_mem.commit)
+                invariant ~w_valid -> ex_mem.commit = mem_wb.commit
+            }
+        } with cpu, trace, word, addr, reg, opc, ex_mem, mem_wb, mem_ic, main_mem
+    }
+
+    # ---- main memory (main_mem) --------------------------------------------
+    # With caches in front of it, main memory is its own isolate: it owns the
+    # unified RAM, the two-cycle read/fill port shared by the caches, and the
+    # port arbiter. The MEM stage reads a load value through ld_data and applies
+    # a committing store through the dwrite_* inputs; the I-cache drives the fill
+    # port (fill_addr/fill_req) and reads the returned word on ifill_data.
+    implementation {
+        isolate main_mem = {
+            # ---- state ----
+            register mem(A:addr) : word          # unified main memory
+            register mbusy : bool                # a fill read is in its busy (return) cycle
+            register mfa : addr                  # the fill read address latched last cycle
+            register mfi : bool                  # the busy read is for the I-cache
+
+            # ---- interface wires ----
+            wire fill_addr : addr    # input:  address a cache wants read
+            wire fill_req  : bool    # input:  a cache requests a read
+            wire dwrite_en : bool    # input:  a data store commits this cycle
+            wire dwrite_addr : addr  # input:  the store address
+            wire dwrite_data : word  # input:  the store data
+            wire ifill_data : word          # output: the returned fill word (busy cycle)
+            wire ifill_data_valid : bool    # output: a read completes this cycle
+
+            definition ifill_data = mem(mfa)
+            definition ifill_data_valid = mbusy & mfi
+
+            after init {
+                mem(A) := init_mem(A);
+                mbusy := false;
+                mfi := false
+            }
+
+            after posedge {
+                # apply a committing store to main memory
+                if dwrite_en {
+                    mem(dwrite_addr) := dwrite_data
                 };
-                # I-fill port arbiter: finish a busy read, else start a requested one.
+                # fill-port arbiter: finish a busy read, else start a requested one
                 if mbusy {
                     mbusy := false
                 } else if fill_req {
@@ -1084,16 +1108,13 @@ isolate cpu = {
             }
 
             specification {
-                # ---- tag chain: the MEM/WB register sits between the ex_mem and
-                #      mem_wb boundaries, so this stage relates their tags ----
-                invariant w_valid -> mem_wb.commit.succ(ex_mem.commit)
-                invariant ~w_valid -> ex_mem.commit = mem_wb.commit
-
-                # ---- the memory tracks the trace (at the MEM boundary) ----
+                # main memory tracks the trace at the MEM boundary.
                 invariant [mem_track] ~trace.st(trace.now).error -> mem(A) = trace.st(ex_mem.commit).mem(A)
                     with ex_mem.ex_props.commit_bound
+
+                invariant [mfa_ok]ifill_data_valid -> mfa = mem_ic.ifill_addr_old
             }
-        } with cpu, trace, word, addr, reg, opc, ex_mem, mem_wb
+        } with cpu, trace, word, addr, reg, opc, ex_mem, mem_ic
     }
 
     # Specification of the MEM/WB boundary
@@ -1137,7 +1158,7 @@ isolate cpu = {
                                                 | trace.st(commit).opcode = 3 | trace.st(commit).opcode = 4))
                               -> mem_stage.w_val = trace.st(commit).res
 
-            } with cpu, trace, word, addr, reg, opc, ex_mem, mem_stage, mem_wb
+            } with cpu, trace, word, addr, reg, opc, ex_mem, mem_stage, mem_wb, main_mem, mem_ic
 
             isolate wb_props = {
                 invariant [wb_a_track] ~trace.st(trace.now).error -> wb_stage.wb_a = trace.st(commit).rf(ex_stage.e_ra) with mem_props.commit_bound, wb_stage.rf_track
@@ -1367,13 +1388,13 @@ isolate cpu = {
                 # latch ic.ifill_addr on the read-start edge, and mbusy is never set
                 # two cycles running, so this holds unguarded. It bridges the
                 # one-cycle port latch for icache_input.
-                invariant [mfa_track] mem_stage.mbusy -> mem_stage.mfa = ifill_addr_old
+                invariant [mfa_track] main_mem.mbusy -> main_mem.mfa = ifill_addr_old
 
                 invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
                         & ~trace.st(trace.now).error & ~trace.st(ex_mem.commit).ddirty(ifill_addr_old))
                     -> ic.ifill_data = trace.st(ex_mem.commit).mem(ifill_addr_old)
-                    with mfa_track, mem_stage.mem_track, ex_mem.ex_props.commit_bound
-            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, mem_stage, ex_mem, mem_ic
+                    with mfa_track, main_mem.mem_track, ex_mem.ex_props.commit_bound
+            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, main_mem, ex_mem, mem_ic
 
             # ---- I-cache-side guarantees: a valid fetched word is coherent ----
             # Proved by pulling in ic (its fetch-read logic and its internal
@@ -1529,10 +1550,16 @@ isolate cpu = {
     definition ic.fetch_addr = if_stage.pc
     definition ic.fetch_addr_valid = ~ex_stall & ~flush_in_pipe
     # the two-cycle memory port (in mem_stage) returns fill data to ic
-    definition ic.ifill_data = mem_stage.ifill_data
-    definition ic.ifill_data_valid = mem_stage.ifill_data_valid
-    definition mem_stage.fill_addr = ic.ifill_addr
-    definition mem_stage.fill_req  = ic.ifill_addr_valid
+    definition ic.ifill_data = main_mem.ifill_data
+    definition ic.ifill_data_valid = main_mem.ifill_data_valid
+    definition main_mem.fill_addr = ic.ifill_addr
+    definition main_mem.fill_req  = ic.ifill_addr_valid
+
+    # main memory <-> MEM stage: the committing store (the LD read is a direct
+    # cross-isolate read of main_mem.mem in mem_stage).
+    definition main_mem.dwrite_en  = ex_stage.m_valid & (ex_stage.m_ir<<15:13>>:opc = 5)
+    definition main_mem.dwrite_addr = ex_stage.m_addr
+    definition main_mem.dwrite_data = ex_stage.m_store
     # a FLUSH executing in MEM evicts its 'a'-operand address from the I-cache
     definition ic.flush_addr  = ex_stage.m_addr
     definition ic.flush_valid = ex_stage.m_valid & (ex_stage.m_ir<<15:13>>:opc = 7)

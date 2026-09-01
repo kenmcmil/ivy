@@ -641,15 +641,35 @@ per case, whether in-flight data must be dropped, re-issued, or is safe.
 
 Two wiring lessons from connecting the I-cache into the decomposed pipeline:
 
-- **Only wire a cross-stage input to a signal that carries a tracking invariant.**
+- **Only wire a cross-stage input to a signal that carries a tracking invariant;
+  fix a non-local-reference failure by restoring tracking, NOT by widening `with`.**
   If you drive one stage's input from another stage's *internal* wire that has no
   invariant relating it to the trace, the consuming isolate sees it as a free
   variable and the proof invents adversarial values. Example: wiring the I-cache's
   `flush_valid` to `ex_stage.m_opcode` (an internal decode wire, untracked) failed;
   wiring it to `ex_stage.m_ir` — the EX/MEM register, which *does* have a tracking
-  invariant — fixed it. When the signal you want is just a bit-field of a tracked
-  register, read the register (and slice it) rather than exposing a new untracked
-  wire and having to give *it* a tracking invariant.
+  invariant — fixed it (the same mistake recurred with `main_mem.dwrite_en` keyed
+  on `m_opcode`, fixed the same way via `m_ir`). When the signal you want is just a
+  bit-field of a tracked register, read the register (and slice it) rather than
+  exposing a new untracked wire. **The important corollary: when an invariant fails
+  because it references a non-local, untracked signal, do NOT add that signal's
+  isolate to the `with` clause to make the reference resolve — that couples the
+  proof non-locally. Instead restore locality: add a tracking invariant to the
+  interface, or rewire the input to a signal that already has one.** For a simple
+  5-stage pipeline the shortcut would work, but keeping each proof local is what
+  scales to complex architectures.
+
+- **After extracting a shared resource into its own isolate, add the invariant
+  that ties its latched port state to the interface ghost.** Moving main memory
+  and its two-cycle fill port into a `main_mem` isolate broke `icache_input`'s
+  consecution: nothing related the port's latched address `main_mem.mfa` to the
+  interface ghost `ifill_addr_old` (the address the cache presented last cycle),
+  so the returned fill word could not be pinned to the reference memory. Both are
+  latched from `ic.ifill_addr` on the read-start edge, so the bridge invariant
+  `main_mem.mbusy -> main_mem.mfa = ifill_addr_old` holds; add it (in the memory
+  isolate or the interface) and cite it. General point: an extraction that puts a
+  producer and a consumer on opposite sides of a new interface needs an explicit
+  invariant relating whatever state the two latch independently.
 
 - **Fold a stage's stall conditions into one named wire and use it everywhere.**
   When a stage has several stall/no-issue conditions (here fetch: `~ex_stall &
