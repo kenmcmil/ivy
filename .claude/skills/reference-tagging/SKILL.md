@@ -622,10 +622,42 @@ two-word I-cache needed three guards, each found from a counterexample:
      of a half-filled line (`flush_addr = ifill_miss -> ifill_got := false`), so
      the machine rereads it from now-current memory. (The CTI showed the stale
      address is `ifill_miss`, the cached word — not `fetch_addr`.)
+  4. **Same-*line*, different-address collision** (found in the stage-decomposition
+     port, a real bug latent in the reference): the FLUSH address and the fill
+     address can map to the *same cache line* (same index) while being different
+     addresses. Then the fill's half-line install and the FLUSH's whole-line
+     eviction (`icache(fl_index) := 0`) both target that line in the same edge, and
+     the eviction clobbers the just-installed half-line — violating `hard`. Guards
+     1–3 key on address equality (`flush_addr = ifill_addr`/`ifill_miss`) and miss
+     this. The simplest fix is to **delay the fill install when a FLUSH targets the
+     same line** (condition on `flush_addr<<4:1>> = ifill_addr<<4:1>>`, not just
+     address equality), so the FLUSH wins and the fill reissues. General point:
+     collision guards must be stated at the granularity of the *shared resource*
+     (the line/index), not the logical address.
 
 The general lesson: for any in-flight, multi-cycle operation (fill, prefetch,
 write-back), enumerate the invalidations that can occur *during* it and decide,
 per case, whether in-flight data must be dropped, re-issued, or is safe.
+
+Two wiring lessons from connecting the I-cache into the decomposed pipeline:
+
+- **Only wire a cross-stage input to a signal that carries a tracking invariant.**
+  If you drive one stage's input from another stage's *internal* wire that has no
+  invariant relating it to the trace, the consuming isolate sees it as a free
+  variable and the proof invents adversarial values. Example: wiring the I-cache's
+  `flush_valid` to `ex_stage.m_opcode` (an internal decode wire, untracked) failed;
+  wiring it to `ex_stage.m_ir` — the EX/MEM register, which *does* have a tracking
+  invariant — fixed it. When the signal you want is just a bit-field of a tracked
+  register, read the register (and slice it) rather than exposing a new untracked
+  wire and having to give *it* a tracking invariant.
+
+- **Fold a stage's stall conditions into one named wire and use it everywhere.**
+  When a stage has several stall/no-issue conditions (here fetch: `~ex_stall &
+  ~flush_in_pipe & ic.fetch_valid`), define their conjunction/disjunction once as a
+  global wire and reference that wire at every site (the fetch gate, the trace-step
+  gate, each fetch_track forward's guard). Otherwise adding a new stall condition
+  (like the I-cache miss) means editing every site, and it is easy to miss one —
+  which shows up as a subtle CTI, not a compile error.
 
 ## A safety proof is not a live design — simulate
 

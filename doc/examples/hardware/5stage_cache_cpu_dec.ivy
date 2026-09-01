@@ -48,6 +48,20 @@ interpret reg -> bv[3]
 type opc
 interpret opc -> bv[3]
 
+# I-cache line geometry. A cache line holds TWO words (an even/odd pair):
+#   [35] full   [34:32] tag   [31:16] word1 (odd)   [15:0] word0 (even)
+# Address A splits as tag = A<<7:5>> (itag), index = A<<4:1>> (nib), and
+# word-select A<<0:0>> (bit). The two-word line lets a later dual-issue fetch
+# read an aligned instruction pair from one line; for now only lane 0 is used.
+type nib
+interpret nib -> bv[4]     # 16-entry cache index
+type bit
+interpret bit -> bv[1]     # word-select / full flag
+type icline
+interpret icline -> bv[36] # a packed two-word cache line
+type itag
+interpret itag -> bv[3]    # line tag (high address bits)
+
 # The clock: one exported action driven by the environment.
 
 export action posedge
@@ -412,10 +426,11 @@ isolate cpu = {
 
         # The per-stage tag advances live in the stage specs; here we only
         # advance the trace (issue a new instruction) on a correct-path fetch --
-        # and not while fetch is stalled behind a draining FLUSH.
+        # and not while fetch is stalled behind a draining FLUSH or an I-cache
+        # miss (~ic.fetch_valid), when no instruction is issued.
         after posedge {
             if ~ex_stall {
-                if ~spec_wrong & ~flush_in_pipe { trace.step }
+                if ~spec_wrong & ~flush_in_pipe & ic.fetch_valid { trace.step }
             }
         }
     }
@@ -461,16 +476,20 @@ isolate cpu = {
             wire pc_ex_we : bool            # input:  EX repairs the pc this cycle (misprediction)
             wire pc_ex_wval : addr          # input:  the value EX writes to the pc (corrected next pc)
             wire predicted_taken : bool     # input:  the predictor's guess for the fetch PC
-            wire fetch_data : word          # input:  the instruction word read from mem at pc (mem_stage)
+            wire fetch_data : word          # input:  the instruction word from the I-cache at pc
+            wire fetch_valid : bool         # input:  the I-cache hit this cycle (else a fill is pending)
 
             # ---- fetch output (combinational, internal) ----
             wire fetched : word
 
             # ---- implementation (hidden from other stages) ----
 
-            # Instructions are fetched from the unified memory, which lives in
-            # mem_stage; if_stage presents pc and reads the word back on fetch_data.
+            # Instructions are fetched from the I-cache (ic), which is filled from
+            # the unified memory in mem_stage. On a miss (~fetch_valid) IF stalls
+            # while the cache fills, exactly as it stalls for a draining FLUSH.
             definition fetched = fetch_data
+            wire ifetch_stall : bool
+            definition ifetch_stall = ~fetch_valid
 
             # ---- prediction of the instruction being fetched ----
             wire f_is_branch : bool
@@ -490,9 +509,10 @@ isolate cpu = {
 
             after posedge {
                 if ~ex_stall {
-                    if flush_in_pipe {
-                        # A FLUSH is draining: stall fetch. Hold the PC and send a
-                        # bubble into IF/ID (this is a plain stall, not shadowed).
+                    if flush_in_pipe | ifetch_stall {
+                        # A FLUSH is draining, or the I-cache missed: stall fetch.
+                        # Hold the PC and send a bubble into IF/ID (a plain stall,
+                        # not shadowed).
                         d_valid := false
                     } else {
                         # IF -> ID: speculatively fetch the next word and advance the
@@ -638,11 +658,11 @@ isolate cpu = {
                     # instruction. This is the version if_stage consumes to prove
                     # d_ir at the fetch edge. (Zero-delay on the id_ex forward and
                     # the ID/EX tag chain.)
-                    invariant [fetch_track] (~trace.st(trace.now).error & ~trace.st(commit).ddirty(if_stage.pc) & ~flush_in_pipe) ->
+                    invariant [fetch_track] (~trace.st(trace.now).error & ~trace.st(commit).ddirty(if_stage.pc) & ~ex_stall & ~flush_in_pipe & ic.fetch_valid) ->
                         ic.fetch_data = trace.st(commit).mem(if_stage.pc)
                     with id_ex.ex_props.fetch_track, id_stage.e_tag_lo, id_stage.e_tag_eq, if_props.commit_bound
                 }
-            } with cpu, trace, word, addr, reg, opc, if_id, id_stage, id_ex, ic
+            } with cpu, trace, word, addr, reg, opc, if_id, id_stage, id_ex
             
         }
     }
@@ -793,7 +813,7 @@ isolate cpu = {
                     # it. While a FLUSH drains (flush_in_pipe) a store may not yet have
                     # reached mem, so we do not claim coherence then. (Zero-delay on the
                     # ex_mem base and the EX/MEM tag chain.)
-                    invariant [fetch_track] (~trace.st(trace.now).error & ~trace.st(commit).ddirty(if_stage.pc) & ~flush_in_pipe) ->
+                    invariant [fetch_track] (~trace.st(trace.now).error & ~trace.st(commit).ddirty(if_stage.pc) & ~ex_stall & ~flush_in_pipe & ic.fetch_valid) ->
                         ic.fetch_data = trace.st(commit).mem(if_stage.pc)
                     with mem_ic.ic_props.icache_output, ex_stage.m_tag_lo, ex_stage.m_tag_eq, id_props.commit_bound
                 } with cpu, trace, word, addr, reg, opc, id_ex, ex_mem, ex_stage, mem_ic
@@ -1002,7 +1022,21 @@ isolate cpu = {
             register w_ir : word                 # MEM/WB pipe register (registered output)
             register w_valid : bool
             register w_val : word                #   value to write to rf
-            register mem(A:addr) : word          # data memory
+            register mem(A:addr) : word          # unified memory (two-port: data + I-fill)
+
+            # ---- I-fill memory port (shared with the I-cache) ----
+            # A memory read takes two cycles: it is initiated when ~mbusy and a fill
+            # is requested (mfa latches the fill address); the value is available on
+            # the next (busy) cycle as mem(mfa). For now mem is treated as a two-port
+            # RAM, so a data LD/ST and an I-fill read can proceed in the same cycle
+            # without arbitration.
+            register mbusy : bool                # a fill read is in its busy (return) cycle
+            register mfa : addr                  # the fill read address latched last cycle
+            register mfi : bool                  # the busy read is for the I-cache
+            wire fill_addr : addr                # input:  address ic wants read (ic.ifill_addr)
+            wire fill_req  : bool                # input:  ic is requesting a read (ic.ifill_addr_valid)
+            wire ifill_data : word               # output: the returned word (this-cycle busy read)
+            wire ifill_data_valid : bool         # output: an I-read completes this cycle
 
             # ---- MEM/WB decode (of this stage's own register), exposed to wb_stage ----
             wire w_opcode : opc
@@ -1013,9 +1047,15 @@ isolate cpu = {
             wire m_opcode = ex_stage.m_ir<<15:13>> : opc
             definition w_opcode = w_ir<<15:13>>
             definition w_rd     = w_ir<<12:10>>
+
+            definition ifill_data = mem(mfa)
+            definition ifill_data_valid = mbusy & mfi
+
             after init {
                 w_valid := false;
-                mem(A) := init_mem(A)
+                mem(A) := init_mem(A);
+                mbusy := false;
+                mfi := false
             }
 
             wire is_reg_write = w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
@@ -1032,9 +1072,17 @@ isolate cpu = {
                          else old ex_stage.m_res);      # LD loads; else ALU/LI result
                 if old ex_stage.m_valid & (m_opcode = 5) {          # ST
                     mem(old ex_stage.m_addr) := old ex_stage.m_store
+                };
+                # I-fill port arbiter: finish a busy read, else start a requested one.
+                if mbusy {
+                    mbusy := false
+                } else if fill_req {
+                    mbusy := true;
+                    mfi := true;
+                    mfa := fill_addr
                 }
             }
-            
+
             specification {
                 # ---- tag chain: the MEM/WB register sits between the ex_mem and
                 #      mem_wb boundaries, so this stage relates their tags ----
@@ -1112,38 +1160,244 @@ isolate cpu = {
 
     implementation {
         isolate ic = {
-            wire fetch_addr : addr          # input:  the pc being fetched
-            wire fetch_data : word          # output: the instruction word at fetch_addr
-            wire fetch_valid : bool         # output: fetch_data is valid this cycle
+            # ---- interface wires ----
+            wire fetch_addr : addr          # input:  PC being fetched
+            wire fetch_addr_valid : bool    # input:  IF is attempting a fetch this cycle
+            wire ifill_data : word          # input:  word returned by the memory port
+            wire ifill_data_valid : bool    # input:  an I-read completes this cycle
+            wire flush_addr : addr          # input:  address FLUSHed in MEM
+            wire flush_valid : bool         # input:  a FLUSH executes in MEM this cycle
+            wire fetch_data : word          # output: selected word at fetch_addr
+            wire fetch_valid : bool         # output: fetch_data valid (hit / mid-fill / arrival)
+            wire fetch_data1 : word         # output: word at the odd sibling (dual-issue lane 1)
+            wire fetch_valid1 : bool        # output: fetch_data1 valid
+            wire fetch_addr1 : addr         # output: the odd sibling address (fetch_addr + 1)
+            wire ifill_addr : addr          # output: address ic wants read from memory
+            wire ifill_addr_valid : bool    # output: ic is requesting a memory read
+            wire ifill_busy : bool          # output: a fill is in progress (its port slot)
 
-            # ---- implementation (pass-through; hidden from other isolates) ----
-            definition fetch_data  = mem_stage.mem(fetch_addr)
-            definition fetch_valid = true
-        } with cpu, word, addr, mem_stage
+            # ---- I-cache array and fill state (real state) ----
+            var icache(I:nib) : icline
+            var ifill_on   : bool           # an I-fill (two words) is in progress
+            var ifill_got  : bool           # the miss word has been installed; sibling pending
+            var ifill_miss : addr           # the miss word's address
+
+            # ---- combinational datapath. These definitions are visible (not in a
+            # hidden `implementation` block) so the mem_ic.ic_props isolate can
+            # pull in the fetch-read logic to prove icache_output. ----
+
+                # sibling of the miss word (bit 0 toggled; parity known, so +1/-1)
+                wire sib : addr
+                definition sib = (ifill_miss + 1 if (ifill_miss<<0:0>>:bit) = 0 else ifill_miss - 1)
+
+                # ---- fetch read: mux the low/high word; a hit is a completed-line
+                # hit, a mid-fill (miss-word) hit, or the just-arrived fill word.
+                wire f_index : nib
+                definition f_index = fetch_addr<<4:1>>
+                wire f_wsel : bit
+                definition f_wsel = fetch_addr<<0:0>>
+                wire f_iline : icline
+                definition f_iline = icache(f_index)
+                wire f_full_hit : bool
+                definition f_full_hit = ((f_iline<<35:35>>:bit) = 1) & ((f_iline<<34:32>>:itag) = fetch_addr<<7:5>>)
+                wire f_fill_hit : bool
+                definition f_fill_hit = ifill_got & (fetch_addr = ifill_miss)
+                wire f_arr_hit : bool
+                definition f_arr_hit = f_full_hit | f_fill_hit
+                wire f_cword : word
+                definition f_cword = ((f_iline<<15:0>>:word) if f_wsel = 0 else (f_iline<<31:16>>:word))
+                wire f_bypass : bool            # the arriving fill word is for fetch_addr
+                definition f_bypass = ifill_on & ifill_data_valid & (ifill_addr = fetch_addr)
+                                      & ~(flush_valid & (flush_addr = ifill_addr))
+
+                definition fetch_valid = f_arr_hit | f_bypass
+                definition fetch_data  = (f_cword if f_arr_hit else ifill_data)
+
+                # ---- lane 1 (dual issue): the odd sibling word of the same pair.
+                # Kept for a later dual-issue pipeline; our single-lane fetch does
+                # not consume it yet.
+                definition fetch_addr1 = fetch_addr + 1
+                wire f_fill_hit1 : bool
+                definition f_fill_hit1 = ifill_got & (fetch_addr1 = ifill_miss)
+                wire f_arr_hit1 : bool
+                definition f_arr_hit1 = f_full_hit | f_fill_hit1
+                wire f_cword1 : word
+                definition f_cword1 = (f_iline<<31:16>>:word)
+                wire f_bypass1 : bool
+                definition f_bypass1 = ifill_on & ifill_data_valid & (ifill_addr = fetch_addr1)
+                                       & ~(flush_valid & (flush_addr = ifill_addr))
+                definition fetch_valid1 = (f_wsel = 0) & (f_arr_hit1 | f_bypass1)
+                definition fetch_data1  = (f_cword1 if f_arr_hit1 else ifill_data)
+
+                # ---- fill request: which word to read (miss word, then sibling),
+                # and whether a read is wanted.
+                definition ifill_addr = (fetch_addr if ~ifill_on & ~ifill_got else (ifill_miss if ~ifill_got else sib))
+                definition ifill_addr_valid = ifill_on | ifill_got | (fetch_addr_valid & ~fetch_valid)
+                definition ifill_busy = ifill_on | ifill_got
+
+                # ---- FLUSH invalidation of the addressed line (tag match) ----
+                wire fl_index : nib
+                definition fl_index = flush_addr<<4:1>>
+                wire fl_iline : icline
+                definition fl_iline = icache(fl_index)
+                wire fl_ihit : bool
+                definition fl_ihit = ((fl_iline<<35:35>>:bit) = 1) & ((fl_iline<<34:32>>:itag) = flush_addr<<7:5>>)
+
+                after init {
+                    icache(I) := 0;
+                    ifill_on := false;
+                    ifill_got := false
+                }
+
+                after posedge {
+                    # Ignore the returned fill word when a FLUSH this cycle targets the
+                    # very address being read: that word is stale and would violate coherence.
+                    if ifill_on & ifill_data_valid & ~(flush_valid  & (fl_index = ifill_miss<<4:1>>)) {
+                        if ~ifill_got {
+                            # miss word: (re)allocate the line with this word, full = 0
+                            if (ifill_miss<<0:0>>:bit) = 0 {
+                                icache(ifill_miss<<4:1>>) :=
+                                    ((0:bit) :: (ifill_miss<<7:5>>:itag) :: (0:word) :: ifill_data : icline)
+                            } else {
+                                icache(ifill_miss<<4:1>>) :=
+                                    ((0:bit) :: (ifill_miss<<7:5>>:itag) :: ifill_data :: (0:word) : icline)
+                            };
+                            ifill_on := false;
+                            ifill_got := true
+                        } else {
+                            # sibling word: fill the other slot, preserve the miss word, full = 1
+                            if (sib<<0:0>>:bit) = 0 {
+                                icache(sib<<4:1>>) :=
+                                    ((1:bit) :: (sib<<7:5>>:itag)
+                                             :: (icache(sib<<4:1>>)<<31:16>>:word) :: ifill_data : icline)
+                            } else {
+                                icache(sib<<4:1>>) :=
+                                    ((1:bit) :: (sib<<7:5>>:itag)
+                                             :: ifill_data :: (icache(sib<<4:1>>)<<15:0>>:word) : icline)
+                            };
+                            ifill_on := false;
+                            ifill_got := false
+                        }
+                    } else if ~ifill_on & ifill_got {
+                        ifill_on := true;
+                    } else if ~ifill_busy & fetch_addr_valid & ~fetch_valid {
+                        # new miss: latch the miss address and start the fill
+                        ifill_on := true;
+                        ifill_got := false;
+                        ifill_miss := fetch_addr
+                    };
+                    # FLUSH: evict the whole addressed word-pair line
+                    if flush_valid & fl_ihit {
+                        icache(fl_index) := 0
+                    };
+                    # If the FLUSH targets the miss word we already installed, that
+                    # cached word is now stale; drop ifill_got so it is reread.
+                    if flush_valid & (flush_addr = ifill_miss) {
+                        ifill_on := false;
+                        ifill_got := false
+                    }
+                }
+
+            specification {
+                # ---- ic's INTERNAL data invariants (not seen outside ic) ----
+                # packed-line accessors (proof-only)
+                function il_tag(L:icline) : itag
+                definition il_tag(L) = L<<34:32>>
+                function il_w0(L:icline) : word
+                definition il_w0(L) = L<<15:0>>
+                function il_w1(L:icline) : word
+                definition il_w1(L) = L<<31:16>>
+                function ic_line(A:addr) : icline
+                definition ic_line(A) = icache(A<<4:1>>)
+
+                # The I-cache data invariant.
+                invariant [hard] ~trace.st(trace.now).error ->
+                             ((((((ic_line(A)<<35:35>>:bit) = 1) & (il_tag(ic_line(A)) = A<<7:5>>))
+                                         | (ifill_got & A = ifill_miss)) & ~trace.st(ex_mem.commit).ddirty(A)) ->
+                (il_w0(ic_line(A)) if (A<<0:0>>:bit) = 0 else il_w1(ic_line(A))) = trace.st(ex_mem.commit).mem(A))
+                    with mem_ic.mem_props.icache_input, ex_mem.ex_props.commit_bound
+
+                # Well-formedness of the half-filled line: while mid-fill, the line
+                # at the miss word's index is NOT marked full and carries the miss
+                # word's tag. The ~full part stops a FLUSH from clobbering it.
+                invariant [midfill] (ifill_got) ->
+                             ( ((ic_line(ifill_miss)<<35:35>>:bit) = 0)
+                             & (il_tag(ic_line(ifill_miss)) = ifill_miss<<7:5>>) )
+
+                # Held-address property: while a fill is on, the address ic presents
+                # equals the one latched last cycle. This turns icache_input (phrased
+                # in ifill_addr_old) into a fact about the word ic is installing.
+                invariant [held_addr] ifill_on -> ifill_addr = mem_ic.ifill_addr_old
+            }
+        } with cpu, mem_ic, trace, word, addr, nib, bit, icline, itag, opc, ex_mem, mem_ic.mem_props.icache_input, ex_mem.ex_props.commit_bound
     }
 
     # ---- the memory / I-cache interface (mem_ic) ---------------------------
     # The interface between the memory (mem_stage) and the I-cache (ic), in the
-    # standard two-sided form. ic_props holds the cache's GUARANTEE icache_output
-    # (a valid fetch word equals the reference memory at the MEM boundary). The
-    # memory's ASSUMPTION icache_input (that a fill returns coherent data) will be
-    # added to a mem_props sub-isolate in STAGE B, when fills exist.
+    # standard two-sided form. It carries the ghost `ifill_addr_old` (the address
+    # the memory port latched last cycle -- the read is two-cycle, so the datum
+    # returned this cycle is for the address presented last cycle). mem_props
+    # holds the memory's ASSUMPTION icache_input (a returned fill word is coherent
+    # with the reference memory); ic_props holds the cache's GUARANTEEs
+    # icache_output / icache_output1 (a valid fetched word is coherent), proved by
+    # pulling in ic's fetch-read logic together with icache_input.
 
     private {
         isolate mem_ic = {
+            # ghost: the fill address the port latched on the previous cycle.
+            var ifill_addr_old : addr
+
+            specification {
+                after init {
+                    ifill_addr_old := 0
+                }
+                after posedge {
+                    ifill_addr_old := ic.ifill_addr
+                }
+            }
+
+            # ---- memory-side guarantee: a returned fill word is coherent ----
+            # The word the port returns (ic.ifill_data) for the address it latched
+            # last cycle (ifill_addr_old) equals the reference memory at the MEM
+            # boundary, when that address is not dirty. Proved from mem_stage's port
+            # arbitration (mfa holds ifill_addr_old) and mem_track.
+            isolate mem_props = {
+                # The busy read's latched address equals the address ic presented
+                # last cycle: both mfa (in the arbiter) and ifill_addr_old (here)
+                # latch ic.ifill_addr on the read-start edge, and mbusy is never set
+                # two cycles running, so this holds unguarded. It bridges the
+                # one-cycle port latch for icache_input.
+                invariant [mfa_track] mem_stage.mbusy -> mem_stage.mfa = ifill_addr_old
+
+                invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
+                        & ~trace.st(trace.now).error & ~trace.st(ex_mem.commit).ddirty(ifill_addr_old))
+                    -> ic.ifill_data = trace.st(ex_mem.commit).mem(ifill_addr_old)
+                    with mfa_track, mem_stage.mem_track, ex_mem.ex_props.commit_bound
+            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, mem_stage, ex_mem, mem_ic
+
+            # ---- I-cache-side guarantees: a valid fetched word is coherent ----
+            # Proved by pulling in ic (its fetch-read logic and its internal
+            # invariants hard/midfill/held_addr) together with icache_input. Only
+            # these guarantees are exposed; the internal invariants stay in ic.
             isolate ic_props = {
-                # ---- I-cache output guarantee (base fetch-coherence case) ----
-                # The fetched word equals the reference memory at the MEM
-                # boundary tag ex_mem.commit. In STAGE A this is exactly the old
-                # base fetch_track (pass-through: fetch_data is a direct read of
-                # mem, which tracks the trace), so the if_id/id_ex forwards that
-                # consume it are unchanged. STAGE B will weaken it with the
-                # fetch_valid (hit) and ~ddirty(fetch_addr) premises the real
-                # cache needs, and rework the forwards to match.
-                invariant [icache_output] ~trace.st(trace.now).error
-                              -> ic.fetch_data = trace.st(ex_mem.commit).mem(if_stage.pc)
-                    with mem_stage.mem_track, ex_mem.ex_props.commit_bound
-            } with cpu, trace, word, addr, reg, opc, ic, mem_stage, ex_mem
+                # GUARANTEE: a valid fetched word is coherent with the reference
+                # memory at the MEM boundary (for a not-dirty address). This is the
+                # base the if_id/id_ex fetch_track forwards consume.
+                invariant [icache_output]
+                      ic.fetch_addr_valid & ic.fetch_valid & ~trace.st(trace.now).error
+                              & ~trace.st(ex_mem.commit).ddirty(ic.fetch_addr)
+                                  -> ic.fetch_data = trace.st(ex_mem.commit).mem(ic.fetch_addr)
+                    with ic.hard, mem_props.icache_input, ex_mem.ex_props.commit_bound
+
+                # GUARANTEE for lane 1 (kept for a later dual-issue pipeline).
+                invariant [icache_output1]
+                      ic.fetch_addr_valid & ic.fetch_valid1 & ~trace.st(trace.now).error
+                              & ~trace.st(ex_mem.commit).ddirty((ic.fetch_addr + 1))
+                                  -> ic.fetch_data1 = trace.st(ex_mem.commit).mem((ic.fetch_addr + 1))
+                    with ic.hard, mem_props.icache_input, ex_mem.ex_props.commit_bound
+
+                invariant [icache_output1_odd] ic.fetch_addr_valid & ic.fetch_valid1 -> (ic.fetch_addr<<0:0>>:bit = 0)
+            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, mem_ic, ex_mem
         } with cpu
     }
 
@@ -1268,9 +1522,20 @@ isolate cpu = {
     definition if_stage.pc_ex_wval  = ex_stage.pc_ex_wval
     definition if_stage.predicted_taken = bp.predicted_taken
     definition if_stage.fetch_data  = ic.fetch_data
+    definition if_stage.fetch_valid = ic.fetch_valid
 
-    # fetch reads the unified memory (in mem_stage) at the current pc
+    # ---- I-cache wiring ----
+    # fetch presents the pc; a fetch is attempted whenever IF is not frozen.
     definition ic.fetch_addr = if_stage.pc
+    definition ic.fetch_addr_valid = ~ex_stall & ~flush_in_pipe
+    # the two-cycle memory port (in mem_stage) returns fill data to ic
+    definition ic.ifill_data = mem_stage.ifill_data
+    definition ic.ifill_data_valid = mem_stage.ifill_data_valid
+    definition mem_stage.fill_addr = ic.ifill_addr
+    definition mem_stage.fill_req  = ic.ifill_addr_valid
+    # a FLUSH executing in MEM evicts its 'a'-operand address from the I-cache
+    definition ic.flush_addr  = ex_stage.m_addr
+    definition ic.flush_valid = ex_stage.m_valid & (ex_stage.m_ir<<15:13>>:opc = 7)
 
     definition id_stage.ex_stall    = ex_stall
     definition id_stage.pc_ex_we    = ex_stage.pc_ex_we
