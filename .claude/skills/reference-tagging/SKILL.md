@@ -659,17 +659,17 @@ Two wiring lessons from connecting the I-cache into the decomposed pipeline:
   5-stage pipeline the shortcut would work, but keeping each proof local is what
   scales to complex architectures.
 
-- **After extracting a shared resource into its own isolate, add the invariant
-  that ties its latched port state to the interface ghost.** Moving main memory
-  and its two-cycle fill port into a `main_mem` isolate broke `icache_input`'s
-  consecution: nothing related the port's latched address `main_mem.mfa` to the
-  interface ghost `ifill_addr_old` (the address the cache presented last cycle),
-  so the returned fill word could not be pinned to the reference memory. Both are
-  latched from `ic.ifill_addr` on the read-start edge, so the bridge invariant
-  `main_mem.mbusy -> main_mem.mfa = ifill_addr_old` holds; add it (in the memory
-  isolate or the interface) and cite it. General point: an extraction that puts a
-  producer and a consumer on opposite sides of a new interface needs an explicit
-  invariant relating whatever state the two latch independently.
+- **Extracting a shared resource into its own isolate is mostly re-wiring; the
+  breakages are locality, not missing lemmas.** Moving main memory and its
+  two-cycle fill port into a `main_mem` isolate made `icache_input` fail, and it
+  was tempting to blame a missing invariant relating the port's latched `mfa` to
+  the interface ghost `ifill_addr_old` — but that bridge already existed
+  (`mfa_track`), and an extra copy was not needed. The actual fixes were purely
+  local-coupling ones: a non-local untracked reference (`dwrite_en` keyed on
+  `m_opcode`, fixed via `m_ir` per the bullet above) and a couple of missing
+  `with` entries causing interference errors. Lesson: after such an extraction,
+  first restore the `with`/tracking hygiene the move disturbed before adding any
+  new invariant — the existing interface invariants usually still suffice.
 
 - **Fold a stage's stall conditions into one named wire and use it everywhere.**
   When a stage has several stall/no-issue conditions (here fetch: `~ex_stall &
