@@ -62,6 +62,14 @@ interpret icline -> bv[36] # a packed two-word cache line
 type itag
 interpret itag -> bv[3]    # line tag (high address bits)
 
+# D-cache line geometry. A write-back data line also holds a TWO-word pair,
+# with a DIRTY BIT PER WORD (a store dirties only the word it writes):
+#   [39] full  [38] dirty1  [37] dirty0  [36:34] tag  [33:18] word1  [17:2] word0
+# (the low 2 bits are unused padding to keep the fields word-aligned). Same
+# index/tag/word-select split as the I-cache.
+type dcline
+interpret dcline -> bv[40]  # a packed two-word write-back data line
+
 # The clock: one exported action driven by the environment.
 
 export action posedge
@@ -1351,6 +1359,23 @@ isolate cpu = {
         } with cpu, mem_ic, trace, word, addr, nib, bit, icline, itag, opc, ex_mem, mem_ic.mem_props.icache_input, ex_mem.ex_props.commit_bound
     }
 
+    # ---- data cache (DC) ---------------------------------------------------
+    # STAGE iv-A (interface skeleton): `dc` is a placeholder that owns the (empty,
+    # never-written) write-back data array. Loads and stores still go straight to
+    # main memory, so the array stays all-zero -- dc_present/dc_dirty are false and
+    # the three coherence guarantees hold vacuously. STAGE iv-B will fill in the
+    # two-word write-back cache (write-allocate, per-word dirty, writeback, FLUSH).
+    implementation {
+        isolate dc = {
+            # ---- write-back data array (real state; empty in the skeleton) ----
+            var dcache(I:nib) : dcline
+
+            after init {
+                dcache(I) := 0
+            }
+        } with cpu, word, addr, nib, dcline
+    }
+
     # ---- the memory / I-cache interface (mem_ic) ---------------------------
     # The interface between the memory (mem_stage) and the I-cache (ic), in the
     # standard two-sided form. It carries the ghost `ifill_addr_old` (the address
@@ -1388,11 +1413,14 @@ isolate cpu = {
                 # one-cycle port latch for icache_input.
                 invariant [mfa_track] main_mem.mbusy -> main_mem.mfa = ifill_addr_old
 
+                # The fill reads raw main memory, which is coherent with the trace
+                # only where dc is not dirty. But ~ddirty(ifill_addr_old) (premise)
+                # implies ~dc_dirty (dc_ddirty), and there mem_clean pins the word.
                 invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
                         & ~trace.st(trace.now).error & ~trace.st(ex_mem.commit).ddirty(ifill_addr_old))
                     -> ic.ifill_data = trace.st(ex_mem.commit).mem(ifill_addr_old)
-                    with mfa_track, main_mem.mem_track, ex_mem.ex_props.commit_bound
-            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, main_mem, ex_mem, mem_ic
+                    with mfa_track, mem_dc.dc_props.mem_clean, mem_dc.dc_props.dc_ddirty, ex_mem.ex_props.commit_bound
+            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, main_mem, ex_mem, mem_ic, mem_dc
 
             # ---- I-cache-side guarantees: a valid fetched word is coherent ----
             # Proved by pulling in ic (its fetch-read logic and its internal
@@ -1417,6 +1445,61 @@ isolate cpu = {
 
                 invariant [icache_output1_odd] ic.fetch_addr_valid & ic.fetch_valid1 -> (ic.fetch_addr<<0:0>>:bit = 0)
             } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, mem_ic, ex_mem
+        } with cpu
+    }
+
+    # ---- the memory / D-cache interface (mem_dc) ---------------------------
+    # The interface between main memory and the write-back D-cache, in the two-
+    # sided form. dc_props holds the cache's coherence GUARANTEES relative to the
+    # reference at the MEM boundary: (1) an address dirty in dc is ddirty in the
+    # trace; (2) a present line holds the reference value; (3) main memory holds
+    # the reference value everywhere it is NOT overridden by a dirty dc line. This
+    # is the WEAKENED memory coherence that replaces the old unconditional
+    # mem_track for downstream consumers; the I-cache's icache_input now flows
+    # through mem_clean + dc_ddirty (~ddirty => ~dc_dirty => mem = trace). In the
+    # skeleton dc is empty, so (1) and (2) are vacuous and (3) reduces to the raw
+    # main_mem.mem_track. STAGE iv-B fills in dc and its fill assumption (mem_props).
+    private {
+        isolate mem_dc = {
+            isolate dc_props = {
+                # packed-line accessors (proof-only)
+                function dl_full(L:dcline) : bool
+                definition dl_full(L) = (L<<39:39>>:bit) = 1
+                function dl_d0(L:dcline) : bool
+                definition dl_d0(L) = (L<<37:37>>:bit) = 1
+                function dl_d1(L:dcline) : bool
+                definition dl_d1(L) = (L<<38:38>>:bit) = 1
+                function dl_tag(L:dcline) : itag
+                definition dl_tag(L) = L<<36:34>>
+                function dl_w0(L:dcline) : word
+                definition dl_w0(L) = L<<17:2>>
+                function dl_w1(L:dcline) : word
+                definition dl_w1(L) = L<<33:18>>
+                function dc_line(A:addr) : dcline
+                definition dc_line(A) = dc.dcache(A<<4:1>>)
+                function dc_present(A:addr) : bool
+                definition dc_present(A) = dl_full(dc_line(A)) & (dl_tag(dc_line(A)) = A<<7:5>>)
+                function dc_dirty(A:addr) : bool
+                definition dc_dirty(A) = dc_present(A) & (dl_d0(dc_line(A)) if (A<<0:0>>:bit) = 0 else dl_d1(dc_line(A)))
+                function dc_val(A:addr) : word
+                definition dc_val(A) = (dl_w0(dc_line(A)) if (A<<0:0>>:bit) = 0 else dl_w1(dc_line(A)))
+
+                # While dc is a placeholder its array is all-zero, so no line is
+                # ever present. (STAGE iv-B replaces this with the real coherence
+                # argument.)
+                invariant [dc_empty] ~dc_present(A)
+
+                # (1) an address dirty in dc is dirty (written since flush) in the trace
+                invariant [dc_ddirty] ~trace.st(trace.now).error ->
+                              (dc_dirty(A) -> trace.st(ex_mem.commit).ddirty(A))
+                # (2) a present dc line holds the reference's MEM-stage value
+                invariant [dc_val_ok] ~trace.st(trace.now).error ->
+                              (dc_present(A) -> dc_val(A) = trace.st(ex_mem.commit).mem(A))
+                # (3) main memory holds the reference value wherever dc is not dirty
+                invariant [mem_clean] ~trace.st(trace.now).error ->
+                              (~dc_dirty(A) -> main_mem.mem(A) = trace.st(ex_mem.commit).mem(A))
+                    with main_mem.mem_track
+            } with cpu, trace, word, addr, nib, bit, dcline, itag, opc, dc, main_mem, ex_mem
         } with cpu
     }
 
