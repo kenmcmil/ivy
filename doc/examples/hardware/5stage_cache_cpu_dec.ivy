@@ -861,6 +861,7 @@ isolate cpu = {
             wire wb_rd  : reg               # input:  WB write index
             wire wb_val : word              # input:  WB write value
             wire mem_stall : bool           # input:  stall signal from M stage
+            wire dc_stall : bool            # input:  D-cache stall (miss / pending write-back)
             wire e_pred : bool              # input:  carried prediction (id_stage.e_pred)
             wire e_pc : addr                # input:  the EX instruction's own PC (id_stage.e_pc)
             wire e_opcode : opc             # output: opcode of the instruction in EX
@@ -892,7 +893,7 @@ isolate cpu = {
             # taken, else the fall-through (this instruction's PC + 1). pc_ex_we
             # is gated on ~ex_stall so it means "EX repairs the pc this cycle".
             definition e_take = (e_opcode = 6) & (e_a = 0)
-            definition pc_ex_we = ~ex_stall & id_stage.e_valid & (e_opcode = 6) & (e_pred ~= e_take)
+            definition pc_ex_we = ~ex_stall & ~dc_stall & id_stage.e_valid & (e_opcode = 6) & (e_pred ~= e_take)
             definition pc_ex_wval = (e_target if e_take else e_pc + 1)
 
             # ---- MEM decode (of this stage's own EX/MEM pipe register) ----
@@ -913,20 +914,24 @@ isolate cpu = {
             }
 
             after posedge {
-                # EX -> MEM: if EX is stalled, bubble; else compute the ALU result
-                # / address / store data and latch into the EX/MEM pipe register.
-                # The instruction word comes from id_stage's ID/EX pipe register,
-                # read pre-edge with `old`.
-                if ex_stall {
-                    m_valid := false
-                } else {
-                    m_ir := old id_stage.e_ir;
-                    m_valid := old id_stage.e_valid;
-                    m_res := (e_a + e_b if e_opcode = 1 else
-                             (e_a - e_b if e_opcode = 2 else
-                             ((0:addr) :: e_target if e_opcode = 3 else 0)));   # LI immediate
-                    m_addr := e_a<<7:0>>;
-                    m_store := e_b
+                # On a D-cache stall the LD/ST that stalled stays in the EX/MEM
+                # register (hold m_* unchanged). Otherwise, EX -> MEM: if EX is
+                # stalled by a data hazard, bubble; else compute the ALU result /
+                # address / store data and latch into the EX/MEM pipe register. The
+                # instruction word comes from id_stage's ID/EX pipe register, read
+                # pre-edge with `old`.
+                if ~dc_stall {
+                    if ex_stall {
+                        m_valid := false
+                    } else {
+                        m_ir := old id_stage.e_ir;
+                        m_valid := old id_stage.e_valid;
+                        m_res := (e_a + e_b if e_opcode = 1 else
+                                 (e_a - e_b if e_opcode = 2 else
+                                 ((0:addr) :: e_target if e_opcode = 3 else 0)));   # LI immediate
+                        m_addr := e_a<<7:0>>;
+                        m_store := e_b
+                    }
                 }
             }
 
@@ -958,11 +963,11 @@ isolate cpu = {
                     commit := 0
                 }
 
-                # The EX/MEM register always advances (it is downstream of the stall
-                # point), so whenever it held a valid instruction that instruction
-                # passes the MEM boundary.
+                # The EX/MEM register advances whenever it held a valid instruction
+                # -- unless a D-cache stall holds that instruction in EX/MEM (then
+                # it does not pass the MEM boundary this cycle).
                 after posedge {
-                    if old ex_stage.m_valid { commit := commit.next }
+                    if old ex_stage.m_valid & ~dc_stall { commit := commit.next }
                 }
             }
 
@@ -974,12 +979,12 @@ isolate cpu = {
                 invariant [commit_bound] ~trace.st(trace.now).error -> commit <= trace.now
 
                 # ---- the EX/MEM pipe register tracks the trace ----
-                invariant (ex_stage.m_valid & ~trace.st(trace.now).error
+                invariant [m_ir_trk] (ex_stage.m_valid & ~trace.st(trace.now).error
                            )
                               -> ex_stage.m_ir = trace.st(commit).fetched
-                invariant (ex_stage.m_valid & ~trace.st(trace.now).error
+                invariant [m_addr_trk] (ex_stage.m_valid & ~trace.st(trace.now).error
                            ) -> ex_stage.m_addr = trace.st(commit).mem_addr
-                invariant (ex_stage.m_valid & ~trace.st(trace.now).error
+                invariant [m_store_trk] (ex_stage.m_valid & ~trace.st(trace.now).error
                            ) -> ex_stage.m_store = trace.st(commit).b_val
                 # m_res holds the ALU / LI result (opcodes ADD, SUB, LI); for
                 # those instructions that is exactly the destination write value
@@ -1025,6 +1030,8 @@ isolate cpu = {
             wire ra : reg          # input: reagister read address from ex_stage
             wire rb : reg          # input: reagister read address from ex_stage
             wire mem_stall : bool  # output: stall signal to ex_stage
+            wire ld_data : word    # input: the LD result from the D-cache (dc.ld_data)
+            wire dc_stall : bool    # input: the D-cache stall (miss / pending write-back)
 
             # ---- state ----
             register w_ir : word                 # MEM/WB pipe register (registered output)
@@ -1049,14 +1056,18 @@ isolate cpu = {
             definition mem_stall = is_reg_write & (ra = w_rd | rb = w_rd)
 
             after posedge {
-                # MEM: read ex_stage's EX/MEM pipe register (pre-edge, via `old`)
-                # and latch the writeback value into the MEM/WB pipe register. A LD
-                # reads the (pre-edge) main memory (in main_mem); a ST is applied to
-                # main memory by the main_mem isolate, driven from ex_stage.m_*.
-                w_ir := old ex_stage.m_ir;
-                w_valid := old ex_stage.m_valid;
-                w_val := (main_mem.mem(old ex_stage.m_addr) if m_opcode = 4
-                         else old ex_stage.m_res)       # LD loads; else ALU/LI result
+                # On a D-cache stall the LD/ST is held in EX/MEM and does NOT pass
+                # to WB: bubble the MEM/WB register. Otherwise, latch the writeback
+                # value: a LD takes its value from the D-cache (dc.ld_data -- a hit
+                # word or a forwarded miss word); other opcodes take the ALU result.
+                if ~dc_stall {
+                    w_ir := old ex_stage.m_ir;
+                    w_valid := old ex_stage.m_valid;
+                    w_val := (ld_data if m_opcode = 4
+                             else old ex_stage.m_res)       # LD loads; else ALU/LI result
+                } else {
+                    w_valid := false
+                }
             }
 
             specification {
@@ -1065,7 +1076,7 @@ isolate cpu = {
                 invariant w_valid -> mem_wb.commit.succ(ex_mem.commit)
                 invariant ~w_valid -> ex_mem.commit = mem_wb.commit
             }
-        } with cpu, trace, word, addr, reg, opc, ex_mem, mem_wb, mem_ic, main_mem
+        } with cpu, trace, word, addr, reg, opc, ex_mem, mem_wb
     }
 
     # ---- main memory (main_mem) --------------------------------------------
@@ -1083,16 +1094,24 @@ isolate cpu = {
             register mfi : bool                  # the busy read is for the I-cache
 
             # ---- interface wires ----
-            wire fill_addr : addr    # input:  address a cache wants read
-            wire fill_req  : bool    # input:  a cache requests a read
+            # The two-cycle read/fill port is shared by the I-cache and D-cache.
+            wire ifill_addr : addr   # input:  address the I-cache wants read
+            wire ifill_req  : bool   # input:  the I-cache requests a read
+            wire dfill_addr : addr   # input:  address the D-cache wants read
+            wire dfill_req  : bool   # input:  the D-cache requests a read
             wire dwrite_en : bool    # input:  a data store commits this cycle
             wire dwrite_addr : addr  # input:  the store address
             wire dwrite_data : word  # input:  the store data
-            wire ifill_data : word          # output: the returned fill word (busy cycle)
-            wire ifill_data_valid : bool    # output: a read completes this cycle
+            wire ifill_data : word          # output: the returned word for the I-cache
+            wire ifill_data_valid : bool    # output: an I-read completes this cycle
+            wire dfill_data : word          # output: the returned word for the D-cache
+            wire dfill_data_valid : bool    # output: a D-read completes this cycle
 
+            # The busy read returns mem(mfa); mfi selects which cache it is for.
             definition ifill_data = mem(mfa)
             definition ifill_data_valid = mbusy & mfi
+            definition dfill_data = mem(mfa)
+            definition dfill_data_valid = mbusy & ~mfi
 
             after init {
                 mem(A) := init_mem(A);
@@ -1105,19 +1124,25 @@ isolate cpu = {
                 if dwrite_en {
                     mem(dwrite_addr) := dwrite_data
                 };
-                # fill-port arbiter: finish a busy read, else start a requested one
+                # fill-port arbiter: finish a busy read, else start a requested one.
+                # A D-fill has priority over an I-fill (older instruction; a D-fill
+                # freezes fetch anyway, so they never really contend).
                 if mbusy {
                     mbusy := false
-                } else if fill_req {
+                } else if dfill_req {
+                    mbusy := true;
+                    mfi := false;
+                    mfa := dfill_addr
+                } else if ifill_req {
                     mbusy := true;
                     mfi := true;
-                    mfa := fill_addr
+                    mfa := ifill_addr
                 }
             }
 
             specification {
                 # main memory tracks the trace at the MEM boundary.
-                invariant [mem_track] ~trace.st(trace.now).error -> mem(A) = trace.st(ex_mem.commit).mem(A)
+                invariant [mem_track] ~trace.st(trace.now).error & ~trace.st(ex_mem.commit).ddirty(A) -> mem(A) = trace.st(ex_mem.commit).mem(A)
                     with ex_mem.ex_props.commit_bound
             }
         } with cpu, trace, word, addr, reg, opc, ex_mem, mem_ic
@@ -1163,8 +1188,9 @@ isolate cpu = {
                                                 (trace.st(commit).opcode = 1 | trace.st(commit).opcode = 2
                                                 | trace.st(commit).opcode = 3 | trace.st(commit).opcode = 4))
                               -> mem_stage.w_val = trace.st(commit).res
+                    with mem_dc.dc_props.dcache_output
 
-            } with cpu, trace, word, addr, reg, opc, ex_mem, mem_stage, mem_wb, main_mem, mem_ic
+            } with cpu, trace, word, addr, reg, opc, ex_mem, mem_stage, mem_wb, main_mem, mem_ic, mem_dc
 
             isolate wb_props = {
                 invariant [wb_a_track] ~trace.st(trace.now).error -> wb_stage.wb_a = trace.st(commit).rf(ex_stage.e_ra) with mem_props.commit_bound, wb_stage.rf_track
@@ -1360,20 +1386,252 @@ isolate cpu = {
     }
 
     # ---- data cache (DC) ---------------------------------------------------
-    # STAGE iv-A (interface skeleton): `dc` is a placeholder that owns the (empty,
-    # never-written) write-back data array. Loads and stores still go straight to
-    # main memory, so the array stays all-zero -- dc_present/dc_dirty are false and
-    # the three coherence guarantees hold vacuously. STAGE iv-B will fill in the
-    # two-word write-back cache (write-allocate, per-word dirty, writeback, FLUSH).
+    # A direct-mapped, write-back, write-allocate data cache with two-word lines
+    # and a dirty bit PER WORD. LD and ST both go through dc. A miss (LD or ST)
+    # fills the line (two reads, like the I-cache), writing back a dirty victim
+    # first; a ST then overwrites its word and sets that word's dirty bit. A FLUSH
+    # writes the line's dirty words back and evicts it. Writebacks write the whole
+    # line (both words) to main memory in one cycle (a clean word writes its own
+    # coherent value, so this is harmless) -- avoiding per-word writeback timing.
     implementation {
         isolate dc = {
-            # ---- write-back data array (real state; empty in the skeleton) ----
+            # ---- interface wires ----
+            wire req_addr : addr            # input:  the MEM data address (m_addr)
+            wire req_ir : word              # input:  the MEM instruction word (tracked)
+            wire req_valid : bool           # input:  a valid instruction is in MEM
+            wire st_data : word             # input:  store data (m_store)
+            wire dfill_data : word          # input:  word returned by the memory port
+            wire dfill_data_valid : bool    # input:  a D-read completes this cycle
+            wire ld_data : word             # output: the LD result
+            wire dmem_stall : bool          # output: stall MEM (a miss fill is pending)
+            wire dfill_addr : addr          # output: address dc wants read from memory
+            wire dfill_req : bool           # output: dc is requesting a memory read
+            wire dfill_busy : bool          # output: a D-fill is in progress (its port slot)
+            wire wb_en : bool               # output: write a whole line back this cycle
+            wire wb_addr : addr             # output: the write-back line's base (even) address
+            wire wb_w0 : word               # output: word0 to write back
+            wire wb_w1 : word               # output: word1 to write back
+
+            # ---- write-back data array and fill state (real state) ----
             var dcache(I:nib) : dcline
+            var dfill_on   : bool           # a D-fill (two words) is in progress
+            var dfill_got  : bool           # the miss word is installed; sibling pending
+            var dfill_miss : addr           # the miss word's address
+
+            # ---- decode of the MEM request (from the tracked instruction word) ----
+            wire d_op : opc
+            definition d_op = req_ir<<15:13>>
+            wire is_ld : bool
+            definition is_ld = req_valid & (d_op = 4)
+            wire is_st : bool
+            definition is_st = req_valid & (d_op = 5)
+            wire is_flush : bool
+            definition is_flush = req_valid & (d_op = 7)
+
+            # ---- addressing / line access ----
+            wire d_index : nib
+            definition d_index = req_addr<<4:1>>
+            wire d_wsel : bit
+            definition d_wsel = req_addr<<0:0>>
+            wire d_line : dcline
+            definition d_line = dcache(d_index)
+            wire d_full : bool
+            definition d_full = (d_line<<39:39>>:bit) = 1
+            wire d_hit : bool
+            definition d_hit = d_full & ((d_line<<36:34>>:itag) = req_addr<<7:5>>)
+            wire d_dirty0 : bool
+            definition d_dirty0 = (d_line<<37:37>>:bit) = 1
+            wire d_dirty1 : bool
+            definition d_dirty1 = (d_line<<38:38>>:bit) = 1
+            wire d_w0 : word
+            definition d_w0 = d_line<<17:2>>
+            wire d_w1 : word
+            definition d_w1 = d_line<<33:18>>
+            wire d_cword : word              # the addressed word of the hit line
+            definition d_cword = (d_w0 if d_wsel = 0 else d_w1)
+
+            # ---- miss / fill-completion / stall ----
+            wire d_fill_go : bool            # this cycle's read completes the pending fill
+            definition d_fill_go = dfill_on & dfill_data_valid & dfill_got
+            wire d_miss : bool
+            definition d_miss = (is_ld | is_st) & ~d_hit
+            # A read miss completes by FORWARDING the arriving miss word (phase-A
+            # fill completion, before the sibling): the miss word is exactly the
+            # load's word, so it need not stall for the rest of the fill.
+            wire ld_fwd : bool
+            definition ld_fwd = is_ld & dfill_on & ~dfill_got & dfill_data_valid & (req_addr = dfill_miss)
+            # Stall on a miss and for the whole duration of a fill (dfill_busy) --
+            # EXCEPT a read forwarding its miss word. Stalling the whole fill (we do
+            # NOT release on the sibling's completion, d_fill_go) is what stops a
+            # STORE from committing on the sibling-fill cycle, where its word is not
+            # yet writable (d_hit is still false), which would leave it clean while
+            # the trace marks it ddirty. (A later, more efficient version can cancel
+            # the redundant fill / set the present bit instead.)
+            definition dmem_stall = (d_miss | dfill_busy) & ~ld_fwd
+
+            # ---- load result: a hit reads the line; a completing fill bypasses ----
+            definition ld_data = (d_cword if d_hit else dfill_data)
+
+            # ---- fill request (miss word, then its sibling) ----
+            wire d_sib : addr
+            definition d_sib = (dfill_miss + 1 if (dfill_miss<<0:0>>:bit) = 0 else dfill_miss - 1)
+            definition dfill_addr = (req_addr if ~dfill_on & ~dfill_got else (dfill_miss if ~dfill_got else d_sib))
+            # A dirty-victim miss (d_evict) does NOT start a fill: writebacks are
+            # stubbed for now (the pipe just stalls on wb_en), so the dirty victim
+            # is preserved rather than overwritten by a fill.
+            definition dfill_req = dfill_on | dfill_got | (d_miss & ~dfill_busy & ~d_evict)
+            definition dfill_busy = dfill_on | dfill_got
+
+            # ---- victim / write-back (whole line, both words) ----
+            wire d_evict : bool              # a miss must evict a dirty victim before filling
+            definition d_evict = d_miss & ~dfill_busy & d_full & (d_dirty0 | d_dirty1)
+            wire fl_dirty : bool             # a FLUSH hits a dirty line
+            definition fl_dirty = is_flush & d_hit & (d_dirty0 | d_dirty1)
+            definition wb_en   = d_evict | fl_dirty
+            definition wb_addr = (req_addr<<7:5>>:itag) :: (req_addr<<4:1>>:nib) :: (0:bit)   # the line's even base address
+            definition wb_w0   = d_w0
+            definition wb_w1   = d_w1
 
             after init {
-                dcache(I) := 0
+                dcache(I) := 0;
+                dfill_on := false;
+                dfill_got := false
             }
-        } with cpu, word, addr, nib, dcline
+
+            after posedge {
+                # ---- fill FSM (two reads: miss word, then sibling) ----
+                if dfill_on & dfill_data_valid {
+                    if ~dfill_got {
+                        # miss word: (re)allocate the line, clean, full = 0
+                        if (dfill_miss<<0:0>>:bit) = 0 {
+                            dcache(dfill_miss<<4:1>>) :=
+                                ((0:bit)::(0:bit)::(0:bit)::(dfill_miss<<7:5>>:itag)::(0:word)::dfill_data::(0:bit)::(0:bit) : dcline)
+                        } else {
+                            dcache(dfill_miss<<4:1>>) :=
+                                ((0:bit)::(0:bit)::(0:bit)::(dfill_miss<<7:5>>:itag)::dfill_data::(0:word)::(0:bit)::(0:bit) : dcline)
+                        };
+                        dfill_on := false;
+                        dfill_got := true
+                    } else {
+                        # sibling word: fill the other slot, clean, full = 1
+                        if (d_sib<<0:0>>:bit) = 0 {
+                            dcache(d_sib<<4:1>>) :=
+                                ((1:bit)::(0:bit)::(0:bit)::(d_sib<<7:5>>:itag)::(dcache(d_sib<<4:1>>)<<33:18>>:word)::dfill_data::(0:bit)::(0:bit) : dcline)
+                        } else {
+                            dcache(d_sib<<4:1>>) :=
+                                ((1:bit)::(0:bit)::(0:bit)::(d_sib<<7:5>>:itag)::dfill_data::(dcache(d_sib<<4:1>>)<<17:2>>:word)::(0:bit)::(0:bit) : dcline)
+                        };
+                        dfill_on := false;
+                        dfill_got := false
+                    }
+                } else if ~dfill_on & dfill_got {
+                    dfill_on := true
+                } else if ~dfill_busy & d_miss & ~d_evict {
+                    # new (clean-victim) miss: latch the miss address, start the fill
+                    dfill_on := true;
+                    dfill_got := false;
+                    dfill_miss := req_addr
+                };
+                # ---- store: on a hit, overwrite the addressed word and dirty it ----
+                if is_st & d_hit & ~dmem_stall {
+                    if d_wsel = 0 {
+                        dcache(d_index) :=
+                            ((1:bit)::(d_line<<38:38>>:bit)::(1:bit)::(d_line<<36:34>>:itag)::(d_w1)::(st_data)::(0:bit)::(0:bit) : dcline)
+                    } else {
+                        dcache(d_index) :=
+                            ((1:bit)::(1:bit)::(d_line<<37:37>>:bit)::(d_line<<36:34>>:itag)::(st_data)::(d_w0)::(0:bit)::(0:bit) : dcline)
+                    }
+                };
+                # ---- FLUSH: evict the addressed line, but ONLY when it is not
+                #      dirty. A FLUSH of a dirty line raises wb_en and stalls (write-
+                #      backs are stubbed), so it must NOT evict -- evicting would drop
+                #      the dirty data from dc while the trace keeps it ddirty (the
+                #      instruction does not commit), breaking dc_ddirty. ----
+                if is_flush & d_hit & ~dmem_stall & ~wb_en {
+                    dcache(d_index) := 0
+                }
+            }
+            specification {
+                # packed-line accessors (proof-only). The full/dirty bit tests are
+                # INLINED rather than defined as functions: a defined boolean
+                # `f(L) = (L<<i:i>>:bit) = 1` is a "deadly definition" that has made
+                # Z3 return `unknown` before (see il_full in the I-cache notes), so
+                # we expand `(L<<i:i>>:bit) = 1` at each use site instead.
+                function dl_tag(L:dcline) : itag
+                definition dl_tag(L) = L<<36:34>>
+                function dl_w0(L:dcline) : word
+                definition dl_w0(L) = L<<17:2>>
+                function dl_w1(L:dcline) : word
+                definition dl_w1(L) = L<<33:18>>
+                function dc_line(A:addr) : dcline
+                definition dc_line(A) = dc.dcache(A<<4:1>>)
+                function dc_present(A:addr) : bool
+                definition dc_present(A) = ((dc_line(A)<<39:39>>:bit) = 1) & (dl_tag(dc_line(A)) = A<<7:5>>)
+                function dc_dirty(A:addr) : bool
+                definition dc_dirty(A) = dc_present(A) & (((dc_line(A)<<37:37>>:bit) = 1) if (A<<0:0>>:bit) = 0 else ((dc_line(A)<<38:38>>:bit) = 1))
+                function dc_val(A:addr) : word
+                definition dc_val(A) = (dl_w0(dc_line(A)) if (A<<0:0>>:bit) = 0 else dl_w1(dc_line(A)))
+
+                # While dc is a placeholder its array is all-zero, so no line is
+                # ever present. (STAGE iv-B replaces this with the real coherence
+                # argument.)
+                # invariant [dc_empty] ~dc_present(A)
+
+                # Dirty-bit hygiene: a dirty bit is only ever set together with the
+                # full bit (by a store), so a non-full line has no dirty word. This
+                # is what makes fill_clean inductive: a fill may start on a non-full
+                # victim, which is then known to carry no dirty word.
+                invariant [nonfull_clean] ~((dc_line(A)<<39:39>>:bit) = 1) ->
+                              ~( ((dc_line(A)<<37:37>>:bit) = 1)
+                               | ((dc_line(A)<<38:38>>:bit) = 1) )
+
+                # A fill is never in progress on a line that holds a dirty word.
+                # A fill only starts on a non-dirty victim (a dirty victim would
+                # stall on d_evict), and the fill installs clean words, so the
+                # line at the fill index stays clean throughout. This stops the
+                # sibling install from clobbering a dirty word -- the case that
+                # otherwise breaks dc_ddirty's converse (a store committing while
+                # a fill is mid-flight).
+                invariant [fill_clean] (dfill_on | dfill_got) ->
+                              ~( ((dc_line(dfill_miss)<<37:37>>:bit) = 1)
+                               | ((dc_line(dfill_miss)<<38:38>>:bit) = 1) )
+
+                # (1) an address dirty in dc is dirty (written since flush) in the
+                # trace, AND conversely. The biconditional is the inductive form:
+                # because every eviction/dirty-FLUSH is currently stalled, a dirty
+                # dc word and a ddirty trace address stay in lockstep. (This
+                # converse will NOT hold once write-backs are real; for now, with
+                # all evictions stalled, it does.)
+                invariant [dc_ddirty] ~trace.st(trace.now).error ->
+                              (dc_dirty(A) <-> trace.st(ex_mem.commit).ddirty(A))
+                          with ex_mem.ex_props.commit_bound
+                # (2) a present dc line holds the reference's MEM-stage value.
+                # The antecedent also covers the mid-fill miss word: once the miss
+                # word is installed (dfill_got & A = dfill_miss) its value is correct
+                # even though the line is not yet full/present (mirrors ic.hard).
+                invariant [dc_val_ok] ~trace.st(trace.now).error ->
+                              ((dc_present(A) | (dfill_got & A = dfill_miss))
+                                  -> dc_val(A) = trace.st(ex_mem.commit).mem(A))
+                          with ex_mem.ex_props.commit_bound
+                # (3) main memory holds the reference value wherever dc is not dirty
+                # invariant [mem_clean] ~trace.st(trace.now).error ->
+                #               (~dc_dirty(A) -> main_mem.mem(A) = trace.st(ex_mem.commit).mem(A))
+                #    with main_mem.mem_track
+
+                # Interface invariant with main_mem. We should really break this into
+                # two invariants: one here and one in main_mem, both referring to
+                # interface ghost state in mem_dc. For now, though, we are making main_mem
+                # visible here, so we can write the full invariant here.
+
+                invariant [dc_main_mem_intf] main_mem.mbusy & ~main_mem.mfi -> main_mem.mfa = dfill_addr
+
+
+            }
+
+            
+
+        } with cpu, trace, word, addr, nib, bit, dcline, itag, opc, main_mem, ex_mem,
+               ex_mem.ex_props.m_ir_trk, ex_mem.ex_props.m_addr_trk, ex_mem.ex_props.commit_bound
     }
 
     # ---- the memory / I-cache interface (mem_ic) ---------------------------
@@ -1411,16 +1669,16 @@ isolate cpu = {
                 # latch ic.ifill_addr on the read-start edge, and mbusy is never set
                 # two cycles running, so this holds unguarded. It bridges the
                 # one-cycle port latch for icache_input.
-                invariant [mfa_track] main_mem.mbusy -> main_mem.mfa = ifill_addr_old
+                invariant [mfa_track] main_mem.mbusy & main_mem.mfi -> main_mem.mfa = ifill_addr_old
 
-                # The fill reads raw main memory, which is coherent with the trace
-                # only where dc is not dirty. But ~ddirty(ifill_addr_old) (premise)
-                # implies ~dc_dirty (dc_ddirty), and there mem_clean pins the word.
+                # The fill reads main memory, which (mem_track) is coherent with the
+                # trace exactly where the address is not dirty -- which the premise
+                # ~ddirty(ifill_addr_old) provides.
                 invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
                         & ~trace.st(trace.now).error & ~trace.st(ex_mem.commit).ddirty(ifill_addr_old))
                     -> ic.ifill_data = trace.st(ex_mem.commit).mem(ifill_addr_old)
-                    with mfa_track, mem_dc.dc_props.mem_clean, mem_dc.dc_props.dc_ddirty, ex_mem.ex_props.commit_bound
-            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, main_mem, ex_mem, mem_ic, mem_dc
+                    with mfa_track, main_mem.mem_track, ex_mem.ex_props.commit_bound
+            } with cpu, trace, word, addr, nib, bit, icline, itag, opc, ic, main_mem, ex_mem, mem_ic
 
             # ---- I-cache-side guarantees: a valid fetched word is coherent ----
             # Proved by pulling in ic (its fetch-read logic and its internal
@@ -1462,45 +1720,22 @@ isolate cpu = {
     private {
         isolate mem_dc = {
             isolate dc_props = {
-                # packed-line accessors (proof-only)
-                function dl_full(L:dcline) : bool
-                definition dl_full(L) = (L<<39:39>>:bit) = 1
-                function dl_d0(L:dcline) : bool
-                definition dl_d0(L) = (L<<37:37>>:bit) = 1
-                function dl_d1(L:dcline) : bool
-                definition dl_d1(L) = (L<<38:38>>:bit) = 1
-                function dl_tag(L:dcline) : itag
-                definition dl_tag(L) = L<<36:34>>
-                function dl_w0(L:dcline) : word
-                definition dl_w0(L) = L<<17:2>>
-                function dl_w1(L:dcline) : word
-                definition dl_w1(L) = L<<33:18>>
-                function dc_line(A:addr) : dcline
-                definition dc_line(A) = dc.dcache(A<<4:1>>)
-                function dc_present(A:addr) : bool
-                definition dc_present(A) = dl_full(dc_line(A)) & (dl_tag(dc_line(A)) = A<<7:5>>)
-                function dc_dirty(A:addr) : bool
-                definition dc_dirty(A) = dc_present(A) & (dl_d0(dc_line(A)) if (A<<0:0>>:bit) = 0 else dl_d1(dc_line(A)))
-                function dc_val(A:addr) : word
-                definition dc_val(A) = (dl_w0(dc_line(A)) if (A<<0:0>>:bit) = 0 else dl_w1(dc_line(A)))
-
-                # While dc is a placeholder its array is all-zero, so no line is
-                # ever present. (STAGE iv-B replaces this with the real coherence
-                # argument.)
-                invariant [dc_empty] ~dc_present(A)
-
-                # (1) an address dirty in dc is dirty (written since flush) in the trace
-                invariant [dc_ddirty] ~trace.st(trace.now).error ->
-                              (dc_dirty(A) -> trace.st(ex_mem.commit).ddirty(A))
-                # (2) a present dc line holds the reference's MEM-stage value
-                invariant [dc_val_ok] ~trace.st(trace.now).error ->
-                              (dc_present(A) -> dc_val(A) = trace.st(ex_mem.commit).mem(A))
-                # (3) main memory holds the reference value wherever dc is not dirty
-                invariant [mem_clean] ~trace.st(trace.now).error ->
-                              (~dc_dirty(A) -> main_mem.mem(A) = trace.st(ex_mem.commit).mem(A))
-                    with main_mem.mem_track
+                # GUARANTEE (mirrors icache_output): when a LD is in MEM and not
+                # stalled, the value the D-cache returns (mem_stage.ld_data) equals
+                # the reference result of that LD, st(ex_mem.commit).res. A hit reads
+                # a present line (dc_val_ok); a forwarded miss word reads main memory
+                # at the (not-dirty, since missed) address (dc_main_mem_intf +
+                # mem_track + dc_ddirty). Stated over the MEM-stage-visible signals so
+                # mem_wb consumes it without depending on dc.
+                invariant [dcache_output]
+                      (ex_stage.m_valid & (trace.st(ex_mem.commit).opcode = 4)
+                       & ~mem_stage.dc_stall & ~trace.st(trace.now).error)
+                          -> mem_stage.ld_data = trace.st(ex_mem.commit).res
+                    with dc.dc_val_ok, dc.dc_ddirty, dc.dc_main_mem_intf,
+                         main_mem.mem_track, ex_mem.ex_props.commit_bound,
+                         ex_mem.ex_props.m_ir_trk, ex_mem.ex_props.m_addr_trk
             } with cpu, trace, word, addr, nib, bit, dcline, itag, opc, dc, main_mem, ex_mem
-        } with cpu
+        } with cpu, dc
     }
 
     # ---- writeback stage (WB) ----------------------------------------------
@@ -1606,7 +1841,21 @@ isolate cpu = {
     # ---- stage-output-dependent combinational wires ----
     # These read the stage objects' registers / outputs, so they are defined here
     # (after all stage objects).
-    definition ex_stall = ex_stage.ex_stall
+    # The global stall folds the EX data-hazard stall together with the D-cache
+    # stall (a MEM-stage miss / pending write-back). Consolidating them into one
+    # wire means every stall-conditioned invariant picks up the new condition for
+    # free. (dc is not otherwise wired yet -- only its stall signal is used.)
+    wire dc_stall : bool
+    definition dc_stall = dc.dmem_stall | dc.wb_en | ic.flush_valid
+    definition ex_stall = ex_stage.ex_stall | dc_stall
+
+    # dc request inputs (its LD result / fill / write-back are NOT wired yet).
+    definition dc.req_addr = ex_stage.m_addr
+    definition dc.req_ir   = ex_stage.m_ir
+    definition dc.req_valid = ex_stage.m_valid
+    definition dc.st_data  = ex_stage.m_store
+    definition dc.dfill_data = main_mem.dfill_data
+    definition dc.dfill_data_valid = main_mem.dfill_data_valid
 
     # A FLUSH must drain to the point where it would take effect (the MEM stage,
     # once the I-cache exists) before anything behind it is fetched. So fetch
@@ -1633,12 +1882,15 @@ isolate cpu = {
     # the two-cycle memory port (in mem_stage) returns fill data to ic
     definition ic.ifill_data = main_mem.ifill_data
     definition ic.ifill_data_valid = main_mem.ifill_data_valid
-    definition main_mem.fill_addr = ic.ifill_addr
-    definition main_mem.fill_req  = ic.ifill_addr_valid
+    definition main_mem.ifill_addr = ic.ifill_addr
+    definition main_mem.ifill_req  = ic.ifill_addr_valid
+    # the D-cache shares the same two-cycle memory port
+    definition main_mem.dfill_addr = dc.dfill_addr
+    definition main_mem.dfill_req  = dc.dfill_req
 
     # main memory <-> MEM stage: the committing store (the LD read is a direct
     # cross-isolate read of main_mem.mem in mem_stage).
-    definition main_mem.dwrite_en  = ex_stage.m_valid & (ex_stage.m_ir<<15:13>>:opc = 5)
+    definition main_mem.dwrite_en  = false # ex_stage.m_valid & (ex_stage.m_ir<<15:13>>:opc = 5)
     definition main_mem.dwrite_addr = ex_stage.m_addr
     definition main_mem.dwrite_data = ex_stage.m_store
     # a FLUSH executing in MEM evicts its 'a'-operand address from the I-cache
@@ -1667,4 +1919,7 @@ isolate cpu = {
     definition ex_stage.e_a = wb_stage.wb_a
     definition ex_stage.e_b = wb_stage.wb_b
     definition ex_stage.mem_stall = mem_stage.mem_stall
+    definition ex_stage.dc_stall  = dc_stall
+    definition mem_stage.dc_stall = dc_stall
+    definition mem_stage.ld_data  = dc.ld_data
 }
