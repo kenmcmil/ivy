@@ -1493,23 +1493,30 @@ isolate cpu = {
             definition dfill_req = dfill_on | dfill_got | (d_miss & ~dfill_busy & ~d_evict)
             definition dfill_busy = dfill_on | dfill_got
 
-            # ---- victim / write-back (one dirty word per cycle) ----
-            # A dirty-victim miss writes back ONE dirty word per cycle (word0 first),
-            # clearing that word's dirty bit but LEAVING THE LINE PRESENT (full/tag/
-            # other word unchanged), until the line is clean; then d_evict drops and
-            # the fill reallocates the (now clean) line. FLUSH of a dirty line still
-            # just stalls (fl_dirty) -- FLUSH write-back is not implemented yet.
+            # ---- victim / write-back (one word per cycle) ----
+            # Two writers share the single main-memory write port (mutually
+            # exclusive: a miss vs. a flush-hit):
+            #  - a dirty-victim miss (d_evict) writes back ONE dirty word per cycle
+            #    (word0 first), clearing that word's dirty bit but LEAVING THE LINE
+            #    PRESENT (full/tag/other word unchanged), while STALLING, until the
+            #    line is clean; then d_evict drops and the fill reallocates it.
+            #  - a FLUSH hit whose addressed word is dirty (fl_wb_en) writes that ONE
+            #    word back and clears its dirty bit, in a SINGLE, NON-STALLED cycle
+            #    (it only has to make its own address coherent; the sibling is left
+            #    alone). A clean-flush / flush-miss is a dc no-op.
             wire d_evict : bool              # a miss must evict a dirty victim before filling
             definition d_evict = d_miss & ~dfill_busy & d_full & (d_dirty0 | d_dirty1)
-            wire fl_dirty : bool             # a FLUSH hits a dirty line
-            definition fl_dirty = is_flush & d_hit & (d_dirty0 | d_dirty1)
-            definition wb_en   = d_evict | fl_dirty
-            # The victim word's main-memory address is built from the RESIDENT tag
-            # (the victim's tag, d_line<<36:34>>), NOT the request's tag.
-            definition wb_word_en   = d_evict
-            definition wb_wsel      = ((0:bit) if d_dirty0 else (1:bit))
+            wire fl_wb_en : bool             # a FLUSH hit whose addressed word is dirty
+            definition fl_wb_en = is_flush & d_hit & (d_dirty0 if d_wsel = 0 else d_dirty1)
+            definition wb_en   = d_evict     # only an eviction stalls; FLUSH does not
+            # The write-back word: for a FLUSH it is the addressed word (d_wsel); for
+            # an eviction it is a dirty word (word0 first). Its main-memory address is
+            # built from the RESIDENT tag (d_line<<36:34>>) -- on a flush hit that
+            # equals the request tag, so wb_word_addr = req_addr there.
+            definition wb_word_en   = d_evict | fl_wb_en
+            definition wb_wsel      = (d_wsel if is_flush else ((0:bit) if d_dirty0 else (1:bit)))
             definition wb_word_addr = (d_line<<36:34>>:itag) :: (d_index:nib) :: (wb_wsel:bit)
-            definition wb_word_data = (d_w0 if d_dirty0 else d_w1)
+            definition wb_word_data = (d_w0 if wb_wsel = 0 else d_w1)
 
             after init {
                 dcache(I) := 0;
@@ -1561,21 +1568,14 @@ isolate cpu = {
                             ((1:bit)::(1:bit)::(d_line<<37:37>>:bit)::(d_line<<36:34>>:itag)::(st_data)::(d_w0)::(0:bit)::(0:bit) : dcline)
                     }
                 };
-                # ---- FLUSH: evict the addressed line, but ONLY when it is not
-                #      dirty. A FLUSH of a dirty line raises wb_en and stalls (write-
-                #      backs are stubbed), so it must NOT evict -- evicting would drop
-                #      the dirty data from dc while the trace keeps it ddirty (the
-                #      instruction does not commit), breaking dc_ddirty. ----
-                if is_flush & d_hit & ~dmem_stall & ~wb_en {
-                    dcache(d_index) := 0
-                };
-                # ---- dirty-victim write-back: clear the written word's dirty bit,
-                #      keeping the line present (full/tag/other word unchanged). One
-                #      word per cycle (word0 first); repeats until the line is clean,
-                #      then d_evict drops and the fill reallocates it. (d_evict => a
-                #      miss, so the store/FLUSH blocks above are inert this cycle.)
-                if d_evict {
-                    if d_dirty0 {
+                # ---- write-back: clear the written word's dirty bit, keeping the
+                #      line present (full/tag/other word unchanged). Serves BOTH the
+                #      dirty-victim eviction (word0 first, repeated while stalled until
+                #      the line is clean) and a FLUSH hit (the addressed word, one
+                #      non-stalled cycle). wb_wsel picks the word; the store block
+                #      above is inert (d_evict => a miss; a FLUSH is not a store). ----
+                if wb_word_en {
+                    if wb_wsel = 0 {
                         dcache(d_index) :=
                             ((1:bit)::(d_line<<38:38>>:bit)::(0:bit)::(d_line<<36:34>>:itag)::(d_w1)::(d_w0)::(0:bit)::(0:bit) : dcline)
                     } else {
@@ -1882,7 +1882,11 @@ isolate cpu = {
     # wire means every stall-conditioned invariant picks up the new condition for
     # free. (dc is not otherwise wired yet -- only its stall signal is used.)
     wire dc_stall : bool
-    definition dc_stall = dc.dmem_stall | dc.wb_en | ic.flush_valid
+    # A FLUSH no longer stalls MEM (dc.wb_en is eviction-only now): a FLUSH hit
+    # writes its addressed word back in a single cycle and retires normally.
+    # ic.flush_valid still drives the I-cache eviction and the flush_in_pipe fetch
+    # drain below; it just no longer contributes to the MEM-hold stall.
+    definition dc_stall = dc.dmem_stall | dc.wb_en
     definition ex_stall = ex_stage.ex_stall | dc_stall
 
     # dc request inputs (its LD result / fill / write-back are NOT wired yet).
