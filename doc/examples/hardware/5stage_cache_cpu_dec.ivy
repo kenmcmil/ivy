@@ -1154,6 +1154,14 @@ isolate cpu = {
                 invariant [mem_track] ~trace.st(trace.now).error & ~dc.dc_dirty(A) -> mem(A) = trace.st(ex_mem.commit).mem(A)
                     with dc.dc_val_ok, ex_mem.ex_props.commit_bound,
                          ex_mem.ex_props.m_ir_trk, ex_mem.ex_props.m_addr_trk
+
+                # The busy read's latched address equals the address ic presented
+                # last cycle: both mfa (in the arbiter) and ifill_addr_old (here)
+                # latch ic.ifill_addr on the read-start edge, and mbusy is never set
+                # two cycles running, so this holds unguarded. It bridges the
+                # one-cycle port latch for icache_input.
+                invariant [mfa_track] main_mem.mbusy & main_mem.mfi -> main_mem.mfa = mem_ic.ifill_addr_old
+
             }
         } with cpu, trace, word, addr, reg, opc, nib, bit, dcline, itag, ex_mem, mem_ic, dc
     }
@@ -1663,7 +1671,7 @@ isolate cpu = {
 
             
 
-        } with cpu, trace, word, addr, nib, bit, dcline, itag, opc, main_mem, ex_mem,
+        } with cpu, trace, word, addr, nib, bit, dcline, itag, opc, main_mem, ex_mem, mem_ic,
                ex_mem.ex_props.m_ir_trk, ex_mem.ex_props.m_addr_trk, ex_mem.ex_props.commit_bound
     }
 
@@ -1697,13 +1705,6 @@ isolate cpu = {
             # boundary, when that address is not dirty. Proved from mem_stage's port
             # arbitration (mfa holds ifill_addr_old) and mem_track.
             isolate mem_props = {
-                # The busy read's latched address equals the address ic presented
-                # last cycle: both mfa (in the arbiter) and ifill_addr_old (here)
-                # latch ic.ifill_addr on the read-start edge, and mbusy is never set
-                # two cycles running, so this holds unguarded. It bridges the
-                # one-cycle port latch for icache_input.
-                invariant [mfa_track] main_mem.mbusy & main_mem.mfi -> main_mem.mfa = ifill_addr_old
-
                 # The fill reads main memory, which (mem_track) is coherent with the
                 # trace exactly where the address is not dirty IN DC. The premise
                 # ~ddirty(ifill_addr_old) yields ~dc_dirty(ifill_addr_old) via
@@ -1712,7 +1713,7 @@ isolate cpu = {
                 invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
                         & ~trace.st(trace.now).error & ~trace.st(ex_mem.commit).ddirty(ifill_addr_old))
                     -> ic.ifill_data = trace.st(ex_mem.commit).mem(ifill_addr_old)
-                    with mfa_track, main_mem.mem_track, dc.dc_ddirty, ex_mem.ex_props.commit_bound
+                    with main_mem.mfa_track, main_mem.mem_track, ex_mem.ex_props.commit_bound
             } with cpu, trace, word, addr, nib, bit, dcline, icline, itag, opc, ic, main_mem, ex_mem, mem_ic, dc
 
             # ---- I-cache-side guarantees: a valid fetched word is coherent ----
@@ -1770,7 +1771,7 @@ isolate cpu = {
                     with dc.dc_val_ok, dc.dc_main_mem_intf,
                          main_mem.mem_track, ex_mem.ex_props.commit_bound,
                          ex_mem.ex_props.m_ir_trk, ex_mem.ex_props.m_addr_trk
-            } with cpu, trace, word, addr, nib, bit, dcline, itag, opc, dc, main_mem, ex_mem
+            } with cpu, trace, word, addr, nib, bit, dcline, itag, opc, dc, main_mem, ex_mem, mem_ic
         } with cpu, dc
     }
 
