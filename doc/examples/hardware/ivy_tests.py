@@ -107,6 +107,54 @@ tests = [
                  + ' | grep -q "4 -> 5 -> 2 -> 3 -> 2 -> 3"',
      'group': 'rtl'},
 
+    # The cache stage-decomposition CPU (5stage_cache_cpu_dec): I-cache, write-
+    # back D-cache, and FLUSH-based fetch coherence, exercised on the GENERATED
+    # RTL. sim_cache_cpu_dec.sh injects each program into the UNIFIED \mem (both
+    # caches sit in front of it), runs yosys sim, and reports the pc trace, the
+    # committed register writes (WB:), and per-cache stall-cycle counts. The
+    # proof already shows correctness for every program; these sims check the
+    # caches are FUNCTIONAL and deliver the intended SPEEDUP (cold-miss stalls
+    # only). Larger design -> 600s timeout, like the cache reference model.
+
+    # (1) I-cache: a 6-instruction infinite loop over 3 cache lines. The cold
+    # first pass stalls every fetch (IFETCH_STALL_CYCLES counts only those); once
+    # the lines are cached the warm loop runs at one instruction per cycle with
+    # NO further fetch stalls -- the pc trace shows 0..5 cycling unbroken, and the
+    # total stall count stays at the cold-miss floor (7). No data accesses (0).
+    {'type': 'to_rtl', 'name': '5stage_cache_cpu_dec',
+     'validate': _yosys_wf
+                 + ' && ./sim_cache_cpu_dec.sh {name} icache_prog.hex 46 > {name}.simout 2>&1'
+                 + ' && grep -q "0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0 -> 1 -> 2 -> 3 -> 4 -> 5" {name}.simout'
+                 + ' && grep -q "IFETCH_STALL_CYCLES: 7" {name}.simout'
+                 + ' && grep -q "DMEM_STALL_CYCLES: 0" {name}.simout',
+     'timeout': 600, 'group': 'rtl'},
+
+    # (2) D-cache: ST [64]; ST [65]; LD [64]; LD [65] -- all one two-word line.
+    # FUNCTIONAL: both loads return the stored value (WB shows r3=42 r4=42).
+    # SPEEDUP: exactly ONE cold miss (DMEM_STALL_CYCLES: 4, the write-allocate
+    # fill on the first store); the second store and both loads are warm hits
+    # that add no stall -- one fill amortized across a store and two loads.
+    {'type': 'to_rtl', 'name': '5stage_cache_cpu_dec',
+     'validate': _yosys_wf
+                 + ' && ./sim_cache_cpu_dec.sh {name} dcache_prog.hex 46 > {name}.simout 2>&1'
+                 + ' && grep -q "WB: r1=64 r2=42 r5=65 r3=42 r4=42" {name}.simout'
+                 + ' && grep -q "DMEM_STALL_CYCLES: 4" {name}.simout',
+     'timeout': 600, 'group': 'rtl'},
+
+    # (3) self-modifying code via FLUSH: LD a new instruction word (0xC00E =
+    # BEQZ r0,14 = 49166), ST it over the instruction at address 8 (originally
+    # BEQZ r0,12), FLUSH [8], then jump to 8. WB shows the new word was loaded
+    # (r3=49166); the pc branches to the NEW target 14 (settling in 14 -> 15 ->
+    # 14), NOT the old 12 -- the store+FLUSH made the modified instruction
+    # visible to fetch (write-back to \mem + I-cache eviction). Without the FLUSH
+    # this would be an ISA fetch-coherence error.
+    {'type': 'to_rtl', 'name': '5stage_cache_cpu_dec',
+     'validate': _yosys_wf
+                 + ' && ./sim_cache_cpu_dec.sh {name} smc_prog.hex 46 > {name}.simout 2>&1'
+                 + ' && grep -q "WB: r1=8 r2=16 r3=49166" {name}.simout'
+                 + ' && grep -q "14 -> 15 -> 14" {name}.simout',
+     'timeout': 600, 'group': 'rtl'},
+
     # The input-driven CMAX pipeline (decomp.md's register-dependent complex
     # hazard). It has no instruction memory -- instructions arrive on the primary
     # input inst_in -- and its late write uses the `<` operator, so this exercises

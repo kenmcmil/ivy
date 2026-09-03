@@ -1,0 +1,48 @@
+6408  # 0: LI r1,8    target instruction address T
+6810  # 1: LI r2,16   address of the new-instruction constant
+8d00  # 2: LD r3,[r2] r3 = new instruction word (0xC00E = BEQZ r0,14)
+a0b0  # 3: ST [r1],r3 mem[8] := new instruction (into the D-cache)
+e080  # 4: FLUSH [r1] write mem[8] back + evict it from the I-cache
+0000  # 5: NOP
+0000  # 6: NOP
+c008  # 7: BEQZ r0,8  jump to the (now modified) instruction
+c00c  # 8: TARGET @8: original BEQZ r0,12 -- modified to BEQZ r0,14
+0000  # 9: NOP
+0000
+0000
+c00c  # 12: OLD halt @12  (reached only if the store were NOT visible)
+0000
+c00e  # 14: NEW halt @14  (reached because FLUSH made the store visible)
+0000
+c00e  # 16: data: new instruction word = BEQZ r0,14
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000

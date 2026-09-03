@@ -1,0 +1,48 @@
+6440  # 0: LI r1,64  (dataA)
+682a  # 1: LI r2,42  (value)
+7441  # 2: LI r5,65  (dataB, same line as 64)
+a0a0  # 3: ST [r1],r2   COLD miss -> write-allocate fill + stall
+a2a0  # 4: ST [r5],r2   WARM hit (line now present) -> no stall
+8c80  # 5: LD r3,[r1]   WARM hit -> r3 = 42
+9280  # 6: LD r4,[r5]   WARM hit -> r4 = 42
+c007  # 7: halt: BEQZ r0,7
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
+c007
