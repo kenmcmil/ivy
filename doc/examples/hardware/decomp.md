@@ -1263,5 +1263,376 @@ wrong-path fetches disappear. The proof guarantees we never compute a
 wrong result; only the simulation confirms we arrive at it
 efficiently.
 
+The weak RAW hazard pattern and the error flag pattern
+------------------------------------------------------
+
+In this section we introduce two proof patterns that will be helpful
+in handling instruction and data caches. Separate I-cache and D-cache
+can add a pipe hazard in case of self-modifying code. A store to
+address 'A' followed by an instruction fetch at 'A' creates a
+read-after-write hazard. Most instruction caches, however, only handle
+this hazard correctly if the store and the fetch are separated in the
+instruction stream by a special 'flush' instruction on address
+'A'. Without the flush, the fetched instruction at 'A' may be out of
+date.
+
+This is an example of weak RAW hazard detection. It requires the
+programmer to carefully analyze the code and insert the necessary
+flush instructions in order for the program to be executed
+correctly. This changes the program semantics and requires us to
+modify the specification of the ISA. One way to do this is to add
+a predicate `ddirty` to the ISA state that indicates when an address
+has been modified but not flushed, meaning that a fetch from this
+address will fail. When we store to 'A', the ISA model sets `ddirty(A)`
+to true, and when we flush 'A', the ISA model sets `ddirty(A)` to false.
+It is an error to fetch an instruction from 'A' when 'ddirty(A)' is
+true. There are two ways to handle this in the ISA model: we can either
+enter a special error state when a fetch error occurs, or we can
+make the fetched instruction an undefined value that may be
+non-deterministically chosen. We will take the first approach here.
+
+Concretely, the ISA state gains two components:
+
+```
+var ddirty(A:addr) : bool     # A has been written since its last FLUSH
+var error : bool              # sticky: an instruction was fetched from a dirty address
+```
+
+The `step` action, before executing the instruction, records a fetch
+error, and on a store or a flush it updates the dirty bit:
+
+```
+# Fetch coherence: executing an instruction at an address written since
+# its last FLUSH reads a stale instruction. The ISA records this by
+# entering a sticky error state. This runs before the store below, so it
+# reads the pre-state dirty bit at the pre-state pc.
+if ddirty(pc) {
+    error := true;
+}
+...
+} else if opcode = 5 {                   # ST
+    mem(mem_addr) := b_val;
+    ddirty(mem_addr) := true;            # the written line is now dirty
+} else if opcode = 7 {                   # FLUSH
+    ddirty(mem_addr) := false;           # writes to this line are now visible
+}
+```
+
+The `error` bit is never cleared: once a stale instruction has been
+fetched, the architectural state is unspecified from that point on.
+
+Using this model, the implementation is not required to track the ISA
+trace after the point when an error occurs. This relaxes the ISA
+specification. We will consider a proof pattern to handle this relaxed
+specification.
+
+As an example, consider the speculating pipelined CPU of the previous
+section. We modify this CPU by adding a FLUSH instruction that takes
+an address as a register argument and by merging the instruction
+memory `imem` and the data memory `mem` into a single unified memory
+(as we did previously with a non-compositional proof; see
+`reference_tagging.md`). This merge creates a RAW hazard
+from stores to instruction fetches, since the fetch occurs in an earlier
+pipeline stage (IF) than the store (MEM).
+
+We handle this hazard in the same way as an ordinary RAW hazard. That
+is, we forward the memory read from the early (IF) stage to the late
+(MEM) stage and write tracking invariants for the intervening
+instructions. However, there are two important differences in the
+weak hazard case:
+
+1) All of the pipeline invariants are now conditions on the ISA
+error flag. Once this flag becomes true, none of the invariants hold.
+
+2) The tracking invariants for the fetched value of an instruction at
+address 'A' are now conditioned on `ddirty(A)` in the ISA trace. If
+the address is dirty at the tagged instruction, the fetch value need
+not be correct.
+
+Both patterns appear in the fetch tracking invariants of
+`5stage_merge_cpu_dec.ivy`. At the MEM boundary, `fetch_data` reads the
+unified memory combinationally, and the memory tracks the trace at that
+boundary, so the base invariant is simply guarded by `~error` --
+pattern (1):
+
+```
+invariant [fetch_track] ~trace.st(trace.now).error ->
+    mem_stage.fetch_data = trace.st(commit).mem(if_stage.pc)
+    with mem_stage.mem_track, ex_props.commit_bound
+```
+
+Forwarding this value back to the IF stage (across the intervening
+instructions, exactly as for an ordinary RAW hazard) additionally
+conditions it on `~ddirty(if_stage.pc)` -- pattern (2). If the fetched
+address is dirty in the trace at the tagged instruction, the forwarded
+fetch value need not be correct:
+
+```
+invariant [fetch_track] (~trace.st(trace.now).error
+                         & ~trace.st(commit).ddirty(if_stage.pc)
+                         & ~flush_in_pipe) ->
+    mem_stage.fetch_data = trace.st(commit).mem(if_stage.pc)
+    with id_ex.ex_props.fetch_track, id_stage.e_tag_lo,
+         id_stage.e_tag_eq, if_props.commit_bound
+```
+
+Notice that we condition the invariants on
+`trace.st(trace.now).error`.  This means that if there has been an
+error anywhere in the trace, all bets are off. We need this additional
+invariant in the trace model to take advantage of this fact:
+
+```
+invariant T < now & st(T).ddirty(st(T).pc) -> st(now).error
+```
+
+That is, once an error is committed, we remain in the error state
+forever. Finally, to make sure that we always correctly fetch
+instructions that are not dirty, we stall the fetch stage whenever
+there is a FLUSH in the pipe. This forces us to wait to handle the RAW
+hazard when executing self-modifying code, but causes no delay when
+executing ordinary code.
+
+We also have to make sure that all possible stalls are considered when
+updating the commit tags at the stage interfaces. The simplest way to
+do that is to bundle all of the stall conditions into a single wire
+for each stage with a standard name, such as `x.stall_in`, where `x`
+is the stage name.
+
+With these changes, we can now verify that our CPU with merged
+instruction and data memory correctly implements the ISA despite the
+RAW pipeline hazard in the merged memory.
+
+Handling caches compositionally
+-------------------------------
+
+The weak hazard pattern allows us to implement separate instruction
+and data caches without a costly mechanism to maintain the coherence
+of the two caches. This is done in the following way:
+
+(1) The instruction cache is read-only and fills from main memory.
+
+(2) The data cache is a write-back cache that writes data to main
+memory when a dirty line is filled.
+
+The two caches and main memory are contained in separate isolates with
+interface specifications, just as the pipeline stages are. The caches
+communicate with the MEM stage, while main memory communicates with
+both caches.
+
+The crucial aspect of the proof is in the tracking invariants for the
+two caches and main memory. Specifically,
+
+(1) An address 'A' that is present in the D-cache tracks the trace memory.
+
+(2) An address 'A' that is present in the I-cache tracks the trace memory only
+if `ddirty(A)` is false.
+
+(3) An address 'A' in main memory tracks the trace memory only if it is not
+dirty in the D-cache.
+
+All of these tracking invariants are specified relative to the tag at
+the `ex_mem` interface. The fact that the states of the caches and
+main memory relate only to the MEM stage of the pipeline makes the
+specification of the invariants relatively simple. This is possible
+because of the fact that we have already taken care of the RAW hazard
+between stores in the MEM stage and instruction fetch in the IF
+stage, using the fetch tracking invariants.
+
+The CPU design with caches is in file `5stage_cache_cpu_dec.ivy`.  In
+this design, the D-cache is a write-back cache with a line width of
+two words. The I-cache is a read-only cache, also with two words per
+line.  The D-cache, I-cache and main memory are contained in isolates
+`dc`, `ic` and `main_mem` respectively. The D-cache has an interface
+isolate `mem_dc` that specifies its interface with both main memory
+and the MEM stage. Similarly, the I-cache has an interface isolate
+`mem_ic` that specifies its interface with both main memory and the
+MEM stage. These interfaces specify the correctness of data exchanged
+between the isolates, relative to the MEM stage tag.
+
+The `icache_output` invariant (in `mem_ic.ic_props`) is the I-cache's
+guarantee to the fetch stage: whenever the cache reports a valid fetch,
+the word it returns equals the reference memory at the MEM tag, provided
+the fetched address is not dirty in the trace (the weak-hazard condition
+from pattern (2) above):
+
+```
+invariant [icache_output]
+      ic.fetch_addr_valid & ic.fetch_valid & ~trace.st(trace.now).error
+              & ~trace.st(ex_mem.commit).ddirty(ic.fetch_addr)
+                  -> ic.fetch_data = trace.st(ex_mem.commit).mem(ic.fetch_addr)
+    with ic.hard, mem_props.icache_input, ex_mem.ex_props.commit_bound
+```
+
+This is exactly the base `fetch_track` fact the fetch stage consumed for
+the unified memory, now re-established by the cache. Because it is stated
+at the `ex_mem.commit` tag, the rest of the pipeline proof is unchanged:
+the I-cache is a drop-in replacement for the memory read.
+
+The `dcache_output` invariant (in `mem_dc.dc_props`) is the analogous
+guarantee for loads: when a LD is in MEM and not stalled, the value the
+D-cache returns equals the reference result of that load:
+
+```
+invariant [dcache_output]
+      (ex_stage.m_valid & (trace.st(ex_mem.commit).opcode = 4)
+       & ~mem_stage.dc_stall & ~trace.st(trace.now).error)
+          -> mem_stage.ld_data = trace.st(ex_mem.commit).res
+    with dc.dc_val_ok, dc.dc_main_mem_intf, main_mem.mem_track,
+         ex_mem.ex_props.commit_bound,
+         ex_mem.ex_props.m_ir_trk, ex_mem.ex_props.m_addr_trk
+```
+
+A hit reads a present line (`dc_val_ok`, below); a miss reads main memory
+at an address that -- precisely because it missed -- is not dirty in the
+D-cache, so `main_mem.mem_track` (below) supplies the coherent value.
+No `ddirty` condition is needed for loads: data reads are always coherent
+in the trace.
+
+Both the I-cache and D-cache interface with main memory, which
+arbitrates access between the two, giving priority to D-cache access.
+Reads from either cache have a one-cycle delay. 
+
+For the I-cache, we have an interface invariant that specifies the
+cache line fill data transferred from main memory to the I-cache, taking
+into account the delay.
+
+The read port is two-cycle: the datum returned this cycle is for the
+address the port latched on the *previous* cycle. The interface isolate
+`mem_ic` carries a ghost variable `ifill_addr_old` holding that latched
+address, and the `icache_input` invariant (in `mem_ic.mem_props`) states
+that the fill word main memory returns is coherent with the trace, when
+the filled address is not dirty:
+
+```
+invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
+        & ~trace.st(trace.now).error & ~trace.st(ex_mem.commit).ddirty(ifill_addr_old))
+    -> ic.ifill_data = trace.st(ex_mem.commit).mem(ifill_addr_old)
+    with main_mem.mfa_track, main_mem.mem_track, ex_mem.ex_props.commit_bound
+```
+
+A crucial auxiliary invariant to guarantee that correct data is fed
+to the I-cache (invariant `icache_input`) is that an address that is
+dirty in the D-cache is also `ddirty` in the ISA, so I-cache does
+not have to track it:
+
+```
+invariant [dc_ddirty] ~trace.st(trace.now).error ->
+              (dc_dirty(A) -> trace.st(ex_mem.commit).ddirty(A))
+    with ex_mem.ex_props.commit_bound
+```
+
+Here, `dc_dirty(A)` is defined to mean that address `A` is dirty in the D-cache.
+If `A` is not `ddirty` in the trace then
+it is not dirty in the D-cache, so `mem_track` (the main
+memory tracking invarinant below) guarantees that the
+fill word returned to `ic` is correct, according to invariant `icache_input`.
+Note that the above is a one-directional
+implication, not a biconditional. The converse, `ddirty(A) ->
+dc_dirty(A)`, does *not* hold: once a dirty word has been written back
+to main memory and its D-cache dirty bit cleared, `dc_dirty(A)` is
+false while the trace's `ddirty(A)` is still true (it is cleared only by
+a FLUSH). That case is harmless, because the value now lives coherently
+in main memory and is covered by `mem_track`.
+
+To maintain the `dc_dirty` invariant, when a FLUSH of address `A` is
+executed in the MEM stage and 'A' is dirty in the D-cache, we must
+write the value of 'A' back to main memory and mark it as not dirty.
+This is because the flush makes `ddirty(A)` false, and so `dc_dirty`
+must also be false. Notice the invariant doesn't require that we
+*remove* 'A' from D-cache, only that we clean it. 
+
+For the dcache-to-memory interface, we have taken a different
+approach. Instead of specifying interface invariants, we have broken
+locality by allowing the `dc` and `main_mem` to see each other's
+internal states and invariants using 'with' clauses. This is a
+reasonable strategy, since the `main_mem` stage is not very complex,
+while the interface specification between `dc` and `main_mem` would be
+a bit complicated.  Instead of adding complex ghost state at the
+interface, we can just write invariants directly relating the D-cache
+and main memory state.
+
+An important one of these is the main memory tracking invariant, which
+depends on whether addresses are dirty in the D-cache:
+
+```
+invariant [mem_track] ~trace.st(trace.now).error & ~dc.dc_dirty(A)
+    -> mem(A) = trace.st(ex_mem.commit).mem(A)
+    with dc.dc_val_ok, ex_mem.ex_props.commit_bound,
+         ex_mem.ex_props.m_ir_trk, ex_mem.ex_props.m_addr_trk
+```
+
+That is, main memory holds the reference value everywhere the D-cache
+does not hold a newer (dirty) value; a dirty D-cache word overrides main
+memory until it is written back. The invariant stays inductive because
+the only writer of main memory is the D-cache write-back, which stores a
+word that `dc_val_ok` certifies equals the reference value and then
+clears its dirty bit -- so the address becomes non-dirty exactly when
+main memory becomes coherent for it. The reader might note that the
+predicate
+`dc_dirty(A)` is very similar in principle to the abstract `pc_reserved`
+predicate that indicates we are waiting for a write-back of the
+program counter. A key difference is that the `pc_reserved` predicate
+is based on ghost state, while `dc_dirty` is based on the concrete
+hardware state in the cache array. We could have captured this
+'reserved' information in a ghost interface predicate `mem_reserved`,
+but it was simpler to grab it directly from the D-cache. 
+
+Each of the caches has a state machine that handles fills, given
+priority to the word that missed in the cache. We have to be careful
+to handle the cases when a fill is in progress and either a flush or a
+store occurs concurrently. The fill state machine also affects the
+tracking invariants for the cache arrays, since we need to know that,
+when a line is half-filled, the filled half has correct data. For the
+D-cache this is the `dc_val_ok` invariant:
+
+```
+invariant [dc_val_ok] ~trace.st(trace.now).error ->
+              ((dc_present(A) | (dfill_got & A = dfill_miss))
+                  -> dc_val(A) = trace.st(ex_mem.commit).mem(A))
+    with ex_mem.ex_props.commit_bound
+```
+
+The natural statement is "a present line holds the reference value"
+(`dc_present(A) -> dc_val(A) = ...`). The extra disjunct
+`(dfill_got & A = dfill_miss)` covers the intermediate fill state: the
+fill brings in the missed word first and marks it with `dfill_got`
+before the sibling arrives and the line is marked full. During that
+window the missed word `A` is already valid even though `dc_present(A)`
+is still false, and a forwarded load may read it, so the invariant must
+already guarantee its value. Without this disjunct the invariant would
+not be inductive across the two-word fill.
+
+Similarly, the I-cache array has a tracking invariant stating that "a
+present address that is not ddirty holds the reference value".  Since
+a FLUSH of address 'A' makes `ddirty(A)` false, we have to remove a
+flushed address 'A' from the I-cache to maintain the tracking
+invariant. Thus, to maintain coherence of the I-cache and D-cache,
+when a FLUSH is executed we clean the address in D-cache *and* remove
+it from I-cache. Both steps are required to maintain the tracking invariants.
+
+There are many possible variations on caches that have similar proof
+structure but differ in details, just as there are many possible CPU
+pipeline designs. To simplify the proof of CPU's with caches, our main
+decomposition strategy is to separately handle the RAW hazards in the
+CPU pipeline, so that the caches see only a single tag in the trace
+(the one associated with the CPU's memory unit). In this way, the
+caches and their proof are independent of the pipeline and can be
+dropped into any CPU design.
+
+As in the case of the branch predictor, caches are an optimization.
+We have proved that this optimization produces correct results
+according to the ISA, but this says nothing about *performance*.
+We use simulation on generated RTL to confirm that the caches
+actually reduce stalls -- that a warm I-cache fetches with no stall,
+and one D-cache fill is amortized across a store and later loads.
+We can also use it to confirm that FLUSH-based self-modifying code
+not only works correctly, but also makes progress and
+is not indefinitely stalled. For details on running these tests,
+see the regression tests in `ivy_tests.py` (`icache_prog.hex`,
+`dcache_prog.hex`, `smc_prog.hex`, run via `sim_cache_cpu_dec.sh`).
+
+
+
+
 
 
