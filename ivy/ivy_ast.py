@@ -1068,6 +1068,40 @@ class InvarDepDecl(Decl):
     def defines(self):
         return []
 
+# --- name patterns for the `using` clause (see doc/projects/invariant_choice.md) ---
+# A pattern is built from `Or` (union `|`), `PatDiff` (difference `-`), and `Atom`
+# leaves whose `.rep` holds the raw pattern string (identifier chars, `.`, `*`, and
+# an optional leading `$`). `*` is a wildcard standing for an arbitrary string.
+
+class PatDiff(AST):
+    """Set difference of two name patterns: matches the left minus the right."""
+    def __repr__(self):
+        return '(' + str(self.args[0]) + ' - ' + str(self.args[1]) + ')'
+
+class UsingPat(AST):
+    """A `using` clause: args[0] is the invariant label, args[1] is the pattern AST."""
+    def __repr__(self):
+        return str(self.args[0]) + ' using ' + str(self.args[1])
+
+class UsingPatDecl(Decl):
+    def name(self):
+        return 'usingpat'
+    def defines(self):
+        return []
+
+class PatDef(AST):
+    """A named pattern: args[0] is the name atom, args[1] is the pattern AST."""
+    def defines(self):
+        return self.args[0].rep
+    def __repr__(self):
+        return 'patdef ' + str(self.args[0]) + ' = ' + str(self.args[1])
+
+class PatDefDecl(Decl):
+    def name(self):
+        return 'patdef'
+    def defines(self):
+        return [(c.defines(),lineno(c)) for c in self.args]
+
 class ProgressDecl(Decl):
     def name(self):
         return 'progress'

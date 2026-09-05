@@ -1,0 +1,12 @@
+#lang ivy1.8
+# Omitting the needed hypothesis from `using` yields a (false) counterexample:
+# selecting only iy (itself) leaves old x unconstrained, so y need not stay true.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    after init { x := true; y := true }
+    action step = { y := x; x := y }
+    export step
+    invariant [ix] x
+    invariant [iy] y using iy
+}

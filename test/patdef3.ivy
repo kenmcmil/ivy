@@ -1,0 +1,26 @@
+#lang ivy1.8
+
+
+
+object a = {
+    patdef x = y
+    var v1 : bool
+    var v2 : bool
+    after init {v1 := true; v2 := true;}
+    action a1 = {v2 := v1}
+    invariant [y] v1
+    invariant [z] v2 using x|z
+}
+
+
+
+module bmod(aref) = {
+    patdef x = z
+    invariant [q] aref.v2 using aref.x|q
+}
+
+instance b : bmod(a)
+
+export a.a1
+
+    

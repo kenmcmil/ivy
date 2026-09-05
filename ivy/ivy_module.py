@@ -95,6 +95,8 @@ class Module(object):
         self.output_wires = []  # list of symbol: top-level output wires (export wire), in declaration order
         self.registers = set() # set of symbol
         self.invardeps = {}  # map from string to string list
+        self.usingpats = {}  # map from invariant name to a name-pattern AST (from a `using` clause)
+        self.patdefs = {}  # map from a `patdef` name to its (expanded) name-pattern AST
         self.sig = il.sig.copy() # capture the current signature
 
     def __enter__(self):

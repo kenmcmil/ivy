@@ -35,6 +35,7 @@ from . import ivy_mypyvy
 
 import sys
 import os
+import re
 from collections import defaultdict
 
 diagnose = iu.BooleanParameter("diagnose",False)
@@ -491,7 +492,60 @@ def convert_postconds(state,postconds):
     return [x.clone([x.args[0],lut.rename_ast(x.formula,renaming)])
             for x in postconds]
 
-def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None):
+# --- `using` clause: fine-grained choice of inductive hypotheses -------------
+# See doc/projects/invariant_choice.md. When an invariant carries a `using`
+# clause, its consecution check uses only the hypotheses whose names match the
+# pattern. This is implemented with assertion literals: each named hypothesis h
+# is gated in the pre-state as (a_h -> h) with a fresh boolean a_h, and the
+# consecution check for an invariant is conditioned on the conjunction of the
+# literals selected by its pattern (all of them if it has no `using` clause).
+
+def _anchor_prefixes(invname):
+    """The ancestor-object prefixes for anchoring a pattern used by invariant
+    `invname`. For `a.b.c.i` the containing object is `a.b.c`, so the prefixes
+    are '', 'a.', 'a.b.', 'a.b.c.' -- a pattern `x` may match a hypothesis named
+    at any of those levels (`x`, `a.x`, `a.b.x`, `a.b.c.x`)."""
+    parts = invname.split('.')[:-1]   # drop the invariant's own leaf name
+    return [''] + ['.'.join(parts[:i+1]) + '.' for i in range(len(parts))]
+
+def _leaf_matches(leaf,hname,prefixes):
+    """Does hypothesis name `hname` match a single pattern leaf string? `*` is a
+    wildcard for an arbitrary string (regex `.*`). A leading `$` anchors the leaf
+    at the root only; otherwise it is tried at every ancestor prefix."""
+    if leaf.startswith('$'):
+        leaf = leaf[1:]
+        prefixes = ['']
+    body = '.*'.join(re.escape(p) for p in leaf.split('*'))
+    return any(re.fullmatch(re.escape(pre) + body, hname) for pre in prefixes)
+
+def pat_matches(pat,hname,prefixes):
+    """Does hypothesis name `hname` match the name-pattern AST `pat`?"""
+    if isinstance(pat,ivy_ast.Or):
+        return any(pat_matches(a,hname,prefixes) for a in pat.args)
+    if isinstance(pat,ivy_ast.PatDiff):
+        return pat_matches(pat.args[0],hname,prefixes) and not pat_matches(pat.args[1],hname,prefixes)
+    # otherwise an Atom leaf: its rep is the raw pattern string
+    return _leaf_matches(pat.rep,hname,prefixes)
+
+def get_conjs_gated(mod):
+    """Like get_conjs, but gate each NAMED hypothesis h with a fresh boolean
+    assertion literal a_h (clause a_h -> h). Returns (clauses, litmap) where
+    litmap maps a hypothesis name to its literal. Unnamed hypotheses are left
+    unconditional (they cannot be selected by a name pattern)."""
+    fmlas = []
+    litmap = {}
+    for lf in mod.labeled_conjs + mod.assumed_invariants:
+        if lf.explicit or lf.unprovable:
+            continue
+        if lf.label is not None:
+            lit = lut.bool_const('__using$' + lf.name)
+            litmap[lf.name] = lit
+            fmlas.append(lg.Implies(lit,lf.formula))
+        else:
+            fmlas.append(lf.formula)
+    return lut.Clauses(fmlas,annot=act.EmptyAnnotation()), litmap
+
+def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None,using_litmap=None):
     conjs = mod.conj_subgoals if mod.conj_subgoals is not None else mod.labeled_conjs
     conjs = [x for x in conjs if is_check_mod_unprovable(x)]
     conjs += convert_postconds(post,pcs)
@@ -522,6 +576,20 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None):
         deps = [x.formula for x in mod.assumed_invariants if x.name in depnames]
         if deps:
             c = c.clone([c.label,lg.Implies(lg.And(*deps),c.formula)])
+        # `using` clause: restrict the inductive hypotheses. When the pre-state
+        # hypotheses are gated by assertion literals (using_litmap is set because
+        # some invariant has a `using` clause), condition this invariant's
+        # consecution on the literals its pattern selects -- or on all of them if
+        # it has no pattern, which reproduces the default "use everything".
+        if using_litmap is not None:
+            pat = mod.usingpats.get(c.name) if c.label is not None else None
+            if pat is not None:
+                prefixes = _anchor_prefixes(c.name)
+                selected = [lit for hname,lit in using_litmap.items()
+                            if pat_matches(pat,hname,prefixes)]
+            else:
+                selected = list(using_litmap.values())
+            c = c.clone([c.label,lg.Implies(lg.And(*selected),c.formula)])
         checkers.append(ConjChecker(c,indent,action=action))
     return check_fcs_in_state(mod,ag,post,checkers)
 
@@ -707,11 +775,18 @@ def check_isolate(trace_hook = None):
                 if check:
                     ag = ivy_art.AnalysisGraph()
                     pre = itp.State()
-                    pre.clauses = get_conjs(mod)
+                    # When any invariant has a `using` clause, gate the pre-state
+                    # hypotheses with assertion literals so each consecution check
+                    # can select its own subset (see get_conjs_gated).
+                    using_litmap = None
+                    if mod.usingpats:
+                        pre.clauses, using_litmap = get_conjs_gated(mod)
+                    else:
+                        pre.clauses = get_conjs(mod)
                     with itp.EvalContext(check=False): # don't check safety
     #                    post = ag.execute(action, pre, None, actname)
                         post = ag.execute(action, pre)
-                    check_conjs_in_state(mod,ag,post,indent=12,pcs=mod.postconds.get(actname,[]),action=actname)
+                    check_conjs_in_state(mod,ag,post,indent=12,pcs=mod.postconds.get(actname,[]),action=actname,using_litmap=using_litmap)
                 else:
                     print('')
 

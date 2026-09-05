@@ -49,4 +49,22 @@ tests = [
     {'type': 'check', 'name': 'learning_switch1', 'args': ['trace=true'],
      'expect': 'learning_switch1.ivy: line 37:'},
     {'type': 'check', 'name': 'ded1', 'expect': 'OK'},
+
+    # The `using` clause and `patdef` named patterns: fine-grained choice of the
+    # inductive hypotheses used in a consecution check (doc/projects/
+    # invariant_choice.md). usingpat1: `using` selects the needed hypothesis ->
+    # OK. usingpat2: omitting it yields a (false) CTI. usingpat3: the |, -, and *
+    # operators select hypothesis sets (two patterns drop a needed one -> 2
+    # failures). usingpat4: patdef, chained and used with difference (one drops a
+    # needed one -> 1 failure). usingpat5: `$` root-anchors a leaf. patdef1: a
+    # duplicate patdef name is caught. patdef2/patdef3: object-scoped patdefs
+    # with cross-object references, the latter through a module instance.
+    {'type': 'check', 'name': 'usingpat1', 'expect': 'OK'},
+    {'type': 'check', 'name': 'usingpat2', 'expect': 'error: failed checks: 1'},
+    {'type': 'check', 'name': 'usingpat3', 'expect': 'error: failed checks: 2'},
+    {'type': 'check', 'name': 'usingpat4', 'expect': 'error: failed checks: 1'},
+    {'type': 'check', 'name': 'usingpat5', 'expect': 'OK'},
+    {'type': 'check', 'name': 'patdef1', 'expect': 'error: redefining x'},
+    {'type': 'check', 'name': 'patdef2', 'expect': 'OK'},
+    {'type': 'check', 'name': 'patdef3', 'expect': 'OK'},
 ]

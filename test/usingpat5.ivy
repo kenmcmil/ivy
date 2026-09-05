@@ -1,0 +1,12 @@
+#lang ivy1.8
+# `$` anchors a pattern leaf at the root of the name hierarchy; here the fully
+# qualified `$m.ix` selects exactly m.ix.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    after init { x := true; y := true }
+    action step = { y := x; x := y }
+    export step
+    invariant [ix] x
+    invariant [iy] y using $m.ix
+}

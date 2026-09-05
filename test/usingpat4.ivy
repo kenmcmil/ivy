@@ -1,0 +1,17 @@
+#lang ivy1.8
+# Named patterns (patdef), including chaining (both references justx) and use
+# with the difference operator.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    individual z : bool
+    after init { x := true; y := true; z := true }
+    action step = { z := x & y; x := x; y := y }
+    export step
+    invariant [ix] x
+    invariant [iy] y
+    patdef justx = ix
+    patdef both  = justx | iy
+    invariant [iz_ok]  z using both        # both -> holds
+    invariant [iz_bad] z using both - iy   # remove iy -> counterexample
+}

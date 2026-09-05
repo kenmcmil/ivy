@@ -109,6 +109,7 @@ reserved = all_reserved = {
    'delegate' : 'DELEGATE',
    'import' : 'IMPORT',
    'using' : 'USING',
+   'patdef' : 'PATDEF',
    'include' : 'INCLUDE',
    'progress' : 'PROGRESS',
    'rely' : 'RELY',

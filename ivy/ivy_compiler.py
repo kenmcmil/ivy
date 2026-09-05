@@ -47,6 +47,19 @@ from .ivy_ast import ASTContext
 
 ivy_ast.Variable.get_sort = lambda self: ivy_logic.find_sort(resolve_alias(self.sort.rep))
 
+def expand_patrefs(pat,patdefs):
+    """Expand references to named patterns (`patdef`s) in a name-pattern AST. A
+    leaf whose text is a defined pattern name is replaced by that pattern; other
+    leaves (literal names and wildcards) are left unchanged. See
+    doc/projects/invariant_choice.md."""
+    if isinstance(pat,ivy_ast.Or):
+        return ivy_ast.Or(*[expand_patrefs(a,patdefs) for a in pat.args])
+    if isinstance(pat,ivy_ast.PatDiff):
+        return ivy_ast.PatDiff(expand_patrefs(pat.args[0],patdefs),
+                               expand_patrefs(pat.args[1],patdefs))
+    # an Atom leaf: expand if its text names a patdef
+    return patdefs.get(pat.rep,pat)
+
 def thing(self):
     with ASTContext(self):
         return self.cmpl()
@@ -1198,6 +1211,21 @@ class IvyDomainSetup(IvyDeclInterp):
         lhs = v.args[0].rep
         rhs = [x.rep for x in v.args[1:]]
         self.domain.invardeps[lhs] = rhs
+
+    def usingpat(self,v):
+        # v is a UsingPat: args[0] is the (object-qualified) invariant label,
+        # args[1] is the name-pattern AST. The pattern's leaf names are left raw
+        # (relative); check_conjs_in_state anchors them against the ancestors of
+        # the invariant's own qualified name.
+        lhs = v.args[0].rep
+        self.domain.usingpats[lhs] = expand_patrefs(v.args[1],self.domain.patdefs)
+
+    def patdef(self,v):
+        # v is a PatDef: args[0] is the pattern name, args[1] is the pattern AST.
+        # References to earlier patdefs are expanded now, so forward references
+        # are naturally unavailable (the name is not yet in patdefs).
+        name = v.args[0].rep
+        self.domain.patdefs[name] = expand_patrefs(v.args[1],self.domain.patdefs)
 
 
     def add_definition(self,ldf):

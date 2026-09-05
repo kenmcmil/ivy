@@ -1,0 +1,19 @@
+#lang ivy1.8
+# The pattern operators: | (union), - (difference), * (wildcard). z := x & y is
+# inductive only with BOTH x and y, so patterns that select both pass and those
+# that drop one produce a counterexample.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    individual z : bool
+    after init { x := true; y := true; z := true }
+    action step = { z := x & y; x := x; y := y }
+    export step
+    invariant [ix] x
+    invariant [iy] y
+    invariant [iz_all]  z using ix | iy          # both  -> holds
+    invariant [iz_one]  z using ix               # x only -> counterexample
+    invariant [iz_diff] z using (ix | iy) - iy   # x only -> counterexample
+    invariant [iz_star] z using *                # all   -> holds
+    invariant [iz_wild] z using i*               # ix, iy, ... -> holds
+}

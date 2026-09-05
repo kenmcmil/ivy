@@ -544,12 +544,84 @@ def p_optinvwith_with_atoms(p):
     'optinvwith : WITH atype moreatypes'
     p[0] = [Atom(x) for x in  [p[2]] + p[3]]
 
+# --- `using` clause: a name pattern selecting the inductive hypotheses to use ---
+# See doc/projects/invariant_choice.md. The pattern grammar builds an AST from
+# `Or` (union `|`), `PatDiff` (difference `-`, binding tighter than `|`), and
+# `Atom` leaves whose `.rep` is the raw pattern string. A leaf is a maximal run
+# of PRESYMBOL / DOT / TIMES / DOLLAR tokens concatenated (whitespace collapses,
+# as the tokens carry no positions); `*` is a wildcard for an arbitrary string.
+
+def p_optusing(p):
+    'optusing : '
+    p[0] = None
+
+def p_optusing_using_namepat(p):
+    'optusing : USING namepat'
+    p[0] = p[2]
+
+def p_namepat_or(p):
+    'namepat : namepat OR namediff'
+    p[0] = Or(p[1],p[3])
+
+def p_namepat_diff(p):
+    'namepat : namediff'
+    p[0] = p[1]
+
+def p_namediff_minus(p):
+    'namediff : namediff MINUS nameprim'
+    p[0] = PatDiff(p[1],p[3])
+
+def p_namediff_prim(p):
+    'namediff : nameprim'
+    p[0] = p[1]
+
+def p_nameprim_paren(p):
+    'nameprim : LPAREN namepat RPAREN'
+    p[0] = p[2]
+
+def p_nameprim_leaf(p):
+    'nameprim : nameleaf'
+    p[0] = Atom(p[1],[])
+
+def p_nameleaf_tok(p):
+    'nameleaf : nameleaftok'
+    p[0] = p[1]
+
+def p_nameleaf_seq(p):
+    'nameleaf : nameleaf nameleaftok'
+    p[0] = p[1] + p[2]
+
+def p_nameleaftok_presymbol(p):
+    'nameleaftok : PRESYMBOL'
+    p[0] = p[1]
+
+def p_nameleaftok_dot(p):
+    'nameleaftok : DOT'
+    p[0] = '.'
+
+def p_nameleaftok_times(p):
+    'nameleaftok : TIMES'
+    p[0] = '*'
+
+def p_nameleaftok_dollar(p):
+    'nameleaftok : DOLLAR'
+    p[0] = '$'
+
+def p_top_patdef(p):
+    'top : top PATDEF SYMBOL EQ namepat'
+    p[0] = p[1]
+    pd = PatDef(Atom(p[3],[]),p[5])
+    pd.lineno = get_lineno(p,2)
+    d = PatDefDecl(pd)
+    d.lineno = get_lineno(p,2)
+    p[0].declare(d)
+
 # from version 1.7, "invariant" replaces "conjecture"
 if not iu.get_numeric_version() <= [1,6]:
 
 
     def p_top_invariant_labeledfmla(p):
-        'top : top optexplicit INVARIANT labeledfmla optinvwith optproof'
+        'top : top optexplicit INVARIANT labeledfmla optinvwith optusing optproof'
         p[0] = p[1]
         lf = addlabel(p[4],'invar')
         lf.unprovable = False
@@ -559,10 +631,12 @@ if not iu.get_numeric_version() <= [1,6]:
         d.lineno = get_lineno(p,3)
         if p[5]:
             p[0].declare(InvarDepDecl(InvarDep(lf.label,*p[5])))
+        if p[6] is not None:
+            p[0].declare(UsingPatDecl(UsingPat(lf.label,p[6])))
         if not lf.unprovable or check_unprovable.get():
             p[0].declare(d)
-            if p[6] is not None:
-                p[0].declare(ProofDecl(p[6]))
+            if p[7] is not None:
+                p[0].declare(ProofDecl(p[7]))
 
     def p_top_unprovable_invariant_labeledfmla(p):
         'top : top UNPROVABLE INVARIANT labeledfmla optproof'

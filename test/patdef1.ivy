@@ -1,0 +1,6 @@
+#lang ivy1.8
+
+patdef x = y
+patdef x = z
+
+    
