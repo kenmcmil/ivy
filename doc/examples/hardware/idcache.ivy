@@ -1,0 +1,565 @@
+#lang ivy1.8
+
+# This module is a re-usable combination I-cache and D-cache. The implementation
+# is the icache/dcache/main_mem solution from 5stage_cache_cpu_dec.ivy, but
+# disentangled from the CPU: it takes three independent request signals (read/
+# write/flush) instead of an opcode, and its internal tracking invariants are
+# stated against the module's own abstract memory `mem` and dirty map `ddirty`
+# (declared in the specification) rather than an ISA trace. There is therefore no
+# ISA `error` flag, which simplifies the internal invariants.
+
+module isolate idcache(posedge,word,addr,bit,init_mem) = {
+
+    # ---- internal cache-line geometry (derived from the 16-bit word / 8-bit
+    # addr). A line holds a two-word (even/odd) pair; the D-line adds a dirty bit
+    # per word. Address A splits as tag = A<<7:5>>, index = A<<4:1>>, wsel A<<0:0>>.
+    type nib
+    interpret nib -> bv[4]      # 16-entry cache index
+    type itag
+    interpret itag -> bv[3]     # line tag (high address bits)
+    type icline
+    interpret icline -> bv[36]  # [35]full [34:32]tag [31:16]word1 [15:0]word0
+    type dcline
+    interpret dcline -> bv[40]  # [39]full [38]d1 [37]d0 [36:34]tag [33:18]w1 [17:2]w0
+
+    # Inputs
+
+    wire fetch_req : bool        # true when attempting to fetch instruction
+    wire fetch_addr : addr       # fetch address
+    wire read_req : bool         # true when attempting to read data
+    wire write_req : bool        # true when attempting to write data
+    wire flush_req : bool        # true when attemping to flush an address
+    wire data_addr : addr        # address for read/write/flush
+    wire write_data : word       # data for write
+
+    # Outputs
+
+    wire fetch_valid0 : bool     # fetch data are valid on lane 0
+    wire fetch_valid1 : bool     # fetch data are valid on lane 1
+    wire fetch_data0 : word      # instruction fetch data, lane 0
+    wire fetch_data1 : word      # instruction fetch data, lane 1
+    wire data_stall : bool       # stall a read/write/flush
+    wire read_data : word        # data for read
+
+    specification {
+
+        var mem(A:addr) : word     # abstract memory state
+        var ddirty(A:addr) : bool  # indicates address has been written but not flushed
+
+        after init {
+            mem(A) := init_mem(A);
+            ddirty(A) := false;
+        }
+
+        after posedge {
+            if write_req & ~data_stall {
+                mem(data_addr) := write_data;
+                ddirty(data_addr) := true;
+            } else if flush_req & ~data_stall {
+                ddirty(data_addr) := false;
+            }
+        }
+
+        # This module assumes the user makes only one data request in a cycle.
+
+        require {
+            invariant [one_data_op] ~(read_req & write_req | read_req & flush_req | write_req & flush_req)
+        }
+
+        invariant [data_output]
+            read_req & ~data_stall -> read_data = mem(data_addr)
+        with one_data_op, mem_dc.dc_props.dcache_output
+
+        invariant [fetch_output0]
+            fetch_req & fetch_valid0 & ~ddirty(fetch_addr) -> fetch_data0 = mem(fetch_addr)
+        with one_data_op, mem_ic.ic_props.icache_output
+
+        invariant [fetch_output1]
+            fetch_req & fetch_valid1 & ~ddirty(fetch_addr+1) -> fetch_data1 = mem(fetch_addr+1)
+        with one_data_op, mem_ic.ic_props.icache_output1
+
+        # Lane 1 only produces data if fetch address is even
+
+        invariant [fetch_output1_odd]
+            fetch_req & fetch_valid1 -> fetch_addr<<0:0>>:bit = 0
+        with mem_ic.ic_props.icache_output1_odd
+
+    }
+
+    # ======================= implementation ================================
+    # main memory, the I-cache and the D-cache (from 5stage_cache_cpu_dec.ivy).
+
+    implementation {
+
+        alias self = this
+        
+        # ---- main memory: a two-cycle read/fill port shared by the two caches
+        # (D-priority), plus a single-cycle write port for D-cache write-backs.
+        isolate main_mem = {
+            register real_mem(A:addr) : word     # the physical memory
+            register mbusy : bool                # a fill read is in its busy (return) cycle
+            register mfa : addr                  # the fill read address latched last cycle
+            register mfi : bool                  # the busy read is for the I-cache
+
+            wire ifill_addr : addr   # input:  address the I-cache wants read
+            wire ifill_req  : bool   # input:  the I-cache requests a read
+            wire dfill_addr : addr   # input:  address the D-cache wants read
+            wire dfill_req  : bool   # input:  the D-cache requests a read
+            wire dwrite_en : bool    # input:  a write-back this cycle
+            wire dwrite_addr : addr  # input:  the write-back address
+            wire dwrite_data : word  # input:  the write-back data
+            wire ifill_data : word          # output: the returned word for the I-cache
+            wire ifill_data_valid : bool    # output: an I-read completes this cycle
+            wire dfill_data : word          # output: the returned word for the D-cache
+            wire dfill_data_valid : bool    # output: a D-read completes this cycle
+
+            definition ifill_data = real_mem(mfa)
+            definition ifill_data_valid = mbusy & mfi
+            definition dfill_data = real_mem(mfa)
+            definition dfill_data_valid = mbusy & ~mfi
+
+            after init {
+                real_mem(A) := init_mem(A);
+                mbusy := false;
+                mfi := false
+            }
+
+            after posedge {
+                if dwrite_en {
+                    real_mem(dwrite_addr) := dwrite_data
+                };
+                if mbusy {
+                    mbusy := false
+                } else if dfill_req {
+                    mbusy := true;
+                    mfi := false;
+                    mfa := dfill_addr
+                } else if ifill_req {
+                    mbusy := true;
+                    mfi := true;
+                    mfa := ifill_addr
+                }
+            }
+
+            specification {
+                # main memory holds the abstract value wherever the D-cache does
+                # NOT hold a newer (dirty) value. A write-back stores dc's (coherent)
+                # word back and clears the dirty bit, so main memory becomes coherent
+                # there.
+                invariant [mem_track] ~dc.dc_dirty(A) -> real_mem(A) = mem(A)
+                    with dc.dc_val_ok, one_data_op
+
+                # The busy read's latched address equals the address ic presented
+                # last cycle: both mfa and mem_ic.ifill_addr_old latch ic.ifill_addr
+                # on the read-start edge, and mbusy is never set two cycles running.
+                invariant [mfa_track] mbusy & mfi -> mfa = mem_ic.ifill_addr_old
+            }
+        } with this, word, addr, nib, bit, dcline, itag, mem_ic, dc
+
+        # ---- instruction cache: read-only, two-word lines, two-cycle fill.
+        isolate ic = {
+            wire fetch_addr : addr          # input:  address being fetched
+            wire fetch_addr_valid : bool    # input:  a fetch is attempted this cycle
+            wire ifill_data : word          # input:  word returned by the memory port
+            wire ifill_data_valid : bool    # input:  an I-read completes this cycle
+            wire flush_addr : addr          # input:  address flushed
+            wire flush_valid : bool         # input:  a flush executes this cycle
+            wire fetch_data : word          # output: selected word at fetch_addr
+            wire fetch_valid : bool         # output: fetch_data valid (hit / mid-fill / arrival)
+            wire fetch_data1 : word         # output: word at the odd sibling (lane 1)
+            wire fetch_valid1 : bool        # output: fetch_data1 valid
+            wire fetch_addr1 : addr         # output: the odd sibling address (fetch_addr + 1)
+            wire ifill_addr : addr          # output: address ic wants read from memory
+            wire ifill_addr_valid : bool    # output: ic is requesting a memory read
+            wire ifill_busy : bool          # output: a fill is in progress (its port slot)
+
+            var icache(I:nib) : icline
+            var ifill_on   : bool           # an I-fill (two words) is in progress
+            var ifill_got  : bool           # the miss word has been installed; sibling pending
+            var ifill_miss : addr           # the miss word's address
+
+                wire sib : addr
+                definition sib = (ifill_miss + 1 if (ifill_miss<<0:0>>:bit) = 0 else ifill_miss - 1)
+
+                wire f_index : nib
+                definition f_index = fetch_addr<<4:1>>
+                wire f_wsel : bit
+                definition f_wsel = fetch_addr<<0:0>>
+                wire f_iline : icline
+                definition f_iline = icache(f_index)
+                wire f_full_hit : bool
+                definition f_full_hit = ((f_iline<<35:35>>:bit) = 1) & ((f_iline<<34:32>>:itag) = fetch_addr<<7:5>>)
+                wire f_fill_hit : bool
+                definition f_fill_hit = ifill_got & (fetch_addr = ifill_miss)
+                wire f_arr_hit : bool
+                definition f_arr_hit = f_full_hit | f_fill_hit
+                wire f_cword : word
+                definition f_cword = ((f_iline<<15:0>>:word) if f_wsel = 0 else (f_iline<<31:16>>:word))
+                wire f_bypass : bool
+                definition f_bypass = ifill_on & ifill_data_valid & (ifill_addr = fetch_addr)
+                                      & ~(flush_valid & (flush_addr = ifill_addr))
+
+                definition fetch_valid = f_arr_hit | f_bypass
+                definition fetch_data  = (f_cword if f_arr_hit else ifill_data)
+
+                definition fetch_addr1 = fetch_addr + 1
+                wire f_fill_hit1 : bool
+                definition f_fill_hit1 = ifill_got & (fetch_addr1 = ifill_miss)
+                wire f_arr_hit1 : bool
+                definition f_arr_hit1 = f_full_hit | f_fill_hit1
+                wire f_cword1 : word
+                definition f_cword1 = (f_iline<<31:16>>:word)
+                wire f_bypass1 : bool
+                definition f_bypass1 = ifill_on & ifill_data_valid & (ifill_addr = fetch_addr1)
+                                       & ~(flush_valid & (flush_addr = ifill_addr))
+                definition fetch_valid1 = (f_wsel = 0) & (f_arr_hit1 | f_bypass1)
+                definition fetch_data1  = (f_cword1 if f_arr_hit1 else ifill_data)
+
+                definition ifill_addr = (fetch_addr if ~ifill_on & ~ifill_got else (ifill_miss if ~ifill_got else sib))
+                definition ifill_addr_valid = ifill_on | ifill_got | (fetch_addr_valid & ~fetch_valid)
+                definition ifill_busy = ifill_on | ifill_got
+
+                wire fl_index : nib
+                definition fl_index = flush_addr<<4:1>>
+                wire fl_iline : icline
+                definition fl_iline = icache(fl_index)
+                wire fl_ihit : bool
+                definition fl_ihit = ((fl_iline<<35:35>>:bit) = 1) & ((fl_iline<<34:32>>:itag) = flush_addr<<7:5>>)
+
+                after init {
+                    icache(I) := 0;
+                    ifill_on := false;
+                    ifill_got := false
+                }
+
+                after posedge {
+                    if ifill_on & ifill_data_valid & ~(flush_valid  & (fl_index = ifill_miss<<4:1>>)) {
+                        if ~ifill_got {
+                            if (ifill_miss<<0:0>>:bit) = 0 {
+                                icache(ifill_miss<<4:1>>) :=
+                                    ((0:bit) :: (ifill_miss<<7:5>>:itag) :: (0:word) :: ifill_data : icline)
+                            } else {
+                                icache(ifill_miss<<4:1>>) :=
+                                    ((0:bit) :: (ifill_miss<<7:5>>:itag) :: ifill_data :: (0:word) : icline)
+                            };
+                            ifill_on := false;
+                            ifill_got := true
+                        } else {
+                            if (sib<<0:0>>:bit) = 0 {
+                                icache(sib<<4:1>>) :=
+                                    ((1:bit) :: (sib<<7:5>>:itag)
+                                             :: (icache(sib<<4:1>>)<<31:16>>:word) :: ifill_data : icline)
+                            } else {
+                                icache(sib<<4:1>>) :=
+                                    ((1:bit) :: (sib<<7:5>>:itag)
+                                             :: ifill_data :: (icache(sib<<4:1>>)<<15:0>>:word) : icline)
+                            };
+                            ifill_on := false;
+                            ifill_got := false
+                        }
+                    } else if ~ifill_on & ifill_got {
+                        ifill_on := true;
+                    } else if ~ifill_busy & fetch_addr_valid & ~fetch_valid {
+                        ifill_on := true;
+                        ifill_got := false;
+                        ifill_miss := fetch_addr
+                    };
+                    if flush_valid & fl_ihit {
+                        icache(fl_index) := 0
+                    };
+                    if flush_valid & (flush_addr = ifill_miss) {
+                        ifill_on := false;
+                        ifill_got := false
+                    }
+                }
+
+            specification {
+                function il_tag(L:icline) : itag
+                definition il_tag(L) = L<<34:32>>
+                function il_w0(L:icline) : word
+                definition il_w0(L) = L<<15:0>>
+                function il_w1(L:icline) : word
+                definition il_w1(L) = L<<31:16>>
+                function ic_line(A:addr) : icline
+                definition ic_line(A) = icache(A<<4:1>>)
+
+                # The I-cache data invariant: a present (or mid-fill-installed)
+                # word that is not dirty holds the abstract memory value.
+                invariant [hard]
+                             ((((((ic_line(A)<<35:35>>:bit) = 1) & (il_tag(ic_line(A)) = A<<7:5>>))
+                                         | (ifill_got & A = ifill_miss)) & ~ddirty(A)) ->
+                (il_w0(ic_line(A)) if (A<<0:0>>:bit) = 0 else il_w1(ic_line(A))) = mem(A))
+                    with mem_ic.mem_props.icache_input
+
+                invariant [midfill] (ifill_got) ->
+                             ( ((ic_line(ifill_miss)<<35:35>>:bit) = 0)
+                             & (il_tag(ic_line(ifill_miss)) = ifill_miss<<7:5>>) )
+
+                invariant [held_addr] ifill_on -> ifill_addr = mem_ic.ifill_addr_old
+            }
+        } with this, mem_ic, word, addr, nib, bit, icline, itag, mem_ic.mem_props.icache_input
+
+        # ---- data cache: write-back, write-allocate, two-word lines, dirty bit
+        # per word. read/write/flush are the three independent request signals.
+        isolate dc = {
+            wire req_addr : addr            # input:  the data address
+            wire is_ld : bool               # input:  a data read is requested
+            wire is_st : bool               # input:  a data write is requested
+            wire is_flush : bool            # input:  a flush is requested
+            wire st_data : word             # input:  store data
+            wire dfill_data : word          # input:  word returned by the memory port
+            wire dfill_data_valid : bool    # input:  a D-read completes this cycle
+            wire ld_data : word             # output: the read result
+            wire dmem_stall : bool          # output: stall (a miss fill is pending)
+            wire dfill_addr : addr          # output: address dc wants read from memory
+            wire dfill_req : bool           # output: dc is requesting a memory read
+            wire dfill_busy : bool          # output: a D-fill is in progress (its port slot)
+            wire wb_en : bool               # output: a write-back stall is in effect this cycle
+            wire wb_word_en : bool          # output: write one victim word back this cycle
+            wire wb_wsel : bit              # output: which victim word (0/1) is written back
+            wire wb_word_addr : addr        # output: the victim word's main-memory address
+            wire wb_word_data : word        # output: the victim word's data
+
+            var dcache(I:nib) : dcline
+            var dfill_on   : bool
+            var dfill_got  : bool
+            var dfill_miss : addr
+
+            wire d_index : nib
+            definition d_index = req_addr<<4:1>>
+            wire d_wsel : bit
+            definition d_wsel = req_addr<<0:0>>
+            wire d_line : dcline
+            definition d_line = dcache(d_index)
+            wire d_full : bool
+            definition d_full = (d_line<<39:39>>:bit) = 1
+            wire d_hit : bool
+            definition d_hit = d_full & ((d_line<<36:34>>:itag) = req_addr<<7:5>>)
+            wire d_dirty0 : bool
+            definition d_dirty0 = (d_line<<37:37>>:bit) = 1
+            wire d_dirty1 : bool
+            definition d_dirty1 = (d_line<<38:38>>:bit) = 1
+            wire d_w0 : word
+            definition d_w0 = d_line<<17:2>>
+            wire d_w1 : word
+            definition d_w1 = d_line<<33:18>>
+            wire d_cword : word
+            definition d_cword = (d_w0 if d_wsel = 0 else d_w1)
+
+            wire d_fill_go : bool
+            definition d_fill_go = dfill_on & dfill_data_valid & dfill_got
+            wire d_miss : bool
+            definition d_miss = (is_ld | is_st) & ~d_hit
+            wire ld_fwd : bool
+            definition ld_fwd = is_ld & dfill_on & ~dfill_got & dfill_data_valid & (req_addr = dfill_miss)
+            definition dmem_stall = (d_miss | dfill_busy) & ~ld_fwd
+
+            definition ld_data = (d_cword if d_hit else dfill_data)
+
+            wire d_sib : addr
+            definition d_sib = (dfill_miss + 1 if (dfill_miss<<0:0>>:bit) = 0 else dfill_miss - 1)
+            definition dfill_addr = (req_addr if ~dfill_on & ~dfill_got else (dfill_miss if ~dfill_got else d_sib))
+            definition dfill_req = dfill_on | dfill_got | (d_miss & ~dfill_busy & ~d_evict)
+            definition dfill_busy = dfill_on | dfill_got
+
+            # ---- victim / write-back (one word per cycle): a dirty-victim miss
+            # writes back one dirty word per cycle while stalling; a FLUSH hit whose
+            # addressed word is dirty writes that word back in a single non-stalled
+            # cycle. (These are mutually exclusive: a miss vs. a flush-hit.)
+            wire d_evict : bool
+            definition d_evict = d_miss & ~dfill_busy & d_full & (d_dirty0 | d_dirty1)
+            wire fl_wb_en : bool
+            definition fl_wb_en = is_flush & d_hit & (d_dirty0 if d_wsel = 0 else d_dirty1)
+            definition wb_en   = d_evict
+            definition wb_word_en   = d_evict | fl_wb_en
+            definition wb_wsel      = (d_wsel if is_flush else ((0:bit) if d_dirty0 else (1:bit)))
+            definition wb_word_addr = (d_line<<36:34>>:itag) :: (d_index:nib) :: (wb_wsel:bit)
+            definition wb_word_data = (d_w0 if wb_wsel = 0 else d_w1)
+
+            after init {
+                dcache(I) := 0;
+                dfill_on := false;
+                dfill_got := false
+            }
+
+            after posedge {
+                if dfill_on & dfill_data_valid {
+                    if ~dfill_got {
+                        if (dfill_miss<<0:0>>:bit) = 0 {
+                            dcache(dfill_miss<<4:1>>) :=
+                                ((0:bit)::(0:bit)::(0:bit)::(dfill_miss<<7:5>>:itag)::(0:word)::dfill_data::(0:bit)::(0:bit) : dcline)
+                        } else {
+                            dcache(dfill_miss<<4:1>>) :=
+                                ((0:bit)::(0:bit)::(0:bit)::(dfill_miss<<7:5>>:itag)::dfill_data::(0:word)::(0:bit)::(0:bit) : dcline)
+                        };
+                        dfill_on := false;
+                        dfill_got := true
+                    } else {
+                        if (d_sib<<0:0>>:bit) = 0 {
+                            dcache(d_sib<<4:1>>) :=
+                                ((1:bit)::(0:bit)::(0:bit)::(d_sib<<7:5>>:itag)::(dcache(d_sib<<4:1>>)<<33:18>>:word)::dfill_data::(0:bit)::(0:bit) : dcline)
+                        } else {
+                            dcache(d_sib<<4:1>>) :=
+                                ((1:bit)::(0:bit)::(0:bit)::(d_sib<<7:5>>:itag)::dfill_data::(dcache(d_sib<<4:1>>)<<17:2>>:word)::(0:bit)::(0:bit) : dcline)
+                        };
+                        dfill_on := false;
+                        dfill_got := false
+                    }
+                } else if ~dfill_on & dfill_got {
+                    dfill_on := true
+                } else if ~dfill_busy & d_miss & ~d_evict {
+                    dfill_on := true;
+                    dfill_got := false;
+                    dfill_miss := req_addr
+                };
+                if is_st & d_hit & ~dmem_stall {
+                    if d_wsel = 0 {
+                        dcache(d_index) :=
+                            ((1:bit)::(d_line<<38:38>>:bit)::(1:bit)::(d_line<<36:34>>:itag)::(d_w1)::(st_data)::(0:bit)::(0:bit) : dcline)
+                    } else {
+                        dcache(d_index) :=
+                            ((1:bit)::(1:bit)::(d_line<<37:37>>:bit)::(d_line<<36:34>>:itag)::(st_data)::(d_w0)::(0:bit)::(0:bit) : dcline)
+                    }
+                };
+                if wb_word_en {
+                    if wb_wsel = 0 {
+                        dcache(d_index) :=
+                            ((1:bit)::(d_line<<38:38>>:bit)::(0:bit)::(d_line<<36:34>>:itag)::(d_w1)::(d_w0)::(0:bit)::(0:bit) : dcline)
+                    } else {
+                        dcache(d_index) :=
+                            ((1:bit)::(0:bit)::(d_line<<37:37>>:bit)::(d_line<<36:34>>:itag)::(d_w1)::(d_w0)::(0:bit)::(0:bit) : dcline)
+                    }
+                }
+            }
+            specification {
+                function dl_tag(L:dcline) : itag
+                definition dl_tag(L) = L<<36:34>>
+                function dl_w0(L:dcline) : word
+                definition dl_w0(L) = L<<17:2>>
+                function dl_w1(L:dcline) : word
+                definition dl_w1(L) = L<<33:18>>
+                function dc_line(A:addr) : dcline
+                definition dc_line(A) = dc.dcache(A<<4:1>>)
+                function dc_present(A:addr) : bool
+                definition dc_present(A) = ((dc_line(A)<<39:39>>:bit) = 1) & (dl_tag(dc_line(A)) = A<<7:5>>)
+                function dc_dirty(A:addr) : bool
+                definition dc_dirty(A) = dc_present(A) & (((dc_line(A)<<37:37>>:bit) = 1) if (A<<0:0>>:bit) = 0 else ((dc_line(A)<<38:38>>:bit) = 1))
+                function dc_val(A:addr) : word
+                definition dc_val(A) = (dl_w0(dc_line(A)) if (A<<0:0>>:bit) = 0 else dl_w1(dc_line(A)))
+
+                invariant [nonfull_clean] ~((dc_line(A)<<39:39>>:bit) = 1) ->
+                              ~( ((dc_line(A)<<37:37>>:bit) = 1)
+                               | ((dc_line(A)<<38:38>>:bit) = 1) )
+
+                invariant [fill_clean] (dfill_on | dfill_got) ->
+                              ~( ((dc_line(dfill_miss)<<37:37>>:bit) = 1)
+                               | ((dc_line(dfill_miss)<<38:38>>:bit) = 1) )
+
+                # an address dirty in dc is dirty (written since flush) in the
+                # abstract map. Forward-only: a written-back address is clean in dc
+                # but still ddirty until flushed (main_mem then holds its value).
+                invariant [dc_ddirty] dc_dirty(A) -> ddirty(A)
+                          with one_data_op
+
+                # a present (or mid-fill-installed) dc word holds the abstract value.
+                invariant [dc_val_ok]
+                              (dc_present(A) | (dfill_got & A = dfill_miss))
+                                  -> dc_val(A) = mem(A)
+                          with one_data_op
+
+                invariant [dc_main_mem_intf] main_mem.mbusy & ~main_mem.mfi -> main_mem.mfa = dfill_addr
+            }
+        } with this, word, addr, nib, bit, dcline, itag, main_mem, mem_ic, one_data_op
+
+    # ---- the memory / I-cache interface (mem_ic) ---------------------------
+    private {
+        isolate mem_ic = {
+            var ifill_addr_old : addr    # ghost: the fill address latched last cycle
+
+            specification {
+                after init {
+                    ifill_addr_old := 0
+                }
+                after posedge {
+                    ifill_addr_old := ic.ifill_addr
+                }
+            }
+
+            isolate mem_props = {
+                # the fill word main memory returns is coherent with the abstract
+                # memory when the filled address is not dirty: ~ddirty gives
+                # ~dc_dirty (dc_ddirty), which mem_track turns into coherence.
+                invariant [icache_input] (ic.ifill_addr_valid & ic.ifill_data_valid
+                        & ~ddirty(ifill_addr_old))
+                    -> ic.ifill_data = mem(ifill_addr_old)
+                    with main_mem.mfa_track, main_mem.mem_track, dc.dc_ddirty
+            } with self, word, addr, nib, bit, dcline, icline, itag, ic, main_mem, mem_ic, dc
+
+            isolate ic_props = {
+                invariant [icache_output]
+                      ic.fetch_addr_valid & ic.fetch_valid
+                              & ~ddirty(ic.fetch_addr)
+                                  -> ic.fetch_data = mem(ic.fetch_addr)
+                    with ic.hard, mem_props.icache_input
+
+                invariant [icache_output1]
+                      ic.fetch_addr_valid & ic.fetch_valid1
+                              & ~ddirty((ic.fetch_addr + 1))
+                                  -> ic.fetch_data1 = mem((ic.fetch_addr + 1))
+                    with ic.hard, mem_props.icache_input
+
+                invariant [icache_output1_odd] ic.fetch_addr_valid & ic.fetch_valid1 -> (ic.fetch_addr<<0:0>>:bit = 0)
+            } with self, word, addr, nib, bit, icline, itag, ic, mem_ic
+        } with this
+    }
+
+    # ---- the memory / D-cache interface (mem_dc) ---------------------------
+    private {
+        isolate mem_dc = {
+            isolate dc_props = {
+                # a read that is not stalled returns the abstract memory value: a
+                # hit reads a present line (dc_val_ok); a forwarded miss word reads
+                # main memory at the (not-dirty, since missed) address
+                # (dc_main_mem_intf + mem_track's ~dc_dirty form).
+                invariant [dcache_output]
+                      (read_req & ~data_stall)
+                          -> read_data = mem(data_addr)
+                    with dc.dc_val_ok, dc.dc_main_mem_intf, main_mem.mem_track, one_data_op
+            } with self, word, addr, nib, bit, dcline, itag, dc, main_mem, mem_ic
+        } with this, dc
+    }
+    }
+
+    # ============================ wiring (module normal section: visible to all
+    # sub-blocks via `self`/`this`, since it is OUTSIDE the implementation section) =
+
+    # I-cache side
+    definition ic.fetch_addr = fetch_addr
+    definition ic.fetch_addr_valid = fetch_req
+    definition fetch_valid0 = ic.fetch_valid
+    definition fetch_data0  = ic.fetch_data
+    definition fetch_valid1 = ic.fetch_valid1
+    definition fetch_data1  = ic.fetch_data1
+    definition ic.ifill_data = main_mem.ifill_data
+    definition ic.ifill_data_valid = main_mem.ifill_data_valid
+    definition ic.flush_addr  = data_addr
+    definition ic.flush_valid = flush_req & ~data_stall
+    definition main_mem.ifill_addr = ic.ifill_addr
+    definition main_mem.ifill_req  = ic.ifill_addr_valid
+
+    # D-cache side
+    definition dc.req_addr = data_addr
+    definition dc.is_ld    = read_req
+    definition dc.is_st    = write_req
+    definition dc.is_flush = flush_req
+    definition dc.st_data  = write_data
+    definition dc.dfill_data = main_mem.dfill_data
+    definition dc.dfill_data_valid = main_mem.dfill_data_valid
+    definition read_data  = dc.ld_data
+    definition data_stall = dc.dmem_stall | dc.wb_en
+    definition main_mem.dfill_addr = dc.dfill_addr
+    definition main_mem.dfill_req  = dc.dfill_req
+    definition main_mem.dwrite_en   = dc.wb_word_en
+    definition main_mem.dwrite_addr = dc.wb_word_addr
+    definition main_mem.dwrite_data = dc.wb_word_data
+}

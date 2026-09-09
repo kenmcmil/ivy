@@ -712,6 +712,54 @@ nothing about *liveness*, and the isolate machinery can hide a dead design.
   cycle firing on every line — proof-positive of liveness that no invariant
   check surfaced. Make a quick simulation a routine companion to the proof.
 
+## Packaging a verified block as a reusable `module isolate`
+
+A verified block (e.g. the I/D-cache + main-memory subsystem) can be repackaged
+as a **`module isolate`** — a template for an isolate — so it drops into any
+design with an assume/guarantee contract, using the `require`/`provide` feature
+(`require { invariant [a] ... }` states an assumption the module makes; a parent
+discharges it with `provide inst.a [with ...] [using ...]`). Two lessons from
+building the generic `idcache` module (`doc/examples/hardware/idcache.ivy`,
+disentangled from `5stage_cache_cpu_dec.ivy`; its spec is stated over the
+module's own abstract `mem`/`ddirty` rather than an ISA trace, so there is no
+`error` flag and the internal invariants simplify):
+
+- **There is no name for the module *instance* inside the template — make one
+  with `alias self = this`.** The nested isolates (`main_mem`/`ic`/`dc`, and
+  especially the interface isolates `mem_ic`/`mem_dc`) need to name the whole
+  instance in their `with` clauses — the module analog of `with cpu` (so
+  `posedge` counts as their action; see the `with cpu` misfeature above). But the
+  instance name (`dut`) is only chosen at instantiation, and `this` written in a
+  *nested* isolate's `with` resolves to that nested isolate, not the module. Fix:
+  put `alias self = this` at the top of the module body, and write `with self,
+  …` in the inner isolates. (An inner isolate whose `this` *is* the module —
+  e.g. `main_mem` closed at the module's top implementation level — can use `with
+  this`; the wrapper isolates one level deeper need `self`.)
+
+- **Put the interconnect wiring in the module's *normal* section, NOT inside
+  `implementation` — otherwise the sub-blocks cannot see it and their inputs go
+  free.** The `definition`s that wire the sub-blocks to each other and to the
+  module's interface (`definition dc.is_flush = flush_req`, `definition read_data
+  = dc.ld_data`, …) must be visible to every sub-block via `self`/`this`. In the
+  non-modular CPU this was automatic — the wiring sat in `cpu`'s normal section,
+  visible to anyone with `with cpu`. Inside a `module isolate`, wiring placed
+  *within* the `implementation { }` block is **not** delivered to the sub-blocks
+  through `self`, so each sub-block treats its wired inputs as free — decoupled
+  from the interface *and* from the abstract spec state. Symptom: a consecution
+  CTI where a wired-equal pair disagrees (here `dut.dc.is_flush = true` while
+  `dut.flush_req = false`), which lets `one_data_op` no longer constrain the
+  decode and breaks the entire coherence chain (mem_track / dc_val_ok / dc_ddirty
+  / hard / icache_input / dcache_output all FAIL at once). Fix: move the
+  interconnect `definition`s out to the module's normal section (after the
+  `implementation`/`private` blocks close). Every failure clears together. Cost:
+  the wiring becomes visible *outside* the module too — an encapsulation leak
+  that is harmless here (a future Ivy feature may hide it), but note it.
+
+- **CLI nits that cost time here.** `ivy_check`'s `key=value` options must come
+  **before** the filename (`ivy_check check=… trace=true file.ivy`; options after
+  the file print the usage message), and `check=` wants the **full hierarchical**
+  invariant name (`check=dut.dc.dc_ddirty`, not `check=dc_ddirty`).
+
 ## Preparing the model for ivy_to_rtl
 
 The datapath must be free of ghost/abstract constructs:

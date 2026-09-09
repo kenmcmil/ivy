@@ -1,0 +1,32 @@
+#lang ivy1.8
+
+# Verification bench for the generic idcache module
+
+include idcache              # this file provides idcache module
+
+export action posedge
+
+type word
+interpret word -> bv[16]
+type addr
+interpret addr -> bv[8]
+type bit
+interpret bit -> bv[1]
+
+function init_mem(A:addr) : word     # initial (unified) memory contents -- the program
+
+instance dut : idcache(posedge,word,addr,bit,init_mem)
+
+# Requiring this in the root isolate makes it a global assumption
+
+require {
+    invariant [one_data_op] ~(dut.read_req & dut.write_req | dut.read_req & dut.flush_req | dut.write_req & dut.flush_req)
+}
+
+# We prove the dut's assumption using the above assumption, with unit delay
+
+provide dut.one_data_op with one_data_op
+
+
+
+
