@@ -14,6 +14,13 @@ tests = [
     # The cache CPU: I/D caches, FLUSH, and a multi-cycle memory (see
     # add_cache_to_cpu.md). Larger, so a longer timeout.
     {'type': 'check', 'name': '5stage_cache_cpu_ref', 'expect': 'OK', 'timeout': 600},
+    # The reusable idcache module (I-cache + D-cache + main memory, spec over its
+    # own abstract mem/ddirty, no ISA trace) and its assume/guarantee bench
+    # (doc/projects/generic_idcache.md). 5stage_gen_cache_cpu_ref is the cache CPU
+    # with its inline memory subsystem replaced by an idcache instance, related to
+    # the reference at the MEM tag by two ghost-vs-trace invariants.
+    {'type': 'check', 'name': 'idcache_bench', 'expect': 'OK', 'timeout': 300},
+    {'type': 'check', 'name': '5stage_gen_cache_cpu_ref', 'expect': 'OK', 'timeout': 600},
     # The stage-DECOMPOSITION 5-stage pipeline: each stage and each inter-stage
     # interface is its own isolate, with `register` pipe outputs and ghost
     # interface isolates (see doc/projects/decomposition.md).

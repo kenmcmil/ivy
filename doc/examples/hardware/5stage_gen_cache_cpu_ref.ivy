@@ -1,0 +1,875 @@
+#lang ivy1.8
+
+# A 5-stage pipelined CPU whose memory subsystem is the reusable `idcache`
+# module (I-cache + D-cache + main memory with FLUSH-based fetch coherence).
+#
+# This is the module-based variant of 5stage_cache_cpu_ref.ivy: the ISA model
+# and the reference `trace` are identical, but instead of inlining the caches
+# and main memory in the CPU, it instantiates the pre-verified `idcache` module
+# (see idcache.ivy / idcache_bench.ivy) as `cpu.idc`. The CPU relates idc's own
+# abstract memory `idc.mem`/`idc.ddirty` to the reference at the MEM tag
+# (mcommit) with two simple invariants; idc's guarantees (fetch_output0,
+# data_output) then supply fetch/LD coherence, and the CPU discharges idc's
+# one_data_op assumption. This demonstrates dropping a reusable, independently
+# verified cache block into a non-compositional CPU proof.
+
+# Instruction encoding (16 bits):
+#
+#     [15:13] opcode   [12:10] rd   [9:7] ra   [6:4] rb   [7:0] imm/target
+#
+#   opcode 0  NOP
+#          1  ADD  rd, ra, rb     rf[rd] := rf[ra] + rf[rb]
+#          2  SUB  rd, ra, rb     rf[rd] := rf[ra] - rf[rb]
+#          3  LI   rd, imm        rf[rd] := zero_extend(imm8)
+#          4  LD   rd, [ra]       rf[rd] := mem[ rf[ra] ]
+#          5  ST   [ra], rb       mem[ rf[ra] ] := rf[rb]
+#          6  BEQZ ra, target     if rf[ra] == 0 then pc := target
+#          7  FLUSH [ra]          make prior writes to mem[ rf[ra] ] visible to fetch
+#
+# Memory is now *unified*: instructions are fetched from the same `mem` that
+# LD/ST access (there is no separate `imem`). Because the implementation caches
+# instructions and data separately (I-cache and D-cache) and the caches are not
+# kept coherent, a store to an address followed by an instruction fetch of that
+# address can read a stale instruction. The ISA models this: a per-address dirty
+# bit `ddirty(A)` is set by ST and cleared by FLUSH, and executing an instruction
+# at a dirty address drives the ISA into a sticky `error` state, after which the
+# implementation is no longer required to match the reference.
+
+# The implementation:
+#
+# Pipeline stages:
+#   F (fetch)   : read the instruction at PC from instruction memory.
+#   X (execute) : decode and execute the instruction fetched last cycle,
+#                 reading/writing the register file and data memory and
+#                 redirecting the PC on a taken branch.
+#
+# The pipeline register between F and X is (ir, ir_valid). Operands are read
+# and results written in the same stage (X), so there are no data hazards. A
+# taken conditional branch is resolved in X, so the instruction fetched in its
+# shadow must be squashed -- a one-cycle bubble. That is the classic control
+# hazard.
+#
+
+include order   # ordered abstract types
+include idcache # the reusable I/D-cache + main-memory module
+
+# Word (data / instruction), address (PC / memory), and register-index types.
+
+type word
+interpret word -> bv[16]
+type addr
+interpret addr -> bv[8]
+type reg
+interpret reg -> bv[3]
+type opc
+interpret opc -> bv[3]
+
+# The cache-line geometry lives inside the idcache module now; the CPU only
+# needs `bit` (an idcache type parameter).
+type bit
+interpret bit -> bv[1]
+
+# The clock: one exported action driven by the environment.
+
+export action posedge
+
+# Initial memory contents. These are immutable, uninterpreted functions (they
+# are never assigned), so they represent an arbitrary-but-fixed initial memory
+# image. Both the implementation (cpu) and the reference model (trace.arch)
+# initialize their memories from this shared source. Sharing the source (rather
+# than having the reference read the cpu's memory at init) is what lets the two
+# start in the same state without a spurious interference: because posedge
+# writes cpu.mem, having trace's initializer observe cpu.mem would make Ivy
+# report that posedge can interfere with trace's initialization -- even though
+# initialization always completes before any posedge.
+
+function init_mem(A:addr) : word     # initial (unified) memory contents = the program
+
+# The branch predictor is an external module: the pipeline receives its
+# "predicted taken" output as an input (the `predicted_taken` wire below).
+# Correctness must hold for *any* prediction (a good predictor only affects
+# performance, not correctness), so the input is left unconstrained. Later we
+# will implement a predictor as a separate isolate driving this input.
+
+# This is the isa model. It is a specification-only isolate that
+# provides a single action `step`. It has a number of functions
+# that reflect intermediate values in the instruction execution.
+# These can be used as references in verifying implmentations
+# compositionally. The isa model is written as a module so we can
+# re-use it if needed. 
+
+module isa_model(init_mem) = {
+
+    var pc : addr                 # program counter
+    var rf(R:reg) : word          # register file
+    var mem(A:addr) : word        # unified memory (instructions and data)
+    var ddirty(A:addr) : bool     # A has been written since the last FLUSH of A
+    var error : bool              # an instruction was fetched from a dirty address
+
+    # Temporary variables computed during execution, but not holding state
+
+    var fetched : word
+
+    # ---- decode of the X-stage instruction (combinational) ----
+
+    var opcode : opc
+    var rd : reg
+    var ra : reg
+    var rb : reg
+    var target : addr            # low 8 bits: branch target or immediate
+
+    # ---- operand fetch (combinational) ----
+
+    var a_val : word
+    var b_val : word
+    var mem_addr : addr          # address for LD/ST: low 8 bits of rf[ra]
+
+    # ---- branch decision (BEQZ) ----
+
+    var take_branch : bool
+
+    # ---- reset ----
+
+    after init {
+        pc := 0;
+        rf(R) := 0;            # zero the register file
+        mem(A) := init_mem(A);
+        ddirty(A) := false;    # nothing has been written yet
+        error := false;
+    }
+
+    # Compute the temporary variables
+
+    action prepare = {
+        fetched := mem(pc);
+
+        # ---- decode of the X-stage instruction (combinational) ----
+
+        opcode := fetched<<15:13>>;
+        rd := fetched<<12:10>>;
+        ra := fetched<<9:7>>;
+        rb := fetched<<6:4>>;
+        target := fetched<<7:0>>;     # low 8 bits: branch target or immediate
+
+        # ---- operand fetch ----
+
+        a_val := rf(ra);
+        b_val := rf(rb);
+        mem_addr  := a_val<<7:0>>;    # address for LD/ST: low 8 bits of rf[ra]
+
+        # ---- branch decision (BEQZ) ----
+
+        take_branch := (opcode = 6) & (a_val = 0);
+    }
+
+    # Update the architectural state. The temporary variables were computed by
+    # `prepare` in the pre-state, so unlike the earlier defined-function version
+    # this needs no `old`: `mem_addr`, `target` and `take_branch` are plain
+    # variables holding the pre-state values, unaffected by the stores below.
+
+    action step = {
+
+        # Fetch coherence: executing an instruction at an address written since
+        # its last flush reads a stale instruction. The ISA records this by
+        # entering a sticky error state (it is never cleared once set). This runs
+        # before any store below, and `pc`/`ddirty` are untouched, so it reads
+        # the pre-state dirty bit at the pre-state pc, as intended.
+        if ddirty(pc) {
+            error := true;
+        }
+
+        # Execute / write back
+        if opcode = 1 {                          # ADD
+            rf(rd) := a_val + b_val
+        } else if opcode = 2 {                   # SUB
+            rf(rd) := a_val - b_val
+        } else if opcode = 3 {                   # LI
+            rf(rd) := (0:addr) :: target
+        } else if opcode = 4 {                   # LD
+            rf(rd) := mem(mem_addr)
+        } else if opcode = 5 {                   # ST
+            mem(mem_addr) := b_val;
+            ddirty(mem_addr) := true;            # the written line is now dirty
+        } else if opcode = 7 {                   # FLUSH
+            ddirty(mem_addr) := false;           # writes to this line are now visible
+        }
+
+        # Advance the PC
+        if take_branch {
+            pc := target;          # redirect to the branch target
+        } else {
+            pc := pc + 1;
+        }
+    }
+}
+
+# The 'trace' is a reference model that stores the sequence of isa
+# states resulting from program execution. It is a specification-only
+# isolate. The trace model is a bit of boilerplate we need to write to
+# help with specificaiton and verification. Probably this can be
+# generated from the isa model using AI. 
+
+isolate trace = {
+
+    specification {
+        
+        # This is the isa model
+
+        instance arch : isa_model(init_mem)
+
+        # This is the index type of the instruction sequence
+        instance tag : unbounded_sequence
+
+        # The value type of the instruction sequence
+
+        type state_t = struct {
+
+            # The architectural state
+
+            pc : addr,                 # program counter
+            rf(R:reg) : word,          # register file
+            mem(A:addr) : word,        # unified memory (instructions and data)
+            ddirty(A:addr) : bool,     # per-address dirty bit
+            error : bool,              # sticky fetch-coherence error
+
+            # The intermediate values
+
+            fetched : word, 
+            opcode : opc,
+            rd : reg,
+            ra : reg,
+            rb : reg,
+            target : addr,            # low 8 bits: branch target or immediate
+            a_val : word,
+            b_val : word,
+            mem_addr  : addr,          # address for LD/ST: low 8 bits of rf[ra]
+            take_branch : bool
+        }
+            
+        var now : tag   # the current length of the trace
+        var st(T:tag) : state_t 
+
+        # This internal procedure captures the current arch state 
+
+        action current returns(res:state_t) = {
+            res.pc := arch.pc;
+            res.rf(R:reg) := arch.rf(R:reg);
+            res.mem(A:addr) := arch.mem(A:addr);
+            res.ddirty(A:addr) := arch.ddirty(A:addr);
+            res.error := arch.error;
+
+            # The intermediate values
+
+            res.fetched := arch.fetched;
+            res.opcode := arch.opcode;
+            res.rd := arch.rd;
+            res.ra := arch.ra;
+            res.rb := arch.rb;
+            res.target := arch.target;
+            res.a_val := arch.a_val;
+            res.b_val := arch.b_val;
+            res.mem_addr  := arch.mem_addr ;
+            res.take_branch := arch.take_branch;
+        }
+
+        # Initalization computes the temporary variable values in the initial ISA
+        # state and records this state in the trace.
+
+        after init {
+            now := 0;
+            arch.prepare;
+            st(now) := current;
+        }
+
+        # This externally called procedure steps the isa and records the new
+        # state. Notice that tag is an abstract sequence type that defines only
+        # zero and next, so we write `now.next` instead of `now + 1`. After
+        # stepping we compute the temporary variables in the new state, before
+        # adding it to the trace, so the temporary values in every trace entry
+        # correspond correctly to that entry's architectural state.
+
+        action step = {
+            arch.step;
+            arch.prepare;
+            now := now.next;
+            st(now) := current;
+        }
+
+        invariant st(now).pc = arch.pc
+        invariant st(now).rf(R:reg) = arch.rf(R:reg)
+        invariant st(now).mem(A:addr) = arch.mem(A:addr)
+        invariant st(now).ddirty(A:addr) = arch.ddirty(A:addr)
+        invariant st(now).error = arch.error
+
+        # The intermediate values
+        
+        invariant st(now).fetched = arch.fetched
+        invariant st(now).opcode = arch.opcode
+        invariant st(now).rd = arch.rd
+        invariant st(now).ra = arch.ra
+        invariant st(now).rb = arch.rb
+        invariant st(now).target = arch.target
+        invariant st(now).a_val = arch.a_val
+        invariant st(now).b_val = arch.b_val
+        invariant st(now).mem_addr  = arch.mem_addr
+        invariant st(now).take_branch = arch.take_branch
+
+        # The invariants above only pin the *most recent* recorded state,
+        # st(now). But the pipeline implementation compares a lagging stage
+        # against an *earlier* trace entry (st(now-1)). So we must also specify
+        # that every recorded entry is a faithful ISA state, and that
+        # consecutive entries are related by one ISA step. This is the "trace
+        # is a valid execution history" boilerplate.
+
+        # (a) Every recorded state's intermediate values are the correct decode
+        #     of its own architectural state. (For st(now) this follows from the
+        #     invariants above and arch's definitions; here we extend it to all
+        #     recorded entries, which never change once written.)
+
+        invariant T <= now -> st(T).fetched = st(T).mem(st(T).pc)
+        invariant T <= now -> st(T).opcode = (st(T).fetched)<<15:13>>
+        invariant T <= now -> st(T).rd = (st(T).fetched)<<12:10>>
+        invariant T <= now -> st(T).ra = (st(T).fetched)<<9:7>>
+        invariant T <= now -> st(T).rb = (st(T).fetched)<<6:4>>
+        invariant T <= now -> st(T).target = (st(T).fetched)<<7:0>>
+        invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
+        invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
+        invariant T <= now -> st(T).mem_addr = (st(T).a_val)<<7:0>>
+        invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
+
+        # (b) Consecutive recorded states are related by one step of the ISA.
+        #     If st(T) precedes st(U) (U = T+1, U <= now), then st(U) is the
+        #     result of executing st(T)'s instruction. This mirrors arch.step.
+
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).pc = (st(T).target if st(T).take_branch else st(T).pc + 1)
+
+        # error is sticky, and is set when st(T)'s instruction is fetched from a
+        # dirty address (ddirty(pc) in st(T)).
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).error = (st(T).error | st(T).ddirty(st(T).pc))
+
+        # ddirty(A): set by a ST to A, cleared by a FLUSH of A, else unchanged.
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).ddirty(A) =
+                          (true  if (st(T).opcode = 5 & A = st(T).mem_addr) else
+                          (false if (st(T).opcode = 7 & A = st(T).mem_addr) else
+                           st(T).ddirty(A)))
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).mem(A) = (st(T).b_val if (st(T).opcode = 5 & A = st(T).mem_addr)
+                                      else st(T).mem(A))
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).rf(R) = (st(T).a_val + st(T).b_val
+                                         if (st(T).opcode = 1 & R = st(T).rd) else
+                                     (st(T).a_val - st(T).b_val
+                                         if (st(T).opcode = 2 & R = st(T).rd) else
+                                     ((0:addr) :: st(T).target
+                                         if (st(T).opcode = 3 & R = st(T).rd) else
+                                     (st(T).mem(st(T).mem_addr)
+                                         if (st(T).opcode = 4 & R = st(T).rd) else
+                                     st(T).rf(R)))))
+
+    }
+}  with addr,opc
+
+# ============================================================================
+# A 5-stage pipeline (IF/ID/EX/MEM/WB) with a branch predictor.
+#
+# Unlike 5stage_cpu_ref, we do NOT stall fetch on a branch. Instead we predict
+# the branch (predict(pc)) and keep fetching speculatively. A misprediction is
+# detected in EX (comparing the carried prediction against the operand-based
+# branch decision) and is repaired by redirecting the PC and squashing the
+# younger, wrong-path instructions.
+#
+# Verification uses a per-stage ghost "shadow" bit: an instruction is shadowed
+# if it was fetched behind a mispredicted (but not-yet-resolved) branch. The
+# trace steps only along the correct path -- when the IF stage detects that the
+# prediction disagrees with the true branch outcome (known from the trace at
+# tag now), it stops stepping the trace and marks subsequent fetches shadowed.
+# So the trace never needs to backtrack. The invariants require a stage's data
+# to match the trace only when the stage is NOT shadowed; correctness then
+# rests on proving that every shadowed instruction is squashed before it can
+# write the register file or memory (which holds because the branch resolves in
+# EX, before MEM and WB).
+# ============================================================================
+
+object cpu = {
+
+    specification {
+
+        # ---- reference tags (ghost) --------------------------------------
+        # As in 5stage_cpu_ref, these count non-shadowed instructions past
+        # each stage boundary. Shadowed instructions are not real (not in the
+        # trace) and do not advance the counts.
+
+        var commit  : trace.tag
+        var mcommit : trace.tag
+        var ecommit : trace.tag
+        var dcommit : trace.tag
+
+        # ---- shadow bits (ghost) -----------------------------------------
+        # d_shadow etc.: this stage holds a wrong-path instruction. spec_wrong:
+        # the fetch stream is currently on a mispredicted path.
+
+        var d_shadow : bool
+        var e_shadow : bool
+        var m_shadow : bool
+        var w_shadow : bool
+        var spec_wrong : bool
+
+        after init {
+            commit := 0; mcommit := 0; ecommit := 0; dcommit := 0;
+            d_shadow := false; e_shadow := false;
+            m_shadow := false; w_shadow := false;
+            spec_wrong := false;
+        }
+
+        # ---- the non-shadowed instructions form a contiguous tag run -----
+
+        invariant w_valid -> commit.succ(mcommit)
+        invariant ~w_valid -> mcommit = commit
+        invariant m_valid -> mcommit.succ(ecommit)
+        invariant ~m_valid -> ecommit = mcommit
+        # The EX/ID and ID/IF boundary counts depend on the speculation logic
+        # (dcommit/now advance only for correct-path, non-shadowed fetches), so
+        # like the shadow facts below they are guarded by ~error. The WB/MEM/EX
+        # boundary counts above are pure validity bookkeeping and hold regardless.
+        invariant (e_valid & ~trace.st(trace.now).error) -> ecommit.succ(dcommit)
+        invariant (~e_valid & ~trace.st(trace.now).error) -> dcommit = ecommit
+        invariant (d_valid & ~d_shadow & ~trace.st(trace.now).error) -> dcommit.succ(trace.now)
+        invariant ((~d_valid | d_shadow) & ~trace.st(trace.now).error) -> dcommit = trace.now
+
+        # ---- shadowed instructions are squashed before EX ----------------
+        # A wrong-path instruction is squashed when the mispredicting branch
+        # resolves in EX, so it never becomes a valid EX/MEM/WB instruction.
+        # Hence only the ID stage can hold a valid shadowed instruction.
+        #
+        # NB: the speculation-tracking invariants (the mispredict/shadow/spec_wrong
+        # facts below) are guarded by ~error. They reason about the branch outcome
+        # e_pred vs trace.st(ecommit).take_branch, which is only meaningful when the
+        # in-flight instructions still match the reference -- i.e. before the trace
+        # enters its error state. Once the program has gone wrong we make no claim
+        # about the pipeline, so these become vacuous. (invar136 fails without this
+        # guard precisely in a reachable-only-with-error state; see the CTI.)
+
+        invariant ~trace.st(trace.now).error -> ~(e_valid & e_shadow)
+        invariant ~trace.st(trace.now).error -> ~(m_valid & m_shadow)
+        invariant ~trace.st(trace.now).error -> ~(w_valid & w_shadow)
+
+        # ---- while shadowed, the mispredicting branch is in EX -----------
+        # If ID holds a shadowed instruction, then EX holds the branch that
+        # shadowed it, and that branch is genuinely mispredicted (its carried
+        # prediction differs from the true outcome recorded in the trace).
+
+        invariant (d_valid & d_shadow & ~trace.st(trace.now).error) ->
+                      (e_valid & e_opcode = 6 &
+                       (e_pred ~= trace.st(ecommit).take_branch))
+
+        # Conversely, everything younger than a mispredicted branch is shadowed:
+        # if EX holds a mispredicted branch, the ID instruction behind it (which
+        # was fetched on the wrong path) is shadowed.
+
+        invariant (e_valid & e_opcode = 6 & ~trace.st(trace.now).error &
+                   (e_pred ~= trace.st(ecommit).take_branch)) ->
+                      (~d_valid | d_shadow)
+
+        # spec_wrong holds exactly when a mispredicted branch is unresolved in
+        # ID or EX.
+
+        invariant ~trace.st(trace.now).error ->
+            spec_wrong =
+            ( (d_valid & ~d_shadow & d_opcode = 6 &
+               (d_pred ~= trace.st(dcommit).take_branch))
+            | (e_valid & e_opcode = 6 &
+               (e_pred ~= trace.st(ecommit).take_branch)) )
+
+        # ---- error relaxation --------------------------------------------
+        # Once the reference has executed an instruction fetched from a dirty
+        # (stale) address, the program has "gone wrong" and we no longer require
+        # the implementation to match. `error` is sticky and `now` is the
+        # largest recorded tag, so `st(now).error` holds exactly when *some*
+        # instruction in the executed prefix has erred. We therefore guard every
+        # invariant relating implementation data to the reference by
+        # ~trace.st(trace.now).error; in the error-free regime this is vacuously
+        # true and the proof reduces to the coherent-pipeline argument.
+
+        # ---- committed architectural state matches the trace -------------
+
+        invariant ~trace.st(trace.now).error -> rf(R) = trace.st(commit).rf(R)
+
+        # ---- the idcache module's ghost state tracks the reference at MEM ----
+        # idc's spec is over its own abstract mem/ddirty; we relate that ghost
+        # state to the trace at the MEM tag (mcommit). idc's memory reflects
+        # exactly the instructions that have passed MEM, so its mem/ddirty equal
+        # st(mcommit).mem/ddirty. These update in lockstep: idc.mem(A) is written
+        # on a committing store (write_req & ~data_stall, i.e. an unstalled MEM
+        # ST), exactly when mcommit steps over that ST -- and the CPU already
+        # tracks m_addr = st(mcommit).mem_addr and m_store = st(mcommit).b_val.
+        # The internal cache coherence (D-cache/I-cache present/dirty, main memory)
+        # is now idc's own concern, proved against its abstract mem/ddirty. idc's
+        # guarantees (fetch_output0, data_output) then supply fetch/LD coherence.
+        invariant ~trace.st(trace.now).error -> idc.mem(A) = trace.st(mcommit).mem(A)
+        invariant ~trace.st(trace.now).error -> idc.ddirty(A) = trace.st(mcommit).ddirty(A)
+
+        # ---- the PC is the (correct) fetch address unless mispredicting ---
+
+        invariant (~spec_wrong & ~trace.st(trace.now).error) -> pc = trace.st(trace.now).pc
+
+        # ---- non-shadowed in-flight instructions match the trace ---------
+
+        invariant (d_valid & ~d_shadow & ~trace.st(trace.now).error) -> d_ir = trace.st(dcommit).fetched
+        invariant (d_valid & ~d_shadow & ~trace.st(trace.now).error) -> d_pc = trace.st(dcommit).pc
+        invariant (e_valid & ~trace.st(trace.now).error) -> e_ir = trace.st(ecommit).fetched
+        invariant (e_valid & ~trace.st(trace.now).error) -> e_pc = trace.st(ecommit).pc
+        invariant (m_valid & ~trace.st(trace.now).error) -> m_ir = trace.st(mcommit).fetched
+        invariant (w_valid & ~trace.st(trace.now).error) -> w_ir = trace.st(commit).fetched
+
+        # ---- MEM latch computed values match the trace -------------------
+
+        invariant (m_valid & ~trace.st(trace.now).error) -> m_addr = trace.st(mcommit).mem_addr
+        invariant (m_valid & ~trace.st(trace.now).error) -> m_store = trace.st(mcommit).b_val
+        invariant (m_valid & m_opcode = 1 & ~trace.st(trace.now).error) -> m_res = trace.st(mcommit).a_val + trace.st(mcommit).b_val
+        invariant (m_valid & m_opcode = 2 & ~trace.st(trace.now).error) -> m_res = trace.st(mcommit).a_val - trace.st(mcommit).b_val
+        invariant (m_valid & m_opcode = 3 & ~trace.st(trace.now).error) -> m_res = (0:addr) :: trace.st(mcommit).target
+
+        # ---- WB latch writeback value matches the trace ------------------
+
+        invariant (w_valid & w_opcode = 1 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val + trace.st(commit).b_val
+        invariant (w_valid & w_opcode = 2 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).a_val - trace.st(commit).b_val
+        invariant (w_valid & w_opcode = 3 & ~trace.st(trace.now).error) -> w_val = (0:addr) :: trace.st(commit).target
+        invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
+
+        # ---- ghost bookkeeping ------------------------------------------
+        # The reference tags, the shadow bits, and the trace step are all
+        # ghost state. We update them here, in the specification, rather than
+        # in the datapath `after posedge` below, so that the datapath is
+        # free of ghost state and can be translated to RTL. This monitor
+        # mirrors the datapath's stage movement, reading the pre-state of the
+        # real signals (validity bits via `old`; the combinational wires
+        # ex_stall / mispredict / f_ptaken are frozen at their pre-state
+        # values, so they need no `old`).
+
+        after posedge {
+            if old w_valid { commit := commit.next };
+            if dmem_stall {
+                # MEM stalls for a D-fill: WB drains (commit advanced above) and
+                # bubbles; MEM and everything behind hold, so no other tag moves
+                # and no instruction is issued to the trace.
+                w_shadow := false
+            } else {
+            if old m_valid { mcommit := mcommit.next };
+            w_shadow := m_shadow;
+            if ~ex_stall {
+                m_shadow := e_shadow;
+                if old e_valid { ecommit := ecommit.next };
+                if mispredict {
+                    spec_wrong := false
+                } else {
+                    if old d_valid & ~d_shadow { dcommit := dcommit.next };
+                    e_shadow := d_shadow;
+                    if flush_in_pipe | ifetch_stall {
+                        # IF stalled (pending FLUSH or awaiting an I-cache fill):
+                        # a bubble enters ID, no instruction is issued to the
+                        # trace, and `now` does not advance.
+                        d_shadow := false
+                    } else {
+                        d_shadow := spec_wrong;
+                        if ~spec_wrong {
+                            if f_ptaken ~= trace.st(trace.now).take_branch {
+                                spec_wrong := true
+                            };
+                            trace.step
+                        }
+                    }
+                }
+            }
+            }
+        }
+    }
+
+    # The branch predictor is the sub-isolate `bp`, declared further down (after
+    # the datapath signals it consumes). It drives bp.predicted_taken, which the
+    # fetch stage reads via f_ptaken. Since bp's logic is hidden in its own
+    # isolate, the CPU is verified with the prediction left arbitrary.
+
+    # ---- architectural state ----
+
+    var pc : addr
+    var rf(R:reg) : word
+
+    # ---- memory subsystem: the reusable `idcache` module ----
+    # The I-cache, D-cache and main memory (with FLUSH-based fetch coherence and
+    # a multi-cycle fill port) are the `idc` instance. Unlike the inline caches of
+    # 5stage_cache_cpu_ref, idc is a black box: its specification is stated over
+    # its OWN abstract memory `idc.mem` and dirty map `idc.ddirty`, and the CPU
+    # relates that ghost state to the reference trace at the MEM tag (mcommit) with
+    # two simple invariants (below). idc's guarantees (fetch_output0, data_output)
+    # then supply fetch/LD coherence. The CPU discharges idc's one_data_op
+    # assumption (a MEM instruction issues at most one data request).
+    instance idc : idcache(posedge, word, addr, bit, init_mem)
+
+    # ---- pipeline latches ----
+
+    var d_ir : word                 # IF/ID
+    var d_valid : bool
+    var d_pred : bool               #   predicted-taken bit carried with the instruction
+    var d_pc : addr                 #   the instruction's own PC
+    var e_ir : word                 # ID/EX
+    var e_valid : bool
+    var e_pred : bool
+    var e_pc : addr
+    var m_ir : word                 # EX/MEM
+    var m_valid : bool
+    var m_res : word
+    var m_addr : addr
+    var m_store : word
+    var w_ir : word                 # MEM/WB
+    var w_valid : bool
+    var w_val : word
+
+    # ---- decode wires ----
+
+    wire d_opcode : opc
+    definition d_opcode = d_ir<<15:13>>
+
+    wire e_opcode : opc
+    wire e_rd : reg
+    wire e_ra : reg
+    wire e_rb : reg
+    wire e_target : addr
+    definition e_opcode = e_ir<<15:13>>
+    definition e_rd = e_ir<<12:10>>
+    definition e_ra = e_ir<<9:7>>
+    definition e_rb = e_ir<<6:4>>
+    definition e_target = e_ir<<7:0>>
+
+    wire m_opcode : opc
+    wire m_rd : reg
+    definition m_opcode = m_ir<<15:13>>
+    definition m_rd = m_ir<<12:10>>
+
+    wire w_opcode : opc
+    wire w_rd : reg
+    definition w_opcode = w_ir<<15:13>>
+    definition w_rd = w_ir<<12:10>>
+
+    # ---- EX operands and the true branch decision ----
+
+    wire e_a : word
+    wire e_b : word
+    definition e_a = rf(e_ra)
+    definition e_b = rf(e_rb)
+
+    wire e_take : bool               # the true (operand-based) branch decision
+    definition e_take = (e_opcode = 6) & (e_a = 0)
+
+    # ---- data-hazard stall (as in 5stage_cpu_ref) ----
+
+    wire ex_stall : bool
+    definition ex_stall = e_valid & (
+        (m_valid & (m_opcode = 1 | m_opcode = 2 | m_opcode = 3 | m_opcode = 4)
+                 & (m_rd = e_ra | m_rd = e_rb)) |
+        (w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
+                 & (w_rd = e_ra | w_rd = e_rb)))
+
+    # ---- misprediction: the EX branch's prediction disagrees with its true
+    #      outcome. Detected only once its operand is available (~ex_stall).
+
+    wire mispredict : bool
+    definition mispredict = e_valid & ~ex_stall & (e_opcode = 6) & (e_pred ~= e_take)
+
+    # ---- the branch predictor, as a sub-isolate `bp` ----
+    # `bp` declares its own input/output wires and its logic uses only those; it
+    # never reaches into the CPU. Here, in the parent, we connect it: its inputs
+    # are driven from the CPU's fetch PC and branch resolution, and the CPU's
+    # prediction (f_ptaken, below) reads its output. Because bp's logic lives in
+    # its (hidden) implementation, Ivy verifies the CPU with bp.predicted_taken
+    # left arbitrary -- correctness holds for any prediction.
+
+    isolate bp = {
+        wire fetch_pc : addr          # input: PC being fetched (to predict)
+        wire br_valid : bool          # input: a conditional branch resolves this cycle
+        wire br_pc : addr             # input: the resolving branch's PC
+        wire br_taken : bool          # input: its true outcome
+        wire predicted_taken : bool   # output: the prediction for fetch_pc
+
+        implementation {
+            type bhtidx
+            interpret bhtidx -> bv[4]  # 16-entry branch history table
+            type ctr
+            interpret ctr -> bv[2]     # 2-bit saturating counter, states 0..3
+
+            var bht(I:bhtidx) : ctr
+
+            wire pred_idx : bhtidx
+            definition pred_idx = fetch_pc<<3:0>>
+            wire upd_idx : bhtidx
+            definition upd_idx = br_pc<<3:0>>
+
+            # predict taken when the indexed counter is in a taken state (2 or 3)
+            definition predicted_taken = (bht(pred_idx) = 2) | (bht(pred_idx) = 3)
+
+            after init {
+                bht(I) := 1            # weakly not-taken
+            }
+
+            # on a resolved branch, nudge its counter toward the outcome,
+            # saturating at 0 and 3
+            after posedge {
+                if br_valid {
+                    if br_taken {
+                        if bht(upd_idx) ~= 3 { bht(upd_idx) := bht(upd_idx) + 1 }
+                    } else {
+                        if bht(upd_idx) ~= 0 { bht(upd_idx) := bht(upd_idx) - 1 }
+                    }
+                }
+            }
+        }
+    }
+
+    # connect the predictor's inputs to the CPU (in the parent)
+    definition bp.fetch_pc = pc
+    definition bp.br_valid = e_valid & (e_opcode = 6) & ~ex_stall
+    definition bp.br_pc = e_pc
+    definition bp.br_taken = e_take
+
+    # ---- connect the idcache module (in the parent, so both the datapath and
+    # the sub-blocks see the interconnect) ----
+    # Fetch port: present the PC whenever IF is really fetching.
+    definition idc.fetch_req  = fetch_active
+    definition idc.fetch_addr = pc
+    # Data port: the MEM instruction's single request (LD / ST / FLUSH). At most
+    # one is true (a MEM instruction has one opcode), which discharges one_data_op.
+    definition idc.read_req   = m_valid & (m_opcode = 4)
+    definition idc.write_req  = m_valid & (m_opcode = 5)
+    definition idc.flush_req  = m_valid & (m_opcode = 7)
+    definition idc.data_addr  = m_addr
+    definition idc.write_data = m_store
+
+    # ---- fetch stall on a pending FLUSH ----
+    # While a FLUSH is in ID/EX/MEM, instruction fetch stalls so that no
+    # instruction behind the FLUSH is fetched until the FLUSH has (in MEM) made
+    # prior writes to its address visible (write-back + cache invalidation).
+
+    wire flush_in_pipe : bool
+    definition flush_in_pipe = (d_valid & d_opcode = 7)
+                             | (e_valid & e_opcode = 7)
+                             | (m_valid & m_opcode = 7)
+
+    # ---- fetch and prediction ----
+    # Instruction fetch goes through idc's I-cache: `idc.fetch_data0` is the word
+    # at the fetch address, valid when `idc.fetch_valid0` (a hit or a completing
+    # fill). idc handles the miss/fill internally; the CPU only presents the PC and
+    # reads back the word. A fetched instruction can still be stale w.r.t. a
+    # not-yet-flushed store -- accounted for by the ISA's ddirty/error.
+
+    wire fetched : word
+    definition fetched = idc.fetch_data0
+
+    wire f_is_branch : bool
+    definition f_is_branch = ((fetched<<15:13>>:opc) = 6)
+
+    wire f_ptaken : bool             # predicted-taken for the fetched instruction
+    definition f_ptaken = f_is_branch & bp.predicted_taken
+
+    wire f_target : addr
+    definition f_target = fetched<<7:0>>
+
+    wire pred_next_pc : addr         # the predicted next fetch address
+    definition pred_next_pc = (f_target if f_ptaken else pc + 1)
+
+    # ---- instruction-fetch fill stall ----
+    # IF actually attempts a fetch when it is not held for another reason:
+    wire fetch_active : bool
+    definition fetch_active = ~ex_stall & ~mispredict & ~flush_in_pipe
+    # Fetch cannot complete this cycle: idc did not return a valid word.
+    wire ifetch_stall : bool
+    definition ifetch_stall = ~idc.fetch_valid0
+
+    # ---- MEM-stage data access (through idc) ----
+    # The MEM instruction presents its data request to idc (below in the wiring):
+    # a LD reads `idc.read_data`, and idc stalls MEM via `idc.data_stall` (a miss
+    # fill / write-back). The store/flush effects on memory happen inside idc.
+    wire dmem_stall : bool
+    definition dmem_stall = idc.data_stall
+
+    # ---- reset ----
+
+    after init {
+        pc := 0;
+        d_valid := false;
+        e_valid := false;
+        m_valid := false;
+        w_valid := false;
+        rf(R) := 0;
+        # main memory, both caches and the fill port are initialized inside idc.
+    }
+
+    # ---- clock edge ----
+
+    after posedge {
+
+        # WB: retire the WB instruction (write the register file).
+        if w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4) {
+            rf(w_rd) := w_val
+        };
+
+        # MEM: latch the WB register. A LD reads idc.read_data (idc serves the
+        # D-cache hit / fill-forward and stalls via data_stall). The store/flush
+        # effects on memory and the caches happen inside idc, driven by the request
+        # signals in the wiring section -- the CPU no longer touches memory here.
+        w_ir := m_ir;
+        w_valid := m_valid & ~dmem_stall;
+        w_val := (m_res if m_opcode ~= 4 else idc.read_data);
+
+        # EX: held while MEM stalls for a D-fill; bubbled on a data hazard;
+        # otherwise executes and moves to MEM.
+        if dmem_stall {
+        } else if ex_stall {
+            m_valid := false
+        } else {
+            m_ir := e_ir;
+            m_valid := e_valid;
+            m_res := (e_a + e_b if e_opcode = 1 else
+                     (e_a - e_b if e_opcode = 2 else
+                     ((0:addr) :: e_target if e_opcode = 3 else 0)));
+            m_addr := e_a<<7:0>>;
+            m_store := e_b
+        };
+
+        # ID -> EX and IF -> ID, unless EX or MEM is stalled (then all hold).
+        if ~dmem_stall & ~ex_stall {
+            if mispredict {
+                # Squash the younger, wrong-path instructions and redirect.
+                e_valid := false;                              # squash the ID instruction
+                d_valid := false;                              # squash the current fetch
+                pc := (e_target if e_take else e_pc + 1)       # correct next PC
+            } else {
+                # ID -> EX
+                e_ir := d_ir;
+                e_valid := d_valid;
+                e_pred := d_pred;
+                e_pc := d_pc;
+
+                if flush_in_pipe | ifetch_stall {
+                    # IF stalled behind a pending FLUSH, or waiting for idc to
+                    # return the fetched word: insert a bubble into ID and hold PC.
+                    d_valid := false
+                } else {
+                    # IF -> ID: speculative fetch. idc installs the fetched line
+                    # internally; the CPU just latches the returned word.
+                    d_ir := fetched;
+                    d_valid := true;
+                    d_pred := f_ptaken;
+                    d_pc := pc;
+                    pc := pred_next_pc
+                }
+            }
+        }
+    }
+}
+
+# The CPU discharges idc's only assumption: a MEM instruction issues at most
+# one data request per cycle (its opcode is a single value), so read/write/flush
+# are mutually exclusive.
+provide cpu.idc.one_data_op
