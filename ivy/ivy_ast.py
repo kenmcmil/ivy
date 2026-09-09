@@ -1108,6 +1108,23 @@ class ProgressDecl(Decl):
     def defines(self):
         return [(c.defines(),lineno(c)) for c in self.args]
 
+class ProvideDecl(Decl):
+    def name(self):
+        return 'provide'
+    def defines(self):
+        return []
+
+class ProvideDef(AST):
+    def __init__(self,provider,provided):
+        self.args = [provider,provided]
+    @property
+    def provider(self):
+        return self.args[0].rep
+    @property
+    def provided(self):
+        return self.args[1].rep
+
+
 class RelyDecl(Decl):
     def name(self):
         return 'rely'

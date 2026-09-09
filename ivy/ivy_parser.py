@@ -239,6 +239,7 @@ special_attribute = None
 parent_object = None
 global_attribute = None
 common_attribute = None
+require_attribute = None
 
 class Ivy(object):
     def __init__(self):
@@ -255,12 +256,15 @@ class Ivy(object):
         global special_attribute
         global global_attribute
         global common_attribute
+        global require_attribute
         self.attributes = (((special_attribute,) if special_attribute is not None else ()) +
                            ((global_attribute,) if global_attribute is not None else ()) +
-                           ((common_attribute,) if common_attribute is not None else ()))
+                           ((common_attribute,) if common_attribute is not None else ()) +
+                           ((require_attribute,) if require_attribute is not None else ()))
         special_attribute = None
         global_attribute = None
         common_attribute = None
+        require_attribute = None
         # if we are the body of an attribute declaration, keep all of the enclosing attributes
         if self.attributes and stack:
             self.attributes = stack[-1].attributes + self.attributes
@@ -650,6 +654,20 @@ if not iu.get_numeric_version() <= [1,6]:
             p[0].declare(d)
             if p[5] is not None:
                 p[0].declare(ProofDecl(p[5]))
+
+    def p_top_provide_atom(p):
+        'top : top PROVIDE callatom optinvwith optusing optproof'
+        p[0] = p[1]
+        provided = p[3]
+        d = ProvideDecl(ProvideDef(This(),provided))
+        d.lineno = get_lineno(p,2)
+        p[0].declare(d)
+        if p[4]:
+            p[0].declare(InvarDepDecl(InvarDep(provided,*p[4])))
+        if p[5] is not None:
+            p[0].declare(UsingPatDecl(UsingPat(provided,p[5])))
+        if p[6] is not None:
+            p[0].declare(ProofDecl(p[6]))
 
 def p_modulestart(p):
     'modulestart :'
@@ -2207,6 +2225,12 @@ if not (iu.get_numeric_version() <= [1,6]):
         p[0] = p[1]
         global common_attribute
         common_attribute =  "common"
+
+    def p_specimpl_common(p):
+        'specimpl : REQUIRE'
+        p[0] = p[1]
+        global require_attribute
+        require_attribute =  "require"
 
     def p_top_specification_lcb_top_rcb(p):
         'top : top specimpl LCB top RCB'

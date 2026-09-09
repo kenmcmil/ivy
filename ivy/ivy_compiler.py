@@ -1227,6 +1227,12 @@ class IvyDomainSetup(IvyDeclInterp):
         name = v.args[0].rep
         self.domain.patdefs[name] = expand_patrefs(v.args[1],self.domain.patdefs)
 
+    def provide(self,v):
+        # v is a ProvideDef
+        self.domain.provides.append(v)
+        if v.provided in self.domain.provide_map:
+            raise IvyError(v,f'multiple providers for {v.provides}')
+        self.domain.provide_map[v.provided] = v.provider
 
     def add_definition(self,ldf):
         defs = self.domain.native_definitions if isinstance(ldf.formula.args[1],ivy_ast.NativeExpr) else self.domain.labeled_props
@@ -1515,6 +1521,7 @@ class IvyARGSetup(IvyDeclInterp):
             self.mod.assertions.append(type(a)(a.args[0],sortify_with_inference(a.args[1])))
     def isolate(self,iso):
         args = [a.rename('this') if isinstance(a.rep,ivy_ast.This) else a for a in iso.args]
+        args = [a.rename(resolve_alias(a.rep)) for a in args]
         if hasattr(iso,'is_object') and iso.is_object:
             args[0] = args[0].clone([])  # strip off parameters from isolate objects
             args[1] = args[1].clone([])

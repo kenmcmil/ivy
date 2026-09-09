@@ -97,6 +97,8 @@ class Module(object):
         self.invardeps = {}  # map from string to string list
         self.usingpats = {}  # map from invariant name to a name-pattern AST (from a `using` clause)
         self.patdefs = {}  # map from a `patdef` name to its (expanded) name-pattern AST
+        self.provides = [] # list of ProvideDef
+        self.provide_map = {} # map from required property names to provider names
         self.sig = il.sig.copy() # capture the current signature
 
     def __enter__(self):

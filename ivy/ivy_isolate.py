@@ -1127,9 +1127,33 @@ def isolate_component(mod,isolate_name,extra_with=[],extra_strip=None,after_init
     if iu.version_le(iu.get_string_version(),"1.6"):
         new_conjs = [c for c in mod.labeled_conjs if keep_ax(c.label)]
     else:
-        new_conjs = [c for c in mod.labeled_conjs if vstartswith_eq_some(c.label.rep,verified,mod)]
-        assumed_conjs = [c for c in mod.labeled_conjs if startswith_eq_some(c.label.rep,present,mod) and not vstartswith_eq_some(c.label.rep,verified,mod)]
+
+        # don't verify invariants that have the 'require' attribute
+
+        # print (f'mod.provide_map: {mod.provide_map}')
+
+        def provide_conj(name):
+            return name in mod.provide_map and vstartswith_eq_some(mod.provide_map[name],verified,mod)
+        def verif_conj(name):
+            return vstartswith_eq_some(name,verified,mod) 
+        def require_conj(name):
+            return iu.compose_names(name,"require") in mod.attributes
+        def provided_conj(name):
+            return name in mod.provide_map
+
+        # print (f'mod.attributes: {mod.attributes}')
+        new_conjs = [c for c in mod.labeled_conjs
+                     if verif_conj(c.label.rep) and not require_conj(c.label.rep) or provide_conj(c.label.rep)]
+
+        if isolate_name != 'this':
+            for c in mod.labeled_conjs:
+                if verif_conj(c.label.rep) and require_conj(c.label.rep) and not provided_conj(c.label.rep):
+                    raise iu.IvyError(c,f'invariant {c.name} is required but not provided')
+
+#        assumed_conjs = [c for c in mod.labeled_conjs if (startswith_eq_some(c.label.rep,present,mod) if not verif_conj(c.label.rep) else require_conj(c.label.rep))]
         
+#        print (f'assumed_conjs: {assumed_conjs}')
+       
     del mod.labeled_conjs[:]
     if not create_imports.get() or compile_with_invariants.get(): # no conjectures if compiling
         mod.labeled_conjs.extend(new_conjs)
@@ -2075,10 +2099,53 @@ def get_isolate_lfs(mod,iso,lfs,verified=True,present=True):
     iter_isolate(mod,iso,fun,verified,present)
     return lfs
 
+def get_isolate_provides(mod,iso,verified=True,present=True):
+    provide_lists = defaultdict(list)
+    for x in mod.provides:
+        # print (f'provider: {x.provider} ({type(x.provider)}), provided: {x.provided}') 
+        provide_lists[x.provider].append(x)
+    memo = set()
+    res = []
+    def fun(name):
+        # print (f'name: {name} ({type(name)})')
+        for x in provide_lists[name]:
+            if x.provided not in memo:
+                res.append(x)
+                memo.add(x.provided)
+    iter_isolate(mod,iso,fun,verified,present)
+    return res
 
 def get_isolate_conjs(mod,iso,verified=True,present=True):
-    return get_isolate_lfs(mod,iso,mod.labeled_conjs,verified,present)
-
+    if present and not verified:
+        # TRICKY: include required conjectures if we only want present
+        pre = get_isolate_lfs(mod,iso,mod.labeled_conjs,verified=False)
+        ver = get_isolate_lfs(mod,iso,mod.labeled_conjs,present=False)
+        res =  pre + [x for x in ver if iu.compose_names(x.name,"require") in mod.attributes]
+    elif verified and not present:
+        ver = get_isolate_lfs(mod,iso,mod.labeled_conjs,present=False)
+        res =  [x for x in ver if iu.compose_names(x.name,"require") not in mod.attributes]
+    else:
+        res = get_isolate_lfs(mod,iso,mod.labeled_conjs,verified,present)
+    if mod.provides :
+        # Get all the invariants that this property provides
+        provides = get_isolate_provides(mod,iso,present=False)
+        memo = set(x.name for x in res)
+        provide_set = set(x.provided for x in provides)
+        # print (f'provide_set: {provide_set}')
+        if not verified:
+            res = [x for x in res if x.name not in provide_set]
+        else: 
+            for x in mod.labeled_conjs:
+                if x.name not in memo and x.name in provide_set:
+                    res.append(x)
+                    memo.add(x.name)
+            for x in provides:
+                if x.provided not in memo:
+                    raise ui.IvyError(x,'invariant {x.provided} is provided but not defined')
+                if iu.compose_names(x.provided,"require") not in mod.attributes:
+                    raise ui.IvyError(x,'invariant {x.provided} is provided but not required')
+    return res
+    
 def get_isolate_post_conjs(mod,iso):
     ver_conjs = get_isolate_conjs(mod,iso,present=False)
     ver_set = set(lf.label.rep for lf in ver_conjs)
