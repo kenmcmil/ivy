@@ -383,7 +383,7 @@ isolate trace = {
                       st(U).error = (st(T).error | st(T).ddirty(st(T).pc))
 
         # ddirty(A): set by a ST to A, cleared by a FLUSH of A, else unchanged.
-        invariant (tag.succ(T,U) & U <= now) ->
+        invariant [tr_ddirty] (tag.succ(T,U) & U <= now) ->
                       st(U).ddirty(A) =
                           (true  if (st(T).opcode = 5 & A = st(T).mem_addr) else
                           (false if (st(T).opcode = 7 & A = st(T).mem_addr) else
@@ -483,6 +483,9 @@ object cpu = {
     isolate mem_intf = {
         var ifill_addr_old : addr
 
+        after posedge {
+        }
+
         specification {
             after init {
                 ifill_addr_old := 0;
@@ -496,7 +499,7 @@ object cpu = {
                 ifill_addr_old := ic.ifill_addr;
             }
         }
-    } with this
+    }
             
 
     # Per isolate_icache.md: cpu invariants ic does NOT need are kept `private`;
@@ -562,7 +565,7 @@ object cpu = {
         invariant d_valid1 -> d_valid
         invariant ((~d_valid | d_shadow) & ~trace.st(trace.now).error) -> dcommit = trace.now
         invariant (d_valid & ~d_shadow & ~d_valid1 & ~trace.st(trace.now).error) -> dcommit.succ(trace.now)
-        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> dcommit.succ(d1_tag)
+        invariant [d1_full] (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> dcommit.succ(d1_tag)
         invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d1_tag.succ(trace.now)
     }
 
@@ -647,7 +650,7 @@ object cpu = {
 
         # ---- non-shadowed in-flight instructions match the trace ---------
 
-        invariant (d_valid & ~d_shadow & ~trace.st(trace.now).error) -> d_ir = trace.st(dcommit).fetched
+        invariant [d_ir_track] (d_valid & ~d_shadow & ~trace.st(trace.now).error) -> d_ir = trace.st(dcommit).fetched
         invariant (d_valid & ~d_shadow & ~trace.st(trace.now).error) -> d_pc = trace.st(dcommit).pc
         invariant (e_valid & ~trace.st(trace.now).error) -> e_ir = trace.st(ecommit).fetched
         invariant (e_valid & ~trace.st(trace.now).error) -> e_pc = trace.st(ecommit).pc
@@ -691,22 +694,20 @@ object cpu = {
         # equal the trace's recorded a_val/b_val at the EX tag. Once these hold,
         # the ALU-result invariants (m_res = st(mcommit).res, etc.) follow without
         # re-deriving rf-coherence.
-        invariant [ea_trk]  (e_valid  & ~ex_stall & ~trace.st(trace.now).error) -> e_a  = trace.st(ecommit).a_val
-            with rf_track
-        invariant [eb_trk]  (e_valid  & ~ex_stall & ~trace.st(trace.now).error) -> e_b  = trace.st(ecommit).b_val
-            with rf_track
+        derived invariant [ea_trk]  (e_valid  & ~ex_stall & ~trace.st(trace.now).error) -> e_a  = trace.st(ecommit).a_val
+        derived invariant [eb_trk]  (e_valid  & ~ex_stall & ~trace.st(trace.now).error) -> e_b  = trace.st(ecommit).b_val
         # lane 0's ALU result tracks the trace (from ea_trk/eb_trk + res
         # consistency); needed so the intra-bundle bypass forwards the right value.
-        invariant [eres_trk] (e_valid & ~ex_stall & (e_opcode = 1 | e_opcode = 2 | e_opcode = 3) & ~trace.st(trace.now).error) -> e_res = trace.st(ecommit).res
+        derived invariant [eres_trk] (e_valid & ~ex_stall & (e_opcode = 1 | e_opcode = 2 | e_opcode = 3) & ~trace.st(trace.now).error) -> e_res = trace.st(ecommit).res
             with ea_trk, eb_trk
         # lane 1's operands taken THROUGH the bypass mux (e_a1_fwd/e_b1_fwd): the
         # forwarded case = e_res = st(ecommit).res = st(e1_tag).rf(source); the
         # register-file case = st(commit).rf(source) = st(e1_tag).rf(source). While
         # the bypass is dormant (e_indep) the mux picks the rf read, as before.
-        invariant [ea1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_a1_fwd = trace.st(e1_tag).a_val
-            with rf_track, eres_trk
-        invariant [eb1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1_fwd = trace.st(e1_tag).b_val
-            with rf_track, eres_trk
+        derived invariant [ea1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_a1_fwd = trace.st(e1_tag).a_val
+            with eres_trk
+        derived invariant [eb1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1_fwd = trace.st(e1_tag).b_val
+        with eres_trk
 
         # Intra-bundle independence: lane 0's destination differs from lane 1's
         # source and destination registers (established by f_indep at issue). This
@@ -722,18 +723,13 @@ object cpu = {
         invariant (m_valid1 & (m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3) & ~trace.st(trace.now).error) -> m_res1 = trace.st(m1_tag).res
         invariant (w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3) & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).res
 
-        # Fetch-reference (now) coherence of the two fetched words, proved in cpu
-        # via the ic guarantees as zero-delay (combinational) dependencies. These
-        # are what the pc-tracking and lane-data invariants need: the fetched word
-        # equals the reference memory at the fetch address for the *current* trace
-        # position, not just at mcommit.
-        invariant [fetch0_coh]
+        derived invariant [fetch0_coh]
           fetch_active & ic.fetch_valid & ~trace.st(trace.now).error
              & ~trace.st(trace.now).ddirty(pc)
              -> ic.fetch_data = trace.st(trace.now).mem(pc)
         with ic.icache_output
 
-        invariant [fetch1_coh]
+        derived invariant [fetch1_coh]
           fetch_active & ic.fetch_valid1 & ~trace.st(trace.now).error
              & ~trace.st(trace.now).ddirty(pc+1)
              -> ic.fetch_data1 = trace.st(trace.now).mem(pc+1)
