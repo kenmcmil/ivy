@@ -545,10 +545,14 @@ def get_conjs_gated(mod):
             fmlas.append(lf.formula)
     return lut.Clauses(fmlas,annot=act.EmptyAnnotation()), litmap
 
-def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None,using_litmap=None):
+def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None,using_litmap=None,derived=False):
     conjs = mod.conj_subgoals if mod.conj_subgoals is not None else mod.labeled_conjs
-    conjs = [x for x in conjs if is_check_mod_unprovable(x)]
+    # Split the normal invariants (checked by consecution, derived=False) from the
+    # derived invariants (checked by a one-state implication, derived=True). A
+    # postcondition of a called action is always a normal check.
+    conjs = [x for x in conjs if is_check_mod_unprovable(x) and bool(getattr(x,'derived',False)) == derived]
     conjs += convert_postconds(post,pcs)
+    derived_names = set(x.name for x in mod.labeled_conjs if getattr(x,'derived',False))
     check_lineno = act.checked_assert.get()
     if check_lineno == "":
         check_lineno = None
@@ -561,19 +565,30 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None,using_litmap=No
     checkers = []
     for c in lcs:
         depnames = set(mod.invardeps.get(c.name,[])) if c.label is not None else set([])
+        # A NORMAL invariant may not zero-delay-depend (via `with`) on a DERIVED
+        # invariant: every derived invariant already depends on all the normal
+        # invariants at zero delay, so this would close a zero-delay cycle.
+        if not derived:
+            baddep = sorted(n for n in depnames if n in derived_names)
+            if baddep:
+                raise iu.IvyError(c,
+                    "invariant has a zero-delay dependency (`with`) on the derived "
+                    "invariant(s) {}; a normal invariant may not depend on a derived one "
+                    "at zero delay (this would create a zero-delay cycle)".format(', '.join(baddep)))
         # Every zero-delay dependency named in this invariant's `with` clause must
         # refer to an invariant that is actually visible (assumed) in this isolate.
         # A named dependency that is not visible -- typically because the isolate's
         # own `with` clause omits the isolate that owns it -- would otherwise be
         # silently dropped from `deps`, so the invariant is checked without it.
         available = set(x.name for x in mod.assumed_invariants)
+        available.update(x.name for x in conjs)
         missing = sorted(n for n in depnames if n not in available)
         if missing:
             raise iu.IvyError(c,
                 "zero-delay dependency {} of this invariant is not visible in this isolate "
                 "(this can be caused by a missing entry in the `with` clause of the isolate)".format(
                     ', '.join(missing)))
-        deps = [x.formula for x in mod.assumed_invariants if x.name in depnames]
+        deps = [x.formula for x in (mod.assumed_invariants+conjs) if x.name in depnames]
         if deps:
             c = c.clone([c.label,lg.Implies(lg.And(*deps),c.formula)])
         # `using` clause: restrict the inductive hypotheses. When the pre-state
@@ -619,6 +634,15 @@ opt_summary = iu.BooleanParameter("summary",False)
 
 def get_conjs(mod):
     fmlas = [lf.formula for lf in mod.labeled_conjs + mod.assumed_invariants if not lf.explicit and not lf.unprovable]
+    return lut.Clauses(fmlas,annot=act.EmptyAnnotation())
+
+def get_conjs_normal(mod):
+    # The NORMAL (non-derived) invariants only. This is the pre-state for the
+    # derived-invariant pass: a derived invariant is proved from the normal
+    # invariants (and any other derived invariants it cites at zero delay), so its
+    # own clause must NOT be assumed, or the check would be trivial.
+    fmlas = [lf.formula for lf in mod.labeled_conjs + mod.assumed_invariants
+             if not lf.explicit and not lf.unprovable and not getattr(lf,'derived',False)]
     return lut.Clauses(fmlas,annot=act.EmptyAnnotation())
 
 def apply_conj_proofs(mod):
@@ -712,6 +736,10 @@ def check_isolate(trace_hook = None):
             for lf in mod.labeled_inits:
                 print(pretty_lf(lf))
         checked_invariants = [x for x in mod.labeled_conjs if is_check_mod_unprovable(x)]
+        # Normal invariants are checked by consecution; derived invariants (implied
+        # by the normal ones) are checked by a separate one-state implication pass.
+        normal_checked  = [x for x in checked_invariants if not getattr(x,'derived',False)]
+        derived_checked = [x for x in checked_invariants if getattr(x,'derived',False)]
         if checked_invariants:
             print("\n    The inductive invariant consists of the following conjectures:")
             for lf in checked_invariants:
@@ -767,7 +795,7 @@ def check_isolate(trace_hook = None):
 
         checked_actions = get_checked_actions()
 
-        if checked_actions and checked_invariants:
+        if checked_actions and normal_checked:
             print("\n    The following set of external actions must preserve the invariant:")
             for actname in sorted(checked_actions):
                 action = act.env_action(actname)
@@ -790,7 +818,22 @@ def check_isolate(trace_hook = None):
                 else:
                     print('')
 
-
+        # === check derived invariants here ===
+        # A derived invariant is implied by the normal invariants, so it needs no
+        # consecution (two-state) check -- only a one-state implication: assume the
+        # normal invariants (and any derived invariants it cites at zero delay) and
+        # prove the derived invariant. We check them against a state whose clauses
+        # are the normal invariants (get_conjs_normal); an empty action gives that
+        # state a trivial history without changing its clauses.
+        if derived_checked:
+            print("\n    The following derived invariants must be implied by the invariants:")
+            if check:
+                ag = ivy_art.AnalysisGraph()
+                pre = itp.State()
+                pre.clauses = get_conjs_normal(mod)
+                # with itp.EvalContext(check=False):
+                #    post = ag.execute(act.Sequence(), pre)
+                check_conjs_in_state(mod,ag,pre,indent=8,derived=True)
 
         callgraph = defaultdict(list)
         for actname,action in mod.actions.items():

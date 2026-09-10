@@ -642,6 +642,22 @@ if not iu.get_numeric_version() <= [1,6]:
             if p[7] is not None:
                 p[0].declare(ProofDecl(p[7]))
 
+    def p_top_derived_invariant_labeledfmla(p):
+        'top : top DERIVED INVARIANT labeledfmla optinvwith optusing optproof'
+        p[0] = p[1]
+        lf = addlabel(p[4],'invar')
+        lf.unprovable = False
+        lf.derived = True
+        d = ConjectureDecl(lf)
+        d.lineno = get_lineno(p,3)
+        if p[5]:
+            p[0].declare(InvarDepDecl(InvarDep(lf.label,*p[5])))
+        if p[6] is not None:
+            p[0].declare(UsingPatDecl(UsingPat(lf.label,p[6])))
+        p[0].declare(d)
+        if p[7] is not None:
+            p[0].declare(ProofDecl(p[7]))
+
     def p_top_unprovable_invariant_labeledfmla(p):
         'top : top UNPROVABLE INVARIANT labeledfmla optproof'
         p[0] = p[1]

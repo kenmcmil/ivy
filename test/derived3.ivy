@@ -1,22 +1,14 @@
-#lang ivy1.6
-
-type t
-type q
-type u
-
-function ident(U:u,X:t):q
-relation r(U:u,X:t,Y:q)
-
-definition ident(U:u,x:t) = some Y. r(U,x,Y) in Y else 0
-
-action a = {
-    assert r(U,X,ident(U,X)) | ident(U,X) = 0
+#lang ivy1.8
+# A normal invariant may NOT depend on a derived invariant at zero delay (via a
+# `with` clause): every derived invariant already depends on all the normal
+# invariants at zero delay, so this would close a zero-delay cycle -- an error.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    after init { x := true; y := true }
+    action step = { x := x; y := y }
+    export step
+    invariant [ix] x
+    derived invariant [d1] x
+    invariant [iy] y with d1
 }
-
-conjecture r(U,X,ident(U,X)) | ident(U,X) = 0
-
-property r(U,X,ident(U,X)) | ident(U,X) = 0
-
-
-
-

@@ -1,7 +1,13 @@
-#lang ivy1.6
-
-type t
-
-derived ident(X:t) = some Y. X = Y
-
-property ident(Z) = Z
+#lang ivy1.8
+# A derived invariant is implied by the normal invariants; it is checked by a
+# one-state implication (not consecution). Here x & y follows from ix and iy.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    after init { x := true; y := true }
+    action step = { x := x; y := y }
+    export step
+    invariant [ix] x
+    invariant [iy] y
+    derived invariant [d1] x & y
+}

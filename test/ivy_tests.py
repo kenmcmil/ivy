@@ -67,4 +67,18 @@ tests = [
     {'type': 'check', 'name': 'patdef1', 'expect': 'error: redefining x'},
     {'type': 'check', 'name': 'patdef2', 'expect': 'OK'},
     {'type': 'check', 'name': 'patdef3', 'expect': 'OK'},
+
+    # Derived invariants (doc/projects/derived_invar.md): an invariant implied by
+    # the normal invariants, checked by a one-state implication instead of
+    # consecution, and assumable in the pre-state of the normal invariants.
+    # derived1: an implied derived invariant passes. derived2: an unimplied one
+    # gives a counterexample. derived3: a normal invariant may not depend on a
+    # derived one at zero delay (`with`) -- an error. derived4: a derived may
+    # depend on another derived (`with`), and a normal may select a derived as a
+    # `using` hypothesis.
+    {'type': 'check', 'name': 'derived1', 'expect': 'OK'},
+    {'type': 'check', 'name': 'derived2', 'expect': 'error: failed checks: 1'},
+    {'type': 'check', 'name': 'derived3',
+     'expect': 'may not depend on a derived one at zero delay'},
+    {'type': 'check', 'name': 'derived4', 'expect': 'OK'},
 ]

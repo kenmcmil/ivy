@@ -1,9 +1,13 @@
-#lang ivy1.6
-
-type t
-
-function ident(X:t):t
-
-definition ident(X) = some Y. X = Y
-
-property ident(Z) = Z
+#lang ivy1.8
+# A derived invariant that is NOT implied by the normal invariants produces a
+# counterexample: x & ~y is false wherever y holds.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    after init { x := true; y := true }
+    action step = { x := x; y := y }
+    export step
+    invariant [ix] x
+    invariant [iy] y
+    derived invariant [dbad] x & ~y
+}

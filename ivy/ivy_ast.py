@@ -628,6 +628,9 @@ class LabeledFormula(AST):
         self.definition = False
         self.assumed = False
         self.unprovable = False
+        self.derived = False   # a "derived" invariant: implied by the normal
+                               # invariants (checked by a one-state implication,
+                               # not consecution); see doc/projects/derived_invar.md
         lf_counter += 1
     @property
     def label(self):
@@ -654,6 +657,7 @@ class LabeledFormula(AST):
         res.definition = self.definition
         res.assumed = self.assumed
         res.unprovable = self.unprovable
+        res.derived = self.derived
         return res
 
     def clone_with_fresh_id(self,args):
@@ -664,6 +668,7 @@ class LabeledFormula(AST):
         res.definition = self.definition
         res.assumed = self.assumed
         res.unprovable = self.unprovable
+        res.derived = self.derived
         return res
 
     def rename(self,s):

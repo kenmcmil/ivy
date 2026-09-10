@@ -1,0 +1,16 @@
+#lang ivy1.8
+# A derived invariant may depend on another derived invariant at zero delay (via
+# `with`), and a normal invariant may select a derived invariant as a pre-state
+# hypothesis (via `using`) -- neither is a normal-on-derived zero-delay dep.
+isolate m = {
+    individual x : bool
+    individual y : bool
+    after init { x := true; y := true }
+    action step = { x := x; y := y }
+    export step
+    invariant [ix] x
+    invariant [iy] y
+    derived invariant [d1] x
+    derived invariant [d2] x & y with d1
+    invariant [inorm] x & y using d2 | ix | iy
+}
