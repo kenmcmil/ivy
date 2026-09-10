@@ -1,6 +1,26 @@
 import sys
 import os
 import platform
+import shutil
+
+def get_cxx():
+    """Pick the C++ compiler for the v2 compiler stages.
+
+    On macOS the generated C++ targets libc++ and is most reliable with
+    clang++.  Honor $CXX when the environment provides it, otherwise use
+    clang++ on Darwin and g++ elsewhere.
+    """
+    candidates = [os.environ.get('CXX')]
+    candidates.append('clang++' if platform.system() == 'Darwin' else 'g++')
+    for cxx in candidates:
+        if cxx and shutil.which(cxx):
+            return cxx
+    return 'g++'
+
+
+def cxx_extra_flags(cxx):
+    # clang understands this; GCC only warns about it, so keep it for clang.
+    return '-Wno-parentheses-equality ' if 'clang' in os.path.basename(cxx) else ''
 
 def do_cmd(cmd):
     print(cmd)
@@ -45,14 +65,16 @@ def find_vs():
 def build_v2_compiler():
 
     cwd = os.getcwd()
+    cxx = get_cxx()
+    extra = cxx_extra_flags(cxx)
 
     os.chdir('ivy/ivy2/s1')
     do_cmd('ivyc target=repl ivyc_s1.ivy')
-    do_cmd('g++ -Wno-parentheses-equality -O2 -o ivyc_s1 ivyc_s1.cpp -pthread')
+    do_cmd('{} {}-O2 -o ivyc_s1 ivyc_s1.cpp -pthread'.format(cxx, extra))
 
     os.chdir('../s2')
     do_cmd('IVY_INCLUDE_PATH=../s1/include ../s1/ivyc_s1 ivyc_s2.ivy')
-    do_cmd('g++ -I../s1/include -Wno-parentheses-equality -O2 -o ivyc_s2 -std=c++17 ivyc_s2.cpp')
+    do_cmd('{} -I../s1/include {}-O2 -o ivyc_s2 -std=c++17 ivyc_s2.cpp'.format(cxx, extra))
 
     os.chdir('../s3')
     do_cmd('IVY_INCLUDE_PATH=../s2/include ../s2/ivyc_s2 ivyc_s3.ivy')
