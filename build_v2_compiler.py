@@ -20,7 +20,7 @@ def get_cxx():
 
 def cxx_extra_flags(cxx):
     # clang understands this; GCC only warns about it, so keep it for clang.
-    return '-Wno-parentheses-equality ' if 'clang' in os.path.basename(cxx) else ''
+    return '-Wno-parentheses-equality' if 'clang' in os.path.basename(cxx) else ''
 
 def do_cmd(cmd):
     print(cmd)
@@ -70,11 +70,11 @@ def build_v2_compiler():
 
     os.chdir('ivy/ivy2/s1')
     do_cmd('ivyc target=repl ivyc_s1.ivy')
-    do_cmd('{} {}-O2 -o ivyc_s1 ivyc_s1.cpp -pthread'.format(cxx, extra))
+    do_cmd('{} {} -O2 -o ivyc_s1 ivyc_s1.cpp -pthread'.format(cxx, extra))
 
     os.chdir('../s2')
     do_cmd('IVY_INCLUDE_PATH=../s1/include ../s1/ivyc_s1 ivyc_s2.ivy')
-    do_cmd('{} -I../s1/include {}-O2 -o ivyc_s2 -std=c++17 ivyc_s2.cpp'.format(cxx, extra))
+    do_cmd('{} -I../s1/include {} -O2 -o ivyc_s2 -std=c++17 ivyc_s2.cpp'.format(cxx, extra))
 
     os.chdir('../s3')
     do_cmd('IVY_INCLUDE_PATH=../s2/include ../s2/ivyc_s2 ivyc_s3.ivy')
