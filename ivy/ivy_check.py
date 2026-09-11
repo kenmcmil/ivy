@@ -580,15 +580,15 @@ def check_conjs_in_state(mod,ag,post,indent=8,pcs=[],action=None,using_litmap=No
         # A named dependency that is not visible -- typically because the isolate's
         # own `with` clause omits the isolate that owns it -- would otherwise be
         # silently dropped from `deps`, so the invariant is checked without it.
-        available = set(x.name for x in mod.assumed_invariants)
-        available.update(x.name for x in conjs)
+        available = set(x.name for x in mod.assumed_invariants if x.label is not None)
+        available.update(x.name for x in conjs if x.label is not None)
         missing = sorted(n for n in depnames if n not in available)
         if missing:
             raise iu.IvyError(c,
                 "zero-delay dependency {} of this invariant is not visible in this isolate "
                 "(this can be caused by a missing entry in the `with` clause of the isolate)".format(
                     ', '.join(missing)))
-        deps = [x.formula for x in (mod.assumed_invariants+conjs) if x.name in depnames]
+        deps = [x.formula for x in (mod.assumed_invariants+conjs) if x.label is not None and x.name in depnames]
         if deps:
             c = c.clone([c.label,lg.Implies(lg.And(*deps),c.formula)])
         # `using` clause: restrict the inductive hypotheses. When the pre-state
