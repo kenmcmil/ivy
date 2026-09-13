@@ -1,0 +1,16 @@
+# Dual-issue Step 4b demo: a memory op in LANE 1 (odd) paired with an ALU in
+# lane 0 (even), with the lane-1 memory ADDRESS forwarded from lane 0's result.
+# Two aligned pairs, run in a loop (fetched warm -> issue_two):
+#   {2,3}: lane 0 = ADD r3, r1, r0  (r3 = 64) ; lane 1 = ST [r3], r2   (mem[64] = 9)
+#   {4,5}: lane 0 = ADD r4, r1, r0  (r4 = 64) ; lane 1 = LD r5, [r4]   (r5 = mem[64])
+# In each pair lane 1's address register is lane 0's freshly-computed result, so
+# the EX bypass forwards it into m_addr1 -- the interesting 4b capability. Both
+# pairs issue together (pc jumps 2 -> 4 -> 6) and r5 loads back the stored 9.
+6440   # 0: LI   r1, 64          (base data address)
+6809   # 1: LI   r2, 9           (value to store)
+2c80   # 2: ADD  r3, r1, r0      (lane 0 ALU; r3 = 64)
+a1a0   # 3: ST   [r3], r2        (lane 1 memory; addr forwarded; mem[64] = 9)
+3080   # 4: ADD  r4, r1, r0      (lane 0 ALU; r4 = 64)
+9600   # 5: LD   r5, [r4]        (lane 1 memory; addr forwarded; r5 = mem[64] = 9)
+c002   # 6: BEQZ r0, 2           (r0 = 0 -> taken; loop back to the pairs)
+0000   # 7: NOP

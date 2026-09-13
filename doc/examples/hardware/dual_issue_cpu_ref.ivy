@@ -605,21 +605,26 @@ object cpu = {
         invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
 
         # ---- lane-1 (dual-issue) trace match, at the lane-1 tags ----------
-        # Lane 1 is the younger instruction of an aligned bundle; it is always
-        # "simple" (opcode 0/1/2/3: NOP/ADD/SUB/LI) -- never memory or branch, so
-        # there are no lane-1 m_addr/m_store/branch fields to relate.
-        # Lane 0 of a dual bundle is any NON-BRANCH op (Step 4a: issue_two allows a
-        # memory op in lane 0), so a dual bundle never carries a branch in lane 0
-        # (branches in a bundle are Step 5). The lane-0 memory op, if any, is
-        # tracked by the ordinary single-lane MEM/WB invariants (opcode-guarded).
-        invariant d_valid1 -> (d_opcode ~= 6)
-        invariant e_valid1 -> (e_opcode ~= 6)
-        invariant m_valid1 -> (m_opcode ~= 6)
-        invariant w_valid1 -> (w_opcode ~= 6)
-        invariant d_valid1 -> (d_opcode1 = 0 | d_opcode1 = 1 | d_opcode1 = 2 | d_opcode1 = 3)
-        invariant e_valid1 -> (e_opcode1 = 0 | e_opcode1 = 1 | e_opcode1 = 2 | e_opcode1 = 3)
-        invariant m_valid1 -> (m_opcode1 = 0 | m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3)
-        invariant w_valid1 -> (w_opcode1 = 0 | w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3)
+        # In a dual bundle NEITHER lane is a branch (opcode 6, Step 5) or a FLUSH
+        # (opcode 7 -- issue_two splits both), and AT MOST ONE lane is a memory op
+        # (LD/ST, opcode 4/5): the single idc port serves it, in lane 0 (Step 4a) or
+        # lane 1 (Step 4b). So each lane's opcode is in {0,1,2,3,4,5} with not-both-
+        # memory. A lane's memory op, when present, is tracked by that lane's MEM/WB
+        # invariants (opcode-guarded); its ALU result by the res/val invariants.
+        invariant d_valid1 -> (d_opcode ~= 6 & d_opcode ~= 7)
+        invariant e_valid1 -> (e_opcode ~= 6 & e_opcode ~= 7)
+        invariant m_valid1 -> (m_opcode ~= 6 & m_opcode ~= 7)
+        invariant w_valid1 -> (w_opcode ~= 6 & w_opcode ~= 7)
+        invariant d_valid1 -> (d_opcode1 ~= 6 & d_opcode1 ~= 7)
+        invariant e_valid1 -> (e_opcode1 ~= 6 & e_opcode1 ~= 7)
+        invariant m_valid1 -> (m_opcode1 ~= 6 & m_opcode1 ~= 7)
+        invariant w_valid1 -> (w_opcode1 ~= 6 & w_opcode1 ~= 7)
+        # At most one memory op (LD/ST) per dual bundle -- so the idc port has a
+        # single request (one_data_op) and, when lane 1 is the memory op, lane 0 is
+        # not a store, hence memory is unchanged between the two lane tags.
+        invariant [d_one_mem] d_valid1 -> ~((d_opcode = 4 | d_opcode = 5) & (d_opcode1 = 4 | d_opcode1 = 5))
+        invariant [e_one_mem] e_valid1 -> ~((e_opcode = 4 | e_opcode = 5) & (e_opcode1 = 4 | e_opcode1 = 5))
+        invariant [m_one_mem] m_valid1 -> ~((m_opcode = 4 | m_opcode = 5) & (m_opcode1 = 4 | m_opcode1 = 5))
 
         invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d_ir1 = trace.st(d1_tag).fetched
         invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d_pc1 = trace.st(d1_tag).pc
@@ -662,6 +667,18 @@ object cpu = {
         invariant (w_valid1 & ~trace.st(trace.now).error) -> w_ir1 = trace.st(w1_tag).fetched
         invariant (m_valid1 & (m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3) & ~trace.st(trace.now).error) -> m_res1 = trace.st(m1_tag).res
         invariant (w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3) & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).res
+
+        # ---- lane-1 MEM latch memory values (Step 4b) --------------------------
+        # A lane-1 memory op takes its address/store-data from the forwarded operands
+        # (m_addr1 := e_a1_fwd<<7:0>, m_store1 := e_b1_fwd), so they track the trace
+        # at the lane-1 tag, exactly like lane 0's m_addr/m_store (via ea1_trk/eb1_trk).
+        invariant (m_valid1 & ~trace.st(trace.now).error) -> m_addr1 = trace.st(m1_tag).mem_addr
+        invariant (m_valid1 & ~trace.st(trace.now).error) -> m_store1 = trace.st(m1_tag).b_val
+        # A lane-1 LOAD writes back the reference memory value at its address. The
+        # port returns idc.mem(m_addr1) = st(mcommit).mem(m_addr1); because at most
+        # one memory op is in the bundle (m_one_mem), lane 0 (tag mcommit) is not a
+        # store, so st(m1_tag).mem = st(mcommit).mem and this equals the lane-1 value.
+        invariant (w_valid1 & w_opcode1 = 4 & ~trace.st(trace.now).error) -> w_val1 = trace.st(w1_tag).mem(trace.st(w1_tag).mem_addr)
 
         derived invariant [fetch0_coh]
           fetch_active & idc.fetch_valid0 & ~trace.st(trace.now).error
@@ -911,16 +928,23 @@ object cpu = {
 
     # ---- data-hazard stall (as in 5stage_cpu_ref) ----
 
-    # Register-file writer slots (both lanes of MEM and WB). Lane 1 is always
-    # simple (opcode 1/2/3 write; 0/NOP does not), never a load.
+    # Register-file writer slots (both lanes of MEM and WB). Either lane can be a
+    # register writer: ADD/SUB/LI (1/2/3) or a LOAD (4). (Step 4b lets lane 1 be a
+    # load, so its writer slots include opcode 4, like lane 0.)
     wire m0_wr : bool
     definition m0_wr = m_valid & (m_opcode = 1 | m_opcode = 2 | m_opcode = 3 | m_opcode = 4)
     wire m1_wr : bool
-    definition m1_wr = m_valid1 & (m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3)
+    definition m1_wr = m_valid1 & (m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3 | m_opcode1 = 4)
     wire w0_wr : bool
     definition w0_wr = w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4)
     wire w1_wr : bool
-    definition w1_wr = w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3)
+    definition w1_wr = w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3 | w_opcode1 = 4)
+
+    # Which MEM lane holds the bundle's (single) memory op. mem_l1 selects lane 1;
+    # otherwise the port is driven by lane 0. At most one memory op per bundle, so
+    # these are exclusive when both lanes are valid. (Step 4b: lane 1 can do memory.)
+    wire mem_l1 : bool
+    definition mem_l1 = m_valid1 & (m_opcode1 = 4 | m_opcode1 = 5)
 
     # A source register has a pending in-flight writer (RAW; no forwarding, so
     # the reader must stall until the writer retires). Intra-bundle dependences
@@ -1059,19 +1083,19 @@ object cpu = {
     wire dmem_stall : bool
     definition dmem_stall = idc.data_stall
 
-    # ---- dual-issue decision (aligned pair; lane 0 may do memory) ----
+    # ---- dual-issue decision (aligned pair; one memory op, in either lane) ----
     # Decode both fetched words. Issue two when the pair is aligned and safe:
-    # idc.fetch_valid1 (which already implies an even PC), lane 0 is any NON-BRANCH
-    # op (simple ALU or LD/ST/FLUSH -- Step 4a: one memory op per bundle, in the
-    # older lane), and lane 1 is "simple" (NOP/ADD/SUB/LI: no memory, no branch).
-    # A RAW dependence of lane 1 on lane 0's ALU result is allowed (Step 3c): the
-    # EX bypass mux (e_a1_fwd/e_b1_fwd) forwards it, and a WAW pair is handled by WB
-    # writing lane 1 second. The one exception is an UNBYPASSABLE LOAD-USE: a lane-0
-    # load's result is not available in EX, so if lane 1 reads that destination we
-    # must SPLIT (f_ld_use). Branches in a bundle, and a memory op in lane 1, are
-    # later steps (5 and 4b) -- until then they split. The split is just "fetch as
-    # two singles", so no recirculation is needed. (Placed here so its dependencies
-    # -- dmem_stall/ifetch_stall/... -- are all in scope.)
+    # idc.fetch_valid1 (which already implies an even PC); neither lane is a BRANCH
+    # (Step 5) or a FLUSH (a FLUSH invalidates the lane-1 fetch until it completes,
+    # so it must split); and AT MOST ONE lane is a memory op (LD/ST) -- the single
+    # idc data port serves it, in lane 0 (Step 4a) or lane 1 (Step 4b). A RAW
+    # dependence of lane 1 on lane 0's ALU result is allowed (Step 3c): the EX bypass
+    # mux (e_a1_fwd/e_b1_fwd) forwards it -- including into a lane-1 memory address or
+    # store-data operand -- and a WAW pair is handled by WB writing lane 1 second. The
+    # one exception is an UNBYPASSABLE LOAD-USE: a lane-0 load's result is not
+    # available in EX, so if lane 1 reads that destination we SPLIT (f_ld_use). The
+    # split is just "fetch as two singles", so no recirculation is needed. (Placed
+    # here so its dependencies -- dmem_stall/ifetch_stall/... -- are all in scope.)
     wire f_op0 : opc
     definition f_op0 = fetched<<15:13>>
     wire f_op1 : opc
@@ -1084,14 +1108,21 @@ object cpu = {
     definition f_rb1 = fetched1<<6:4>>
     wire f_nonbranch0 : bool          # lane 0 is not a conditional branch (BEQZ)
     definition f_nonbranch0 = (f_op0 ~= 6)
-    wire f_simple1 : bool             # lane 1 is a simple ALU op (no memory/branch)
-    definition f_simple1 = (f_op1 = 0 | f_op1 = 1 | f_op1 = 2 | f_op1 = 3)
+    wire f_nonbranch1 : bool          # lane 1 is not a conditional branch (BEQZ)
+    definition f_nonbranch1 = (f_op1 ~= 6)
+    wire f_mem0 : bool                # lane 0 is a load or store
+    definition f_mem0 = (f_op0 = 4 | f_op0 = 5)
+    wire f_mem1 : bool                # lane 1 is a load or store
+    definition f_mem1 = (f_op1 = 4 | f_op1 = 5)
     wire f_ld_use : bool              # lane 1 reads lane 0's load result (unbypassable)
     definition f_ld_use = (f_op0 = 4) & (f_rd0 = f_ra1 | f_rd0 = f_rb1)
     wire issue_two : bool
     definition issue_two = ~dmem_stall & ~ex_stall & ~mispredict & ~flush_in_pipe
                          & ~ifetch_stall & idc.fetch_valid1
-                         & f_nonbranch0 & f_simple1 & ~f_ld_use & f_op0 ~= 7
+                         & f_nonbranch0 & f_nonbranch1        # neither lane a branch
+                         & (f_op0 ~= 7) & (f_op1 ~= 7)        # neither lane a FLUSH
+                         & ~(f_mem0 & f_mem1)                 # at most one memory op
+                         & ~f_ld_use                          # unbypassable lane-0 load-use
 
     # ---- reset ----
 
@@ -1119,7 +1150,7 @@ object cpu = {
         if w_valid & (w_opcode = 1 | w_opcode = 2 | w_opcode = 3 | w_opcode = 4) {
             rf(w_rd) := w_val
         };
-        if w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3) {
+        if w_valid1 & (w_opcode1 = 1 | w_opcode1 = 2 | w_opcode1 = 3 | w_opcode1 = 4) {
             rf(w_rd1) := w_val1
         };
 
@@ -1130,10 +1161,13 @@ object cpu = {
         w_ir := m_ir;
         w_valid := m_valid & ~dmem_stall;
         w_val := (m_res if m_opcode ~= 4 else idc.read_data);
-        # lane 1: simple ALU, never a load, so w_val1 is just the ALU result.
+        # lane 1: an ALU result, or (Step 4b) a load result from idc.read_data when
+        # lane 1 is the bundle's memory op. The single idc port is driven by whichever
+        # lane holds the memory op (at most one per bundle), so read_data is lane 1's
+        # loaded word exactly when lane 1 is the load.
         w_ir1 := m_ir1;
         w_valid1 := m_valid1 & ~dmem_stall;
-        w_val1 := m_res1;
+        w_val1 := (m_res1 if m_opcode1 ~= 4 else idc.read_data);
 
         # EX: held while MEM stalls for a D-fill; bubbled on a data hazard;
         # otherwise executes and moves to MEM.
@@ -1147,12 +1181,14 @@ object cpu = {
             m_res := e_res;
             m_addr := e_a<<7:0>>;
             m_store := e_b;
-            # lane 1: simple ALU only (no memory), so m_addr1/m_store1 are unused.
+            # lane 1: an ALU result, and (Step 4b) a memory address/store data taken
+            # THROUGH the bypass mux (e_a1_fwd/e_b1_fwd), so a lane-1 LD/ST whose
+            # address or data comes from lane 0's ALU result gets the forwarded value.
             m_ir1 := e_ir1;
             m_valid1 := e_valid1;
             m_res1 := e_res1;
-            m_addr1 := 0;
-            m_store1 := 0
+            m_addr1 := e_a1_fwd<<7:0>>;
+            m_store1 := e_b1_fwd
         };
 
         # ID -> EX and IF -> ID, unless EX or MEM is stalled (then all hold).
@@ -1209,14 +1245,16 @@ object cpu = {
     # lanes (fetch_data0/valid0 and, on an even PC, fetch_data1/valid1).
     definition idc.fetch_req  = fetch_active
     definition idc.fetch_addr = pc
-    # Data port: the MEM lane-0 instruction's single request (LD / ST / FLUSH). At
-    # most one is true (a MEM instruction has one opcode; lane 1 never does memory),
-    # which discharges one_data_op.
-    definition idc.read_req   = m_valid & (m_opcode = 4)
-    definition idc.write_req  = m_valid & (m_opcode = 5)
-    definition idc.flush_req  = m_valid & (m_opcode = 7)
-    definition idc.data_addr  = m_addr
-    definition idc.write_data = m_store
+    # Data port: the MEM bundle's single memory request, from whichever lane holds
+    # it (Step 4b). A bundle has at most one memory op (issue_two splits both-memory
+    # and every FLUSH), so at most one of read/write/flush is true across the two
+    # lanes -- which discharges one_data_op -- and the address/data mux selects the
+    # memory lane. mem_l1 is true exactly when lane 1 is the memory op.
+    definition idc.read_req   = (m_valid & m_opcode = 4) | (m_valid1 & m_opcode1 = 4)
+    definition idc.write_req  = (m_valid & m_opcode = 5) | (m_valid1 & m_opcode1 = 5)
+    definition idc.flush_req  = (m_valid & m_opcode = 7) | (m_valid1 & m_opcode1 = 7)
+    definition idc.data_addr  = (m_addr1  if mem_l1 else m_addr)
+    definition idc.write_data = (m_store1 if mem_l1 else m_store)
     }
 }
 

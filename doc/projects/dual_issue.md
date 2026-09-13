@@ -339,6 +339,25 @@ the Step-3 bypass for ALU producers. Staged like Step 3:
         forwarded via e_a1_fwd, so {ADD, LD [r]} issues together.
       - Verify ivy_check + a sim showing an {ALU, LD/ST} bundle.
 
+      4b  DONE (verified first try, ivy_check OK ~35s, no CTIs). Notes vs the plan:
+          - flush_in_pipe did NOT need lane-1 terms: issue_two splits every FLUSH
+            (f_op0 ~= 7 & f_op1 ~= 7), so a FLUSH only ever rides a single-issue
+            lane-0 bundle, already covered.
+          - The port mux is on mem_l1 = m_valid1 & m_opcode1 in {4,5} (FLUSH never
+            reaches lane 1). read/write/flush_req OR the two lanes' terms.
+          - Key supporting invariants: relax BOTH lanes' opcode-class invariants to
+            ~=6 & ~=7 (non-branch, non-flush), and add d/e/m_one_mem
+            (~(mem(op) & mem(op1))) so (a) the idc port has a single request
+            [one_data_op] and (b) when lane 1 is the memory op, lane 0 is not a
+            store, so st(m1_tag).mem = st(mcommit).mem and the lane-1 LD reads the
+            right value. Lane-1 MEM tracking (m_addr1/m_store1 = st(m1_tag).*) and
+            the lane-1 LD w_val1 mirror lane 0 and follow from ea1_trk/eb1_trk.
+          - m1_wr/w1_wr gain opcode 4 (a lane-1 load is a register writer, for
+            inter-bundle hazard detection).
+          Sim: dual_mem_l1_prog.hex loops {2,3}=ADD;ST and {4,5}=ADD;LD with the
+          lane-1 address forwarded from lane 0; warm, pc jumps 2 -> 4 -> 6 and the
+          lane-1 LD returns the value the lane-1 ST wrote. Step 4 COMPLETE.
+
   Risks: load-use (4a) is the only genuinely new hazard, handled purely by the
   issue-time split. Inter-bundle load-use is already covered by m0_wr/w0_wr (4b
   adds op 4 to m1_wr/w1_wr). Adding a memory opcode to a lane widens the MEM/WB

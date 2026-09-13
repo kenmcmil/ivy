@@ -116,6 +116,16 @@ tests = [
                  + ' && ./sim_cpu.sh {name} dual_mem_prog.hex 40 > {name}_mem.simout 2>&1'
                  + ' && grep -q "2 -> 4 -> 6 -> 2 -> 4 -> 6" {name}_mem.simout',
      'timeout': 600, 'group': 'rtl'},
+    # Step 4b: a memory op in LANE 1 paired with an ALU in lane 0, with the lane-1
+    # memory ADDRESS forwarded from lane 0's ALU result. dual_mem_l1_prog loops
+    # {2,3} = ADD r3,r1,r0 ; ST [r3],r2 and {4,5} = ADD r4,r1,r0 ; LD r5,[r4].
+    # Both pairs dual-issue over the single idc port (mux to lane 1); once warm the
+    # pc jumps 2 -> 4 -> 6, and the lane-1 LD returns the value the lane-1 ST wrote.
+    {'type': 'to_rtl', 'name': 'dual_issue_cpu_ref',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu.sh {name} dual_mem_l1_prog.hex 40 > {name}_meml1.simout 2>&1'
+                 + ' && grep -q "2 -> 4 -> 6 -> 2 -> 4 -> 6" {name}_meml1.simout',
+     'timeout': 600, 'group': 'rtl'},
 
     # The stage-decomposition CPU exercises cross-isolate `register` reads
     # (pipe registers consumed by the next stage / decoded in the parent) and a
