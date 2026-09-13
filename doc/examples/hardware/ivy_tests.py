@@ -21,6 +21,13 @@ tests = [
     # the reference at the MEM tag by two ghost-vs-trace invariants.
     {'type': 'check', 'name': 'idcache_bench', 'expect': 'OK', 'timeout': 300},
     {'type': 'check', 'name': '5stage_gen_cache_cpu_ref', 'expect': 'OK', 'timeout': 600},
+    # The dual-issue (2-wide, in-order superscalar) 5-stage pipeline, with its
+    # memory subsystem provided by the same idcache module -- using BOTH fetch
+    # lanes (idc.fetch_data0/1). The lane-1 datapath, per-lane tag-run chain,
+    # speculation, and intra-bundle bypass are verified against the same ISA
+    # reference; idc's guarantees supply dual-lane fetch + LD coherence (see
+    # doc/projects/dual_issue.md, generic_idcache.md).
+    {'type': 'check', 'name': 'dual_issue_cpu_ref', 'expect': 'OK', 'timeout': 600},
     # The stage-DECOMPOSITION 5-stage pipeline: each stage and each inter-stage
     # interface is its own isolate, with `register` pipe outputs and ghost
     # interface isolates (see doc/projects/decomposition.md).
