@@ -2,12 +2,14 @@
 # Generic simulator for the reference-tagging CPU designs.
 #
 # Works with any design in this directory that (a) implements the shared ISA
-# (see the encoding table at the top of the .ivy files) and (b) uses a single
-# unified instruction/data memory named `cpu.mem`.  That covers pipe_cpu,
-# 5stage_cpu_ref, 5stage_cache_cpu_ref, 5stage_bp_cpu_ref, dual_issue_cpu_ref,
-# ... -- the program is NOT baked into the Ivy source (main memory is left
-# uninitialized in the emitted RTL, so the proof holds for every program); it
-# is injected here at the RTL boundary as a $meminit for \mem.
+# (see the encoding table at the top of the .ivy files) and (b) has a single
+# unified instruction/data main memory.  That covers pipe_cpu, 5stage_cpu_ref,
+# 5stage_cache_cpu_ref, 5stage_bp_cpu_ref, dual_issue_cpu_ref, ... -- the
+# program is NOT baked into the Ivy source (main memory is left uninitialized in
+# the emitted RTL, so the proof holds for every program); it is injected here at
+# the RTL boundary as a $meminit.  Inline-memory designs name the array \mem;
+# designs whose memory subsystem is the reusable idcache module keep it in
+# \real_mem (inside idc.main_mem).  The array is auto-detected below.
 #
 #   ./sim_cpu.sh <design[.ivy]> [prog.hex] [cycles] [extra_signals]
 #
@@ -32,9 +34,16 @@ EXTRA="${4:-}"
 [ -f "$BASE.ivy" ] || { echo "no such design: $BASE.ivy" >&2; exit 1; }
 [ -f "$PROG" ]     || { echo "no such program: $PROG"    >&2; exit 1; }
 
-# 1. Emit RTLIL (ivy_to_rtl writes <BASE>.il).  2. Inject the program into \mem.
+# 1. Emit RTLIL (ivy_to_rtl writes <BASE>.il).  2. Inject the program into the
+# unified main memory (\mem for inline-memory designs, else \real_mem for the
+# idcache-based ones).
 ivy_to_rtl "$BASE.ivy" >/dev/null
-python3 load_program.py "$BASE.il" "$PROG" "${BASE}_prog.il" mem
+if grep -qE '^[[:space:]]*memory width [0-9]+ size [0-9]+ \\mem[[:space:]]*$' "$BASE.il"; then
+    MEM=mem
+else
+    MEM=real_mem
+fi
+python3 load_program.py "$BASE.il" "$PROG" "${BASE}_prog.il" "$MEM"
 
 # 3. Simulate.  The exported action `posedge` is the clock; `rst` is the reset.
 yosys -q -p "read_rtlil ${BASE}_prog.il; hierarchy -top cpu; proc; memory_collect; \

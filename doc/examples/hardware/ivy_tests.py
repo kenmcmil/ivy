@@ -90,6 +90,21 @@ tests = [
      'validate': _yosys_wf + ' && yosys -q cpu_equiv.ys',
      'timeout': 600, 'group': 'rtl'},
 
+    # The dual-issue CPU on the GENERATED RTL (dual_issue.md Step 3d). sim_cpu.sh
+    # injects dual_dep_prog.hex into the idcache main memory (\real_mem) and runs
+    # yosys sim. The program loops over an aligned, intra-bundle RAW-DEPENDENT
+    # pair {2,3} (ADD r3,r1,r1 ; ADD r4,r3,r1 -- lane 1 reads lane 0's dest); with
+    # f_indep dropped (Step 3c) the pair issues together and the EX bypass forwards
+    # r3. The proof already shows correctness; this sim checks issue_two actually
+    # FIRES on the dependent pair: once the line is warm the pc jumps 2 -> 4 every
+    # iteration (skipping 3), the dual-issue signature (a single-issue machine
+    # would step 2 -> 3 -> 4). Large design -> 600s timeout.
+    {'type': 'to_rtl', 'name': 'dual_issue_cpu_ref',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu.sh {name} dual_dep_prog.hex 40 > {name}.simout 2>&1'
+                 + ' && grep -q "2 -> 4 -> 2 -> 4 -> 2 -> 4" {name}.simout',
+     'timeout': 600, 'group': 'rtl'},
+
     # The stage-decomposition CPU exercises cross-isolate `register` reads
     # (pipe registers consumed by the next stage / decoded in the parent) and a
     # separate imem/mem, so validation goes beyond a yosys read: it simulates

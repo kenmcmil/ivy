@@ -1,0 +1,16 @@
+# Dual-issue Step 3c demo: a genuine intra-bundle RAW-dependent aligned pair,
+# executed in a LOOP so it is fetched warm (both words of the I-cache line
+# already present, hence idc.fetch_valid1 and issue_two).
+#
+# The aligned even/odd pair {2,3} is the dependent bundle:
+#   lane 0  addr 2:  ADD r3, r1, r1      (writes r3;  r3 = 5 + 5 = 10)
+#   lane 1  addr 3:  ADD r4, r3, r1      (reads r3 = lane 0's dest -> RAW!)
+# With f_indep dropped (Step 3c) this pair issues TOGETHER and the EX bypass
+# forwards lane 0's freshly-computed r3 (10) into lane 1, so r4 = 10 + 5 = 15.
+# Both retire in the same cycle (dual WB: r3=10, r4=15) and the PC jumps 2 -> 4.
+6405   # 0: LI   r1, 5          (setup; pair {0,1})
+6800   # 1: LI   r2, 0
+2c90   # 2: ADD  r3, r1, r1     (lane 0 of the dependent pair; r3 = 10)
+3190   # 3: ADD  r4, r3, r1     (lane 1; RAW on r3 -> forwarded, r4 = 15)
+c002   # 4: BEQZ r0, 2          (r0 = 0 -> taken; loop back to the pair)
+0000   # 5: NOP
