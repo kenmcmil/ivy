@@ -490,8 +490,8 @@ object cpu = {
         # The internal cache coherence (D-cache/I-cache present/dirty, main memory)
         # is now idc's own concern, proved against its abstract mem/ddirty. idc's
         # guarantees (fetch_output0/1, data_output) then supply fetch/LD coherence.
-        invariant ~trace.st(trace.now).error -> idc.mem(A) = trace.st(mcommit).mem(A)
-        invariant ~trace.st(trace.now).error -> idc.ddirty(A) = trace.st(mcommit).ddirty(A)
+        invariant [idc_mem_rel] ~trace.st(trace.now).error -> idc.mem(A) = trace.st(mcommit).mem(A)
+        invariant [idc_ddirty_rel] ~trace.st(trace.now).error -> idc.ddirty(A) = trace.st(mcommit).ddirty(A)
 
         # The EX/ID and ID/IF boundary counts depend on the speculation logic
         # (dcommit/now advance only for correct-path, non-shadowed fetches), so
@@ -605,16 +605,17 @@ object cpu = {
         invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
 
         # ---- lane-1 (dual-issue) trace match, at the lane-1 tags ----------
-        # Lane 1 is the younger instruction of an aligned bundle; it shares the
-        # bundle's shadow bit (d_shadow) and, in the easy case, is always
+        # Lane 1 is the younger instruction of an aligned bundle; it is always
         # "simple" (opcode 0/1/2/3: NOP/ADD/SUB/LI) -- never memory or branch, so
         # there are no lane-1 m_addr/m_store/branch fields to relate.
-        # lane 0 of a dual bundle is also simple (issue_two requires f_simple0),
-        # so a dual bundle never carries a branch/memory op in lane 0.
-        invariant d_valid1 -> (d_opcode = 0 | d_opcode = 1 | d_opcode = 2 | d_opcode = 3)
-        invariant e_valid1 -> (e_opcode = 0 | e_opcode = 1 | e_opcode = 2 | e_opcode = 3)
-        invariant m_valid1 -> (m_opcode = 0 | m_opcode = 1 | m_opcode = 2 | m_opcode = 3)
-        invariant w_valid1 -> (w_opcode = 0 | w_opcode = 1 | w_opcode = 2 | w_opcode = 3)
+        # Lane 0 of a dual bundle is any NON-BRANCH op (Step 4a: issue_two allows a
+        # memory op in lane 0), so a dual bundle never carries a branch in lane 0
+        # (branches in a bundle are Step 5). The lane-0 memory op, if any, is
+        # tracked by the ordinary single-lane MEM/WB invariants (opcode-guarded).
+        invariant d_valid1 -> (d_opcode ~= 6)
+        invariant e_valid1 -> (e_opcode ~= 6)
+        invariant m_valid1 -> (m_opcode ~= 6)
+        invariant w_valid1 -> (w_opcode ~= 6)
         invariant d_valid1 -> (d_opcode1 = 0 | d_opcode1 = 1 | d_opcode1 = 2 | d_opcode1 = 3)
         invariant e_valid1 -> (e_opcode1 = 0 | e_opcode1 = 1 | e_opcode1 = 2 | e_opcode1 = 3)
         invariant m_valid1 -> (m_opcode1 = 0 | m_opcode1 = 1 | m_opcode1 = 2 | m_opcode1 = 3)
@@ -646,6 +647,16 @@ object cpu = {
             with eres_trk
         derived invariant [eb1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1_fwd = trace.st(e1_tag).b_val
         with eres_trk
+
+        # Load-use exclusion carried into the pipe (Step 4a): issue_two splits a
+        # bundle whose lane 0 is a LOAD (opcode 4) writing a lane-1 source register
+        # (f_ld_use), because a load result is not available in EX to forward. The
+        # bypass mux is inactive for a load (e_lane0_wr is false), so ea1_trk/eb1_trk
+        # fall to the register-file read -- correct only if lane 0 does not write
+        # that source. These invariants propagate the issue-time split to ID/EX so
+        # that holds. (Non-load lane-0 writers are ALU ops, handled by the forward.)
+        invariant [d_ld_use] d_valid1 -> ~(d_opcode = 4 & (d_rd = d_ra1 | d_rd = d_rb1))
+        invariant [e_ld_use] e_valid1 -> ~(e_opcode = 4 & (e_rd = e_ra1 | e_rd = e_rb1))
 
         invariant (m_valid1 & ~trace.st(trace.now).error) -> m_ir1 = trace.st(m1_tag).fetched
         invariant (w_valid1 & ~trace.st(trace.now).error) -> w_ir1 = trace.st(w1_tag).fetched
@@ -1048,28 +1059,39 @@ object cpu = {
     wire dmem_stall : bool
     definition dmem_stall = idc.data_stall
 
-    # ---- dual-issue decision (aligned even pair, both simple) ----
+    # ---- dual-issue decision (aligned pair; lane 0 may do memory) ----
     # Decode both fetched words. Issue two when the pair is aligned and safe:
-    # idc.fetch_valid1 (which already implies an even PC) and both instructions are
-    # "simple" (NOP/ADD/SUB/LI). A RAW dependence of lane 1 on lane 0 is now
-    # allowed (Step 3c): the EX bypass mux (e_a1_fwd/e_b1_fwd) forwards lane 0's
-    # freshly-computed result to lane 1, and a WAW pair is handled by WB writing
-    # lane 1 second. Otherwise fetch a single instruction and advance the PC by one
-    # -- the split is just "fetch as two singles", so no recirculation is needed.
-    # (Placed here so its dependencies -- dmem_stall/ifetch_stall/... -- are all in
-    # scope.)
+    # idc.fetch_valid1 (which already implies an even PC), lane 0 is any NON-BRANCH
+    # op (simple ALU or LD/ST/FLUSH -- Step 4a: one memory op per bundle, in the
+    # older lane), and lane 1 is "simple" (NOP/ADD/SUB/LI: no memory, no branch).
+    # A RAW dependence of lane 1 on lane 0's ALU result is allowed (Step 3c): the
+    # EX bypass mux (e_a1_fwd/e_b1_fwd) forwards it, and a WAW pair is handled by WB
+    # writing lane 1 second. The one exception is an UNBYPASSABLE LOAD-USE: a lane-0
+    # load's result is not available in EX, so if lane 1 reads that destination we
+    # must SPLIT (f_ld_use). Branches in a bundle, and a memory op in lane 1, are
+    # later steps (5 and 4b) -- until then they split. The split is just "fetch as
+    # two singles", so no recirculation is needed. (Placed here so its dependencies
+    # -- dmem_stall/ifetch_stall/... -- are all in scope.)
     wire f_op0 : opc
     definition f_op0 = fetched<<15:13>>
     wire f_op1 : opc
     definition f_op1 = fetched1<<15:13>>
-    wire f_simple0 : bool
-    definition f_simple0 = (f_op0 = 0 | f_op0 = 1 | f_op0 = 2 | f_op0 = 3)
-    wire f_simple1 : bool
+    wire f_rd0 : reg                  # lane 0's destination register
+    definition f_rd0 = fetched<<12:10>>
+    wire f_ra1 : reg                  # lane 1's source registers
+    definition f_ra1 = fetched1<<9:7>>
+    wire f_rb1 : reg
+    definition f_rb1 = fetched1<<6:4>>
+    wire f_nonbranch0 : bool          # lane 0 is not a conditional branch (BEQZ)
+    definition f_nonbranch0 = (f_op0 ~= 6)
+    wire f_simple1 : bool             # lane 1 is a simple ALU op (no memory/branch)
     definition f_simple1 = (f_op1 = 0 | f_op1 = 1 | f_op1 = 2 | f_op1 = 3)
+    wire f_ld_use : bool              # lane 1 reads lane 0's load result (unbypassable)
+    definition f_ld_use = (f_op0 = 4) & (f_rd0 = f_ra1 | f_rd0 = f_rb1)
     wire issue_two : bool
     definition issue_two = ~dmem_stall & ~ex_stall & ~mispredict & ~flush_in_pipe
                          & ~ifetch_stall & idc.fetch_valid1
-                         & f_simple0 & f_simple1
+                         & f_nonbranch0 & f_simple1 & ~f_ld_use & f_op0 ~= 7
 
     # ---- reset ----
 

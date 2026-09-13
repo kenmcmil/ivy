@@ -1,0 +1,16 @@
+# Dual-issue Step 4a demo: a memory op in LANE 0 paired with an ALU in lane 1.
+# Two aligned pairs, run in a loop so they are fetched warm (issue_two):
+#   {2,3}: lane 0 = ST [r1], r2   (memory)   ; lane 1 = ADD r3, r2, r2   (ALU)
+#   {4,5}: lane 0 = LD r4, [r1]   (memory)   ; lane 1 = ADD r5, r3, r3   (ALU)
+# Lane 1 is a simple ALU in both (no memory, no branch), and neither lane 1 reads
+# lane 0's load destination (no unbypassable load-use), so both pairs issue
+# together: the pc jumps 2 -> 4 -> 6 every iteration. r4 loads back the stored 7,
+# proving a store then a load through the cache inside dual bundles.
+6440   # 0: LI   r1, 64         (base data address)
+6807   # 1: LI   r2, 7          (value to store)
+a0a0   # 2: ST   [r1], r2       (lane 0 memory; mem[64] = 7)
+2d20   # 3: ADD  r3, r2, r2     (lane 1 ALU; r3 = 14)
+9080   # 4: LD   r4, [r1]       (lane 0 memory; r4 = mem[64] = 7)
+35b0   # 5: ADD  r5, r3, r3     (lane 1 ALU; r5 = 28)
+c002   # 6: BEQZ r0, 2          (r0 = 0 -> taken; loop back to the pairs)
+0000   # 7: NOP

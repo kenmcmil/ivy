@@ -104,6 +104,18 @@ tests = [
                  + ' && ./sim_cpu.sh {name} dual_dep_prog.hex 40 > {name}.simout 2>&1'
                  + ' && grep -q "2 -> 4 -> 2 -> 4 -> 2 -> 4" {name}.simout',
      'timeout': 600, 'group': 'rtl'},
+    # Step 4a: a memory op in LANE 0 paired with an ALU in lane 1. dual_mem_prog
+    # loops over two aligned pairs -- {2,3} = ST [r1],r2 ; ADD r3,r2,r2 and
+    # {4,5} = LD r4,[r1] ; ADD r5,r3,r3 -- each a lane-0 memory op plus a lane-1
+    # ALU (lane 1 does not read the load's dest, so no unbypassable load-use). Once
+    # warm both pairs issue together: the pc jumps 2 -> 4 -> 6 every iteration
+    # (a single-issue machine would step 2 -> 3 -> 4 -> 5 -> 6), and the LD returns
+    # the just-stored value through the D-cache.
+    {'type': 'to_rtl', 'name': 'dual_issue_cpu_ref',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu.sh {name} dual_mem_prog.hex 40 > {name}_mem.simout 2>&1'
+                 + ' && grep -q "2 -> 4 -> 6 -> 2 -> 4 -> 6" {name}_mem.simout',
+     'timeout': 600, 'group': 'rtl'},
 
     # The stage-decomposition CPU exercises cross-isolate `register` reads
     # (pipe registers consumed by the next stage / decoded in the parent) and a

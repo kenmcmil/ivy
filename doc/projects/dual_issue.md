@@ -250,20 +250,101 @@ tracking discipline and zero-delay `with` are the mitigation); WAW correctness
 rests on the lane-1-second write ordering in WB (already in place, but re-confirm
 `rf_track` preserves with two same-cycle writes).
 
-Status (2026-08-02): parked mid-Step-3, to return to later.
+Status (2026-09-12): Step 3 COMPLETE. The memory subsystem was also replaced by
+the reusable idcache module (both fetch lanes) along the way.
 
-  3a  DONE and committed (77ea84c): the bypass datapath (e_res wire,
-      e_a1_fwd/e_b1_fwd muxes, m_res := e_res), kept dormant behind f_indep /
-      e_indep. isolate=this verified OK.
-  3b  IN PROGRESS, NOT fully verified. Added eres_trk (e_res = st(ecommit).res)
-      and re-pointed ea1_trk/eb1_trk to the forwarded operands e_a1_fwd/e_b1_fwd
-      (bypass still dormant). eres_trk initially very slow with `with rf_track`;
-      switched its zero-delay dependency to `with ea_trk, eb_trk` (e_res is
-      combinational in e_a/e_b) and it PASSES individually, but a clean full
-      isolate=this run has not yet confirmed the whole set is green (earlier
-      timings were contaminated by competing ivy_check processes). Next: get a
-      clean isolate=this OK, commit 3b, then do 3c (drop f_indep + d_indep/e_indep
-      to make the bypass live) and 3d (full check + sim on a real RAW pair).
+  memory  DONE (2393d79): the inline I-cache (the failing `ic` isolate) and
+      write-back D-cache were replaced by an `idcache` instance `cpu.idc`, wiring
+      BOTH fetch lanes (idc.fetch_data0/1). The CPU relates only idc's abstract
+      mem/ddirty to the reference at the MEM tag; idc's guarantees supply
+      dual-lane fetch + LD coherence. `ivy_check` OK (~33s).
+  3a  DONE (77ea84c): the bypass datapath (e_res wire, e_a1_fwd/e_b1_fwd muxes,
+      m_res := e_res), kept dormant behind f_indep. isolate=this verified OK.
+  3b  DONE (folded into the idcache/derived-invariant work): eres_trk
+      (e_res = st(ecommit).res) added with `with ea_trk, eb_trk`; ea1_trk/eb1_trk
+      re-pointed to the forwarded operands e_a1_fwd/e_b1_fwd with `with eres_trk`.
+      Several tracking invariants are now `derived invariants`, which is why the
+      cpu consecution checks quickly.
+  3c  DONE (fc3a794): dropped `f_indep` from issue_two and removed d_indep/e_indep
+      (plus the now-dead f_indep/f_lane0_wr/f_rd0/f_ra1/f_rb1/f_rd1 wires). The
+      bypass is live: a dependent aligned pair issues together. `ivy_check` OK
+      (~95s; the slowdown is the bypass-mux case split, no extra `with` hints).
+  3d  DONE (038d0db): sim_cpu.sh on dual_dep_prog.hex (a looped intra-bundle
+      RAW-dependent pair) confirms issue_two fires warm -- pc jumps 2 -> 4 every
+      iteration and both lanes retire in one cycle (r3=10, r4=15, the forwarded
+      value). Added a dual_issue_cpu_ref to_rtl regression + a check regression.
+      sim_cpu.sh now auto-detects the main-memory array (\mem vs \real_mem).
+
+Step 4 detail: one memory op per bundle
+---------------------------------------
+
+Allow a LD/ST/FLUSH in one lane paired with an ALU op in the other, over the
+single idc data port; SPLIT if both lanes are memory (at most one memory op per
+bundle). Correctness never depends on it (a split is always legal), so it is a
+pure IPC gain. Because at most one memory op is ever in a bundle, there is never
+a store+load or load+store in the same bundle -- intra-bundle memory ordering is
+a non-issue; the only new hazards are register RAW between the lanes, handled by
+the Step-3 bypass for ALU producers. Staged like Step 3:
+
+  4a  Memory op in LANE 0 (even), ALU in lane 1 (odd). Smallest delta: the
+      existing single-issue memory datapath and idc port wiring are already driven
+      by lane 0; lane 1 stays a pure ALU.
+      - Relax issue_two: lane 0 may be any NON-BRANCH op (~(f_op0 = 6)) -- simple
+        or LD/ST/FLUSH; lane 1 stays simple (opcode 0/1/2/3). Add the UNBYPASSABLE
+        LOAD-USE split: if lane 0 is a LD (f_op0 = 4), require lane 1 not read its
+        destination (f_rd0 ~= f_ra1 & f_rd0 ~= f_rb1) -- a load result is not
+        available in EX, so it cannot be forwarded; split instead. (WAW is handled
+        by WB writing lane 1 second, so no f_rd1 check is needed.)
+      - Relax the lane-0 opcode-class invariants from simple to NON-BRANCH
+        (~(*_opcode = 6)); lane 1 stays simple. ("No branch in a dual bundle's
+        lane 0" is still the Step-5 boundary.)
+      - No datapath change: m_addr/m_store/m_res (lane 0), the idc request/addr/
+        data wiring, dmem_stall, and the lane-0 LD path (w_val := idc.read_data)
+        already exist and are opcode-guarded; m0_wr/w0_wr already include op 4.
+      - Verify ivy_check + a sim showing a {LD/ST, ALU} bundle issuing.
+
+      4a  DONE. Two subtleties surfaced, neither giving a fast counterexample --
+          the symptom was a pc_track CONSECUTION blow-up (>160s), found by ruling
+          out issue_two cases until it passed:
+          (1) A FLUSH in lane 0 must ALSO split -- a FLUSH invalidates the lane-1
+              fetch (the sibling word is not valid until the FLUSH completes, the
+              same reason fetch stalls behind a FLUSH in the pipe). Fixed by adding
+              `& f_op0 ~= 7` to issue_two. This was the cause of the blow-up (a true
+              bug); a memory op in lane 0 is otherwise fine.
+          (2) The load-use split must be carried into the pipe as invariants
+              d_ld_use/e_ld_use (the load-only analog of the old d_indep/e_indep):
+              `*_valid1 -> ~(*_opcode = 4 & (*_rd = *_ra1 | *_rd = *_rb1))`. Without
+              them ea1_trk/eb1_trk fail, because for a lane-0 LOAD the bypass is
+              inactive and the register-file read is stale unless lane 0 does not
+              write that source. issue_two establishes it; these propagate it.
+          Sim: dual_mem_prog.hex loops {2,3}=ST;ADD and {4,5}=LD;ADD; warm, the pc
+          jumps 2 -> 4 -> 6 and the LD returns the stored value. ivy_check OK ~36s.
+
+  4b  Memory op in LANE 1 (odd), ALU in lane 0 (even). Adds the lane-1 memory
+      machinery and the port mux.
+      - Make m_addr1/m_store1 real (from e_a1_fwd/e_b1_fwd -- the bypass already
+        forwards lane 0's ALU result into a lane-1 address/data operand); route a
+        lane-1 LD result to w_val1 := idc.read_data.
+      - Mux the idc data port to whichever lane holds the memory op (mem_l1 =
+        m_valid1 & m_opcode1 in {4,5,7}); exactly one memory op per bundle makes
+        the mux well-defined.
+      - Per-lane MEM tracking: m_addr1 = st(m1_tag).mem_addr, m_store1 =
+        st(m1_tag).b_val (opcode-guarded), lane-1 LD w_val1 = st(w1_tag).mem(...).
+        Confirm idc.mem/ddirty = st(mcommit) holds with the store at the lane-1
+        tag (mcommit still advances by 2; idc applies the one store in lockstep).
+      - Relax lane-1 opcode invariants to non-branch; extend flush_in_pipe to a
+        lane-1 FLUSH.
+      - issue_two: allow lane 1 memory when lane 0 is ALU; SPLIT if both are
+        memory. A lane-1 memory address depending on lane 0's ALU result is
+        forwarded via e_a1_fwd, so {ADD, LD [r]} issues together.
+      - Verify ivy_check + a sim showing an {ALU, LD/ST} bundle.
+
+  Risks: load-use (4a) is the only genuinely new hazard, handled purely by the
+  issue-time split. Inter-bundle load-use is already covered by m0_wr/w0_wr (4b
+  adds op 4 to m1_wr/w1_wr). Adding a memory opcode to a lane widens the MEM/WB
+  case split (watch for slowdown, as in 3c). Keep m_addr1/m_store1 point-writeable
+  and the port mux combinational so ivy_to_rtl stays clean; re-run sim after each
+  sub-step.
 
 Risks / things to watch
 -----------------------
