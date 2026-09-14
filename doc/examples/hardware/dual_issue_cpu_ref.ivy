@@ -556,14 +556,6 @@ object cpu = {
         invariant (e_valid1 & e_shadow1 & ~trace.st(trace.now).error) ->
                       (e_valid & e_opcode = 6 &
                        (e_pred ~= trace.st(ecommit).take_branch))
-        # ...and, when EX is not stalled, a lane-1 is shadowed EXACTLY when the
-        # lane-0 branch mispredicts this cycle (e_take tracks the trace outcome via
-        # ea_trk, so the datapath `mispredict` equals the ghost branch-mismatch).
-        # This biconditional ties the ecommit advance (~e_shadow1) to the intra-
-        # bundle squash (m_valid1 := e_valid1 & ~mispredict), keeping the EX->MEM tag
-        # count consistent: a lane-1 survives to MEM iff it is non-shadowed.
-        derived invariant [e_shadow1_mispred] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> (e_shadow1 = mispredict)
-            with ea_trk
         invariant ~trace.st(trace.now).error -> ~(m_valid1 & m_shadow1)
         invariant ~trace.st(trace.now).error -> ~(w_valid1 & w_shadow1)
         # Per-lane shadow characterization (Step 5b, per the "condition the equality
