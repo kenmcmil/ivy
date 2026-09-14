@@ -93,6 +93,44 @@ def install_z3():
         do_cmd('cp lib/*.so ivy/lib')
         do_cmd('cp lib/*.so ivy/z3')
 
+def command_output(cmd):
+    return subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
+
+
+def find_openssl_config():
+    """Locate OpenSSL for picotls on macOS.
+
+    Prefer pkg-config (which is what nixpkgs exposes) and fall back to
+    Homebrew for non-Nix setups.
+    """
+    try:
+        config = {
+            'prefix': command_output(['pkg-config', '--variable=prefix', 'openssl']),
+            'includedir': command_output(['pkg-config', '--variable=includedir', 'openssl']),
+            'libdir': command_output(['pkg-config', '--variable=libdir', 'openssl']),
+            'pcfiledir': command_output(['pkg-config', '--variable=pcfiledir', 'openssl']),
+        }
+        if all(config.values()):
+            return config
+    except Exception:
+        pass
+
+    for package in ('openssl@3', 'openssl'):
+        try:
+            prefix = command_output(['brew', '--prefix', package])
+            if prefix:
+                return {
+                    'prefix': prefix,
+                    'includedir': os.path.join(prefix, 'include'),
+                    'libdir': os.path.join(prefix, 'lib'),
+                    'pcfiledir': os.path.join(prefix, 'lib', 'pkgconfig'),
+                }
+        except Exception:
+            pass
+
+    return None
+
+
 def build_picotls():
         
     if not os.path.exists('submodules/picotls'):
@@ -111,17 +149,21 @@ def build_picotls():
         do_cmd('"{}" & msbuild /p:OPENSSL64DIR=c:\\OpenSSL-Win64 picotlsvs\\picotls\\picotls.vcxproj'.format(find_vs()))
     else:
         if platform.system() == 'Darwin':
-            # Locate OpenSSL via Homebrew so this works on both Apple-silicon
-            # (/opt/homebrew) and Intel (/usr/local) prefixes.
-            try:
-                ssl = subprocess.check_output(['brew','--prefix','openssl@3']).decode().strip()
-            except Exception:
-                ssl = subprocess.check_output(['brew','--prefix','openssl']).decode().strip()
-            do_cmd(('PKG_CONFIG_PATH="{ssl}/lib/pkgconfig" cmake . '
+            openssl = find_openssl_config()
+            if openssl is None:
+                print('Cannot locate OpenSSL. Install pkg-config/openssl in your Nix shell,')
+                print('or install openssl with Homebrew.')
+                exit(1)
+            crypto = os.path.join(openssl['libdir'], 'libcrypto.dylib')
+            ssl = os.path.join(openssl['libdir'], 'libssl.dylib')
+            do_cmd(('PKG_CONFIG_PATH="{pcfiledir}" cmake . '
+                    '-U "OPENSSL_*" '
                     '-DCMAKE_POLICY_VERSION_MINIMUM=3.5 '
-                    '-DOPENSSL_ROOT_DIR={ssl} '
-                    '-DOPENSSL_CRYPTO_LIBRARY={ssl}/lib/libcrypto.dylib '
-                    '-DOPENSSL_SSL_LIBRARY={ssl}/lib/libssl.dylib').format(ssl=ssl))
+                    '-DOPENSSL_ROOT_DIR={prefix} '
+                    '-DOPENSSL_INCLUDE_DIR={includedir} '
+                    '-DOPENSSL_CRYPTO_LIBRARY={crypto} '
+                    '-DOPENSSL_SSL_LIBRARY={ssl}').format(
+                        crypto=crypto, ssl=ssl, **openssl))
         else:
             do_cmd('cmake . -DCMAKE_POLICY_VERSION_MINIMUM=3.5')
         do_cmd('make')
