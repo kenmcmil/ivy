@@ -365,6 +365,62 @@ the Step-3 bypass for ALU producers. Staged like Step 3:
   and the port mux combinational so ivy_to_rtl stays clean; re-run sim after each
   sub-step.
 
+Step 5 detail: a branch in lane 0, dual-issued with its fall-through
+-------------------------------------------------------------------
+
+Per the plan, Step 5 is specifically a LANE-0 branch (an odd-address branch is
+lane 1 of an aligned pair and simply keeps splitting). A bundle {BEQZ, X} at an
+even PC dual-issues ONLY when the branch is predicted NOT taken (so lane 1 = the
+fall-through pc+1 is the predicted-correct path). If the branch resolves taken
+(mispredict), the fall-through is wrong-path and lane 1 is SQUASHED intra-bundle.
+This is the first time one stage holds a shadowed (lane 1) and an unshadowed
+(lane 0) instruction at once, so the shadow bits become per-lane.
+
+  5a  DONE (ivy_check OK ~30s). Per-lane shadow bits d_shadow1/e_shadow1/
+      m_shadow1/w_shadow1, propagated parallel to lane 0; the lane-1 guards
+      (d1_full, d1_tag.succ(now), d_ir1/d_pc1, and the shadowed=>squashed family)
+      re-pointed to ~d_shadow1/~e_shadow1. No behavior change (branches still
+      split), so each lane-1 shadow equals its lane-0 counterpart -- captured by
+      four [shadow1_eq_*] invariants that Step 5b replaces. (These equalities were
+      NECESSARY: re-pointing a tag invariant to ~d_shadow1 while the tag advance
+      still keyed on ~d_shadow blew up pc-style consecution until the equality made
+      them interchangeable.)
+
+  5b  DONE (ivy_check OK ~2m20s). issue_two allows lane 0 to be a branch when
+      predicted not-taken (`~f_ptaken`, replacing f_nonbranch0); the intra-bundle
+      squash is m_valid1 := e_valid1 & ~mispredict; the ghost bookkeeping steps the
+      trace for lane 1 only if the lane-0 branch did NOT mispredict, and sets
+      d_shadow1 to the post-branch-check spec_wrong (so lane 1 is shadowed exactly
+      when its bundle's branch mispredicts). Key invariants:
+        - Relax the lane-0 dual opcode invariants from ~=6 to ~=7 (branch allowed).
+        - Per-lane shadow CHARACTERIZATIONS (replacing the 5a equalities):
+          shadow1_char_d/e:  *_shadow1 = (*_shadow | (*_valid & *_opcode=6 &
+          *_pred != st(*commit).take_branch)) -- i.e. lane-1 shadow = lane-0 shadow
+          EXCEPT when this stage's lane 0 is a mispredicting branch.
+        - The tag advances count REAL instructions: dcommit uses ~d_shadow1,
+          ecommit uses ~e_shadow1 (a squashed shadowed lane-1 does not advance).
+        - Relax ~(e_valid1 & e_shadow1) to: e_valid1 & e_shadow1 -> lane 0 is that
+          mispredicting branch; keep ~(m_valid1&m_shadow1)/~(w_valid1&w_shadow1)
+          (the fall-through is squashed before MEM). e_ir1/e_pc1/ea1_trk/eb1_trk
+          gain ~e_shadow1 guards.
+        - e_shadow1_mispred (DERIVED, `with ea_trk`): e_valid1 & ~ex_stall ->
+          (e_shadow1 = mispredict) -- ties the ghost shadow (trace outcome) to the
+          datapath mispredict (operand outcome), so the ecommit advance (~e_shadow1)
+          and the squash (~mispredict) agree.
+      THE KEY FIX (KMcM): the m and w stage tag invariants had been left UNGUARDED
+      by ~error ("pure validity bookkeeping"), but the intra-bundle squash keys on
+      the datapath `mispredict`, which is garbage once the pipeline has left the
+      reference (error). A bogus squash then desyncs the valid bits from the tag
+      counts. Guarding the m/w tag invariants with ~error (like the e/d ones) fixes
+      it -- the failing CTI had error=true. Found by inspecting the CTI, not by the
+      shadow machinery (a focused check= CTI was misleading: check= does not assume
+      derived invariants, so it fabricated states violating char_e/e_shadow1_mispred).
+
+  5c  DONE. Sim dual_branch_prog.hex loops {2,3}=BEQZ r1,_ (r1=1, never taken) ;
+      ADD r3,r1,r1; warm, the pair issues together -- pc jumps 2 -> 4 -> 2 -> 4 and
+      the lane-1 ADD commits (r3=2). to_rtl regression added. Step 5 COMPLETE
+      (an odd-address / lane-1 branch still splits, which is correct).
+
 Risks / things to watch
 -----------------------
 

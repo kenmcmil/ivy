@@ -435,13 +435,21 @@ object cpu = {
         var d1_tag : tag                # ID  lane-1 tag  (between dcommit, now)
 
         # ---- shadow bits (ghost) -----------------------------------------
-        # d_shadow etc.: this stage holds a wrong-path instruction. spec_wrong:
+        # d_shadow etc.: lane 0 of this stage holds a wrong-path instruction.
+        # d_shadow1 etc.: lane 1 (per-lane shadow, for Step 5). Until a branch can
+        # ride in a dual bundle (Step 5b), both lanes of a bundle share a fetch
+        # path, so d_shadow1 == d_shadow (etc.) -- this step just splits the ghost
+        # bit per lane so a lane-0 branch can later shadow lane 1 alone. spec_wrong:
         # the fetch stream is currently on a mispredicted path.
 
         var d_shadow : bool
         var e_shadow : bool
         var m_shadow : bool
         var w_shadow : bool
+        var d_shadow1 : bool
+        var e_shadow1 : bool
+        var m_shadow1 : bool
+        var w_shadow1 : bool
         var spec_wrong : bool
 
         after init {
@@ -449,6 +457,8 @@ object cpu = {
             w1_tag := 0; m1_tag := 0; e1_tag := 0; d1_tag := 0;
             d_shadow := false; e_shadow := false;
             m_shadow := false; w_shadow := false;
+            d_shadow1 := false; e_shadow1 := false;
+            m_shadow1 := false; w_shadow1 := false;
             spec_wrong := false;
         }
     }
@@ -467,17 +477,22 @@ object cpu = {
         # jump is expressed through the stage's lane-1 tag as the named middle
         # (succ(lo, mid) & succ(mid, hi)). In-order issue (`*_valid1 -> *_valid`)
         # forbids a gap. With lane 1 empty these reduce to the single-issue set.
+        # Guarded by ~error like the EX/ID counts below: once a lane-0 branch can
+        # ride a dual bundle (Step 5b), the intra-bundle squash keys on the
+        # datapath `mispredict`, which is meaningless once the pipeline has left the
+        # reference (error) -- a bogus squash then desyncs the valid bits from the
+        # tag counts. In the error-free regime the counts hold exactly.
         invariant w_valid1 -> w_valid
-        invariant ~w_valid -> mcommit = commit
-        invariant (w_valid & ~w_valid1) -> commit.succ(mcommit)
-        invariant w_valid1 -> commit.succ(w1_tag)
-        invariant w_valid1 -> w1_tag.succ(mcommit)
+        invariant (~w_valid & ~trace.st(trace.now).error) -> mcommit = commit
+        invariant (w_valid & ~w_valid1 & ~trace.st(trace.now).error) -> commit.succ(mcommit)
+        invariant (w_valid1 & ~trace.st(trace.now).error) -> commit.succ(w1_tag)
+        invariant (w_valid1 & ~trace.st(trace.now).error) -> w1_tag.succ(mcommit)
 
         invariant m_valid1 -> m_valid
-        invariant ~m_valid -> ecommit = mcommit
-        invariant (m_valid & ~m_valid1) -> mcommit.succ(ecommit)
-        invariant m_valid1 -> mcommit.succ(m1_tag)
-        invariant m_valid1 -> m1_tag.succ(ecommit)
+        invariant (~m_valid & ~trace.st(trace.now).error) -> ecommit = mcommit
+        invariant (m_valid & ~m_valid1 & ~trace.st(trace.now).error) -> mcommit.succ(ecommit)
+        invariant (m_valid1 & ~trace.st(trace.now).error) -> mcommit.succ(m1_tag)
+        invariant (m_valid1 & ~trace.st(trace.now).error) -> m1_tag.succ(ecommit)
 
         # ---- the idcache module's ghost state tracks the reference at MEM ----
         # idc's spec is over its own abstract mem/ddirty; we relate that ghost
@@ -497,19 +512,22 @@ object cpu = {
         # (dcommit/now advance only for correct-path, non-shadowed fetches), so
         # like the shadow facts below they are guarded by ~error. The WB/MEM/EX
         # boundary counts above are pure validity bookkeeping and hold regardless.
+        # A lane-1 instruction is in the run only if valid AND non-shadowed; a
+        # shadowed lane-1 fall-through (e_shadow1, of a mispredicting lane-0 branch)
+        # is squashed at EX->MEM, so it does not extend the EX/ID count.
         invariant e_valid1 -> e_valid
         invariant (~e_valid & ~trace.st(trace.now).error) -> dcommit = ecommit
-        invariant (e_valid & ~e_valid1 & ~trace.st(trace.now).error) -> ecommit.succ(dcommit)
+        invariant (e_valid & (~e_valid1 | e_shadow1) & ~trace.st(trace.now).error) -> ecommit.succ(dcommit)
         invariant (e_valid1 & ~trace.st(trace.now).error) -> ecommit.succ(e1_tag)
-        invariant (e_valid1 & ~trace.st(trace.now).error) -> e1_tag.succ(dcommit)
+        invariant (e_valid1 & ~e_shadow1 & ~trace.st(trace.now).error) -> e1_tag.succ(dcommit)
 
-        # A bundle shares one shadow bit (both lanes are on the same fetch path),
-        # so d_shadow gates both lanes of the ID stage.
+        # Lane 0 uses d_shadow; lane 1's run membership uses its own d_shadow1
+        # (they diverge when a lane-0 branch shadows the lane-1 fall-through, Step 5b).
         invariant d_valid1 -> d_valid
         invariant ((~d_valid | d_shadow) & ~trace.st(trace.now).error) -> dcommit = trace.now
-        invariant (d_valid & ~d_shadow & ~d_valid1 & ~trace.st(trace.now).error) -> dcommit.succ(trace.now)
-        invariant [d1_full] (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> dcommit.succ(d1_tag)
-        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d1_tag.succ(trace.now)
+        invariant (d_valid & ~d_shadow & (~d_valid1 | d_shadow1) & ~trace.st(trace.now).error) -> dcommit.succ(trace.now)
+        invariant [d1_full] (d_valid1 & ~d_shadow1 & ~trace.st(trace.now).error) -> dcommit.succ(d1_tag)
+        invariant (d_valid1 & ~d_shadow1 & ~trace.st(trace.now).error) -> d1_tag.succ(trace.now)
     }
 
     private {
@@ -530,6 +548,37 @@ object cpu = {
         invariant ~trace.st(trace.now).error -> ~(e_valid & e_shadow)
         invariant ~trace.st(trace.now).error -> ~(m_valid & m_shadow)
         invariant ~trace.st(trace.now).error -> ~(w_valid & w_shadow)
+        # Lane 1, per-lane. Past EX a valid lane-1 is never shadowed: a shadowed
+        # lane-1 fall-through is squashed at EX->MEM (m_valid1 := e_valid1 &
+        # ~mispredict). But IN EX a valid lane-1 CAN be shadowed -- exactly when its
+        # bundle's lane 0 is a mispredicting branch (the "one shadowed + one
+        # unshadowed in a stage" case). So the EX fact is conditioned, not absolute.
+        invariant (e_valid1 & e_shadow1 & ~trace.st(trace.now).error) ->
+                      (e_valid & e_opcode = 6 &
+                       (e_pred ~= trace.st(ecommit).take_branch))
+        # ...and, when EX is not stalled, a lane-1 is shadowed EXACTLY when the
+        # lane-0 branch mispredicts this cycle (e_take tracks the trace outcome via
+        # ea_trk, so the datapath `mispredict` equals the ghost branch-mismatch).
+        # This biconditional ties the ecommit advance (~e_shadow1) to the intra-
+        # bundle squash (m_valid1 := e_valid1 & ~mispredict), keeping the EX->MEM tag
+        # count consistent: a lane-1 survives to MEM iff it is non-shadowed.
+        derived invariant [e_shadow1_mispred] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> (e_shadow1 = mispredict)
+            with ea_trk
+        invariant ~trace.st(trace.now).error -> ~(m_valid1 & m_shadow1)
+        invariant ~trace.st(trace.now).error -> ~(w_valid1 & w_shadow1)
+        # Per-lane shadow characterization (Step 5b, per the "condition the equality
+        # on a mispredicted lane-0 branch" idea): lane 1's shadow equals lane 0's,
+        # EXCEPT when this stage's lane 0 is a mispredicting branch -- then lane 0 is
+        # correct (its shadow false) while lane 1 (the fall-through) is shadowed. In
+        # ID and EX (where a shadowed lane 1 can still be valid) this is a genuine OR;
+        # by MEM/WB the fall-through has been squashed so lane 1 shadow just tracks
+        # lane 0 (the ~(m_valid1&m_shadow1)/~(w_valid1&w_shadow1) facts above suffice).
+        invariant [shadow1_char_d] (d_valid1 & ~trace.st(trace.now).error) ->
+            (d_shadow1 = (d_shadow | (d_valid & d_opcode = 6 &
+                          (d_pred ~= trace.st(dcommit).take_branch))))
+        invariant [shadow1_char_e] (e_valid1 & ~trace.st(trace.now).error) ->
+            (e_shadow1 = (e_shadow | (e_valid & e_opcode = 6 &
+                          (e_pred ~= trace.st(ecommit).take_branch))))
 
         # ---- while shadowed, the mispredicting branch is in EX -----------
         # If ID holds a shadowed instruction, then EX holds the branch that
@@ -605,16 +654,16 @@ object cpu = {
         invariant (w_valid & w_opcode = 4 & ~trace.st(trace.now).error) -> w_val = trace.st(commit).mem(trace.st(commit).mem_addr)
 
         # ---- lane-1 (dual-issue) trace match, at the lane-1 tags ----------
-        # In a dual bundle NEITHER lane is a branch (opcode 6, Step 5) or a FLUSH
-        # (opcode 7 -- issue_two splits both), and AT MOST ONE lane is a memory op
+        # In a dual bundle: LANE 0 may be a BRANCH (opcode 6) predicted not-taken
+        # (Step 5b) but never a FLUSH (opcode 7 -- issue_two splits it); LANE 1 is
+        # never a branch or a FLUSH (both split). At most one lane is a memory op
         # (LD/ST, opcode 4/5): the single idc port serves it, in lane 0 (Step 4a) or
-        # lane 1 (Step 4b). So each lane's opcode is in {0,1,2,3,4,5} with not-both-
-        # memory. A lane's memory op, when present, is tracked by that lane's MEM/WB
-        # invariants (opcode-guarded); its ALU result by the res/val invariants.
-        invariant d_valid1 -> (d_opcode ~= 6 & d_opcode ~= 7)
-        invariant e_valid1 -> (e_opcode ~= 6 & e_opcode ~= 7)
-        invariant m_valid1 -> (m_opcode ~= 6 & m_opcode ~= 7)
-        invariant w_valid1 -> (w_opcode ~= 6 & w_opcode ~= 7)
+        # lane 1 (Step 4b). A lane's memory op, when present, is tracked by that
+        # lane's MEM/WB invariants (opcode-guarded); its ALU result by res/val.
+        invariant d_valid1 -> (d_opcode ~= 7)
+        invariant e_valid1 -> (e_opcode ~= 7)
+        invariant m_valid1 -> (m_opcode ~= 7)
+        invariant w_valid1 -> (w_opcode ~= 7)
         invariant d_valid1 -> (d_opcode1 ~= 6 & d_opcode1 ~= 7)
         invariant e_valid1 -> (e_opcode1 ~= 6 & e_opcode1 ~= 7)
         invariant m_valid1 -> (m_opcode1 ~= 6 & m_opcode1 ~= 7)
@@ -626,10 +675,10 @@ object cpu = {
         invariant [e_one_mem] e_valid1 -> ~((e_opcode = 4 | e_opcode = 5) & (e_opcode1 = 4 | e_opcode1 = 5))
         invariant [m_one_mem] m_valid1 -> ~((m_opcode = 4 | m_opcode = 5) & (m_opcode1 = 4 | m_opcode1 = 5))
 
-        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d_ir1 = trace.st(d1_tag).fetched
-        invariant (d_valid1 & ~d_shadow & ~trace.st(trace.now).error) -> d_pc1 = trace.st(d1_tag).pc
-        invariant (e_valid1 & ~trace.st(trace.now).error) -> e_ir1 = trace.st(e1_tag).fetched
-        invariant (e_valid1 & ~trace.st(trace.now).error) -> e_pc1 = trace.st(e1_tag).pc
+        invariant (d_valid1 & ~d_shadow1 & ~trace.st(trace.now).error) -> d_ir1 = trace.st(d1_tag).fetched
+        invariant (d_valid1 & ~d_shadow1 & ~trace.st(trace.now).error) -> d_pc1 = trace.st(d1_tag).pc
+        invariant (e_valid1 & ~e_shadow1 & ~trace.st(trace.now).error) -> e_ir1 = trace.st(e1_tag).fetched
+        invariant (e_valid1 & ~e_shadow1 & ~trace.st(trace.now).error) -> e_pc1 = trace.st(e1_tag).pc
 
         # ---- EX operands track the trace operand values --------------------
         # e_a/e_b are the register-file reads for the EX instruction; they must
@@ -648,9 +697,12 @@ object cpu = {
         # = st(commit).rf(source) = st(e1_tag).rf(source). With f_indep dropped
         # (Step 3c) the bypass is live: a dependent aligned pair issues together
         # and the mux forwards lane 0's freshly-computed result to lane 1.
-        derived invariant [ea1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_a1_fwd = trace.st(e1_tag).a_val
+        # (Guarded by ~e_shadow1: a shadowed lane-1 fall-through of a mispredicting
+        # lane-0 branch is wrong-path, so its operands need not match the trace; it
+        # is squashed at EX->MEM and never used.)
+        derived invariant [ea1_trk] (e_valid1 & ~e_shadow1 & ~ex_stall & ~trace.st(trace.now).error) -> e_a1_fwd = trace.st(e1_tag).a_val
             with eres_trk
-        derived invariant [eb1_trk] (e_valid1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1_fwd = trace.st(e1_tag).b_val
+        derived invariant [eb1_trk] (e_valid1 & ~e_shadow1 & ~ex_stall & ~trace.st(trace.now).error) -> e_b1_fwd = trace.st(e1_tag).b_val
         with eres_trk
 
         # Load-use exclusion carried into the pipe (Step 4a): issue_two splits a
@@ -716,40 +768,52 @@ object cpu = {
                 # MEM stalls for a D-fill: WB drains (commit advanced above) and
                 # bubbles; MEM and everything behind hold, so no other tag moves
                 # and no instruction is issued to the trace.
-                w_shadow := false
+                w_shadow := false;
+                w_shadow1 := false
             } else {
             # idc handles FLUSH-based I-cache invalidation internally (driven by
             # idc.flush_req in the wiring), so no ghost tie-in is needed here.
             if old m_valid1 { mcommit := mcommit.next.next }
             else if old m_valid { mcommit := mcommit.next };
             w_shadow := m_shadow;
+            w_shadow1 := m_shadow1;
             if ~ex_stall {
                 m_shadow := e_shadow;
-                if old e_valid1 { ecommit := ecommit.next.next }
+                m_shadow1 := e_shadow1;
+                # ecommit counts REAL (non-shadowed) instructions crossing EX->MEM.
+                # A shadowed lane-1 fall-through (e_shadow1, of a mispredicting lane-0
+                # branch) is squashed at EX->MEM, so it does not advance the run.
+                if old e_valid1 & ~e_shadow1 { ecommit := ecommit.next.next }
                 else if old e_valid { ecommit := ecommit.next };
                 if mispredict {
                     spec_wrong := false
                 } else {
-                    if old d_valid1 & ~d_shadow { dcommit := dcommit.next.next }
+                    if old d_valid1 & ~d_shadow1 { dcommit := dcommit.next.next }
                     else if old d_valid & ~d_shadow { dcommit := dcommit.next };
                     e_shadow := d_shadow;
+                    e_shadow1 := d_shadow1;
                     if flush_in_pipe | ifetch_stall {
                         # IF stalled (pending FLUSH or awaiting an I-cache fill):
                         # a bubble enters ID, no instruction is issued to the
                         # trace, and `now` does not advance.
-                        d_shadow := false
+                        d_shadow := false;
+                        d_shadow1 := false
                     } else {
-                        d_shadow := spec_wrong;
+                        d_shadow := spec_wrong;   # lane 0: inherited wrong-path
                         if ~spec_wrong {
                             if f_ptaken ~= trace.st(trace.now).take_branch {
-                                spec_wrong := true
+                                spec_wrong := true   # lane-0 branch mispredicts
                             };
-                            trace.step;
-                            # a dual issue fetches two instructions: step the trace
-                            # again for the second (which is non-branch, so it needs
-                            # no prediction check).
-                            if issue_two { trace.step }
-                        }
+                            trace.step;              # step lane 0 (correct path)
+                            # Step 5b: lane 1 is the fall-through. Step it only if the
+                            # lane-0 branch did NOT just mispredict; otherwise lane 1 is
+                            # on the wrong path (shadowed) and is not a trace instruction.
+                            if issue_two & ~spec_wrong { trace.step }
+                        };
+                        # lane 1's shadow is spec_wrong AFTER the lane-0 branch check:
+                        # it diverges from d_shadow exactly when this bundle's lane-0
+                        # branch mispredicts (then lane 0 is correct, lane 1 shadowed).
+                        d_shadow1 := spec_wrong
                     }
                 }
             }
@@ -1119,7 +1183,10 @@ object cpu = {
     wire issue_two : bool
     definition issue_two = ~dmem_stall & ~ex_stall & ~mispredict & ~flush_in_pipe
                          & ~ifetch_stall & idc.fetch_valid1
-                         & f_nonbranch0 & f_nonbranch1        # neither lane a branch
+                         & ~f_ptaken & f_nonbranch1           # lane 0 not a predicted-taken
+                                                              # branch; lane 1 not a branch (Step 5b:
+                                                              # a lane-0 branch predicted NOT taken
+                                                              # dual-issues with its fall-through)
                          & (f_op0 ~= 7) & (f_op1 ~= 7)        # neither lane a FLUSH
                          & ~(f_mem0 & f_mem1)                 # at most one memory op
                          & ~f_ld_use                          # unbypassable lane-0 load-use
@@ -1184,8 +1251,12 @@ object cpu = {
             # lane 1: an ALU result, and (Step 4b) a memory address/store data taken
             # THROUGH the bypass mux (e_a1_fwd/e_b1_fwd), so a lane-1 LD/ST whose
             # address or data comes from lane 0's ALU result gets the forwarded value.
+            # Step 5b: when lane 0 is a mispredicted branch (mispredict), lane 1 is the
+            # branch's fall-through, which is now wrong-path -- SQUASH it here (it never
+            # reaches MEM), just as the mispredict block below squashes the younger
+            # ID/fetch instructions and redirects the PC.
             m_ir1 := e_ir1;
-            m_valid1 := e_valid1;
+            m_valid1 := e_valid1 & ~mispredict;
             m_res1 := e_res1;
             m_addr1 := e_a1_fwd<<7:0>>;
             m_store1 := e_b1_fwd

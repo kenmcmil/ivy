@@ -1,0 +1,18 @@
+# Dual-issue Step 5b demo: a BRANCH in LANE 0 dual-issued with its fall-through.
+# The aligned pair {2,3} is
+#   lane 0  addr 2:  BEQZ r1, 128    (r1 = 1, so NEVER taken)
+#   lane 1  addr 3:  ADD  r3, r1, r1 (the fall-through; r3 = 2)
+# Predicted not-taken (and correctly so), the pair ISSUES TOGETHER once warm: the
+# pc jumps 2 -> 4 (skipping 3) and the lane-1 ADD commits (r3 = 2). addr 4
+# (BEQZ r0,2) loops back. So the warm signature is 2 -> 4 -> 2 -> 4 -- a lane-0
+# branch and its fall-through retiring as one bundle. (The mispredicted-taken
+# case, which squashes the fall-through and redirects, is proved by ivy_check and
+# transiently exercised by the loop-back branch's first, predicted-not-taken
+# encounter.)  Note: BEQZ's ra field overlaps the target's bit 7, so BEQZ r1 can
+# only name targets >= 128; here the branch is never taken, so the target is moot.
+6401   # 0: LI   r1, 1          (nonzero, so BEQZ r1 is never taken)
+0000   # 1: NOP
+c080   # 2: BEQZ r1, 128       (lane 0 branch; not taken)
+2c90   # 3: ADD  r3, r1, r1     (lane 1 fall-through; r3 = 2)
+c002   # 4: BEQZ r0, 2          (r0 = 0 -> taken; loop back to the pair)
+0000   # 5: NOP

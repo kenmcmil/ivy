@@ -126,6 +126,17 @@ tests = [
                  + ' && ./sim_cpu.sh {name} dual_mem_l1_prog.hex 40 > {name}_meml1.simout 2>&1'
                  + ' && grep -q "2 -> 4 -> 6 -> 2 -> 4 -> 6" {name}_meml1.simout',
      'timeout': 600, 'group': 'rtl'},
+    # Step 5b: a BRANCH in LANE 0 dual-issued with its fall-through. dual_branch_prog
+    # loops over {2,3} = BEQZ r1,_ (r1=1, never taken) ; ADD r3,r1,r1 (fall-through).
+    # Predicted not-taken, the pair issues together once warm: the pc jumps 2 -> 4
+    # (skipping 3) and the lane-1 ADD commits (r3=2); the loop-back BEQZ r0,2 gives
+    # the 2 -> 4 -> 2 -> 4 signature. (A mispredicted-taken lane-0 branch squashes
+    # its fall-through -- proved by ivy_check.)
+    {'type': 'to_rtl', 'name': 'dual_issue_cpu_ref',
+     'validate': _yosys_wf
+                 + ' && ./sim_cpu.sh {name} dual_branch_prog.hex 50 > {name}_br.simout 2>&1'
+                 + ' && grep -q "2 -> 4 -> 2 -> 4 -> 2 -> 4" {name}_br.simout',
+     'timeout': 600, 'group': 'rtl'},
 
     # The stage-decomposition CPU exercises cross-isolate `register` reads
     # (pipe registers consumed by the next stage / decoded in the parent) and a
