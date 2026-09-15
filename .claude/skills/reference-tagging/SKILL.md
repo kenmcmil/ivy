@@ -295,6 +295,20 @@ weak memory, or any "software must synchronize" contract.
   the program executes stale code, you no longer require the CPU to match. This
   `~error` relaxation is the correctness statement for an incoherent machine.
 
+- **`~error`-guard the TAG-COUNT invariants too, not just the data ones** (cost
+  real time in dual-issue Step 5). The rule is: *any invariant that relates the
+  trace and the implementation must be conditioned on `~error`; only invariants
+  over implementation state alone are exempt.* The boundary-counter/run-size facts
+  (`w_valid1 -> commit.succ(w1_tag)`, `m_valid1 -> ecommit = mcommit+2`, …) look
+  like pure structural bookkeeping that holds regardless — and they do, UNTIL a
+  squash/advance starts keying on a datapath signal whose meaning depends on being
+  on the reference path. Example: once a mispredicting lane-0 branch squashes its
+  lane-1 fall-through via the datapath `mispredict`, that signal is garbage under
+  `error` (bogus operands), so a bogus squash desyncs the valid bits from the tag
+  counts. Guarding the MEM/WB tag invariants with `~error` (matching the EX/ID
+  ones) fixes it. Symptom to recognize: a tag-count invariant fails and the CTI
+  has `error = true`.
+
 - **Caches are pinned by local invariants, relative to the trace at the stage
   that owns them** (`st(mcommit)` for the D-cache in MEM): dirty line ⇒ dirty in
   the reference; present line ⇒ holds the reference value; not-dirty address ⇒

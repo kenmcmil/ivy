@@ -1,0 +1,47 @@
+#lang ivy1.8
+# Can a DERIVED invariant serve as the (only) pre-state hypothesis that proves a
+# NORMAL invariant's consecution?  A 4-stage shift of a monotone counter:
+#
+#   a1 (normal)  : y <= x            -- inductive on its own
+#   a2 (normal)  : z <= y            -- inductive given a1
+#   b  (derived) : z <= x            -- a one-state consequence of a1 & a2
+#   c  (normal)  : w <= y            -- consecution needs `z <= x` (= b) at the
+#                                       pre-state, since w:=z and y:=x
+#
+# `c` is proven with `using b` -- selecting ONLY the derived b, EXCLUDING the
+# normals a1/a2.  So `c` verifies iff the derived invariant b is usable as a
+# pre-state hypothesis for the normal invariant c ("prove c without using a1/a2").
+# c_def is the same property with the default hypothesis set (it can lean on
+# a1/a2 directly, so it is only a sanity check).  Run under the full check AND
+# under `check=m.c` to compare the focused-check path.
+
+isolate m = {
+    include order
+    instance t : unbounded_sequence
+
+    var x : t
+    var y : t
+    var z : t
+    var w : t
+
+    after init {
+        x := 0;
+        y := 0;
+        z := 0;
+        w := 0;
+    }
+
+    action step = {
+        w := z;
+        z := y;
+        y := x;
+        x := x.next;
+    }
+    export step
+
+    invariant [a1] y <= x
+    invariant [a2] z <= y
+    derived invariant [b] z <= x
+    invariant [c] w <= y using b
+    invariant [c_def] w <= y
+}

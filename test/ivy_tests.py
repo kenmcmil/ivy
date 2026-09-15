@@ -81,4 +81,11 @@ tests = [
     {'type': 'check', 'name': 'derived3',
      'expect': 'may not depend on a derived one at zero delay'},
     {'type': 'check', 'name': 'derived4', 'expect': 'OK'},
+    # derived5: a derived invariant b (implied by normals a1/a2) is the SOLE
+    # pre-state hypothesis (via `using b`) that proves a normal invariant c's
+    # consecution -- i.e. c is proved without citing a1/a2. Confirms a derived
+    # invariant is usable as a pre-state assumption for a normal invariant, in
+    # both the full check and the focused `check=m.c` path.
+    {'type': 'check', 'name': 'derived5', 'expect': 'OK'},
+    {'type': 'check', 'name': 'derived5', 'args': ['check=m.c'], 'expect': 'OK'},
 ]
