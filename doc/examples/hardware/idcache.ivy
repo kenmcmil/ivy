@@ -233,7 +233,14 @@ module isolate idcache(posedge,word,addr,bit,init_mem) = {
                 }
 
                 after posedge {
-                    if ifill_on & ifill_data_valid & ~(flush_valid  & (fl_index = ifill_miss<<4:1>>)) {
+                    # Priority to FLUSH: on any flush cycle, suppress the fill install
+                    # (the fill holds -- ifill_on stays set -- and the memory port
+                    # re-reads and reinstalls next cycle). This keeps the two icache
+                    # writers (fill install vs. flush eviction below) mutually
+                    # EXCLUSIVE, so at most one icache write happens per cycle. It also
+                    # subsumes the old same-line stale-word guard: a word read while a
+                    # flush is in flight is discarded and re-read after the flush.
+                    if ifill_on & ifill_data_valid & ~flush_valid {
                         if ~ifill_got {
                             if (ifill_miss<<0:0>>:bit) = 0 {
                                 icache(ifill_miss<<4:1>>) :=

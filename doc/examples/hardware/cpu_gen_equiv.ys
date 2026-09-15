@@ -1,0 +1,37 @@
+# Combinational equivalence check: the ivy_to_rtl output for the module-based
+# cache CPU (5stage_gen_cache_cpu_ref.il, "gold") against the hand-written
+# SystemVerilog golden model (cpu_gen_golden.sv, "gate"). Run from
+# doc/examples/hardware after
+#   ivy_to_rtl 5stage_gen_cache_cpu_ref.ivy
+# with:
+#   yosys cpu_gen_equiv.ys
+#
+# The design is deeply hierarchical: cpu instantiates the branch predictor `bp`
+# and the reusable idcache module `idc`, and idc instantiates main_mem/ic/dc.
+# Both sides use the SAME instance names (idc, bp, main_mem, ic, dc), so after
+# flattening the register/memory names (e.g. idc.main_mem.real_mem, idc.dc.dcache,
+# idc.ic.icache, bp.bht, rf) line up and equiv_make pairs them. equiv_induct then
+# proves by one-step induction that from any equal state the two compute the same
+# next state for every register and memory. rst is tied to 0 (normal operation).
+
+read_rtlil 5stage_gen_cache_cpu_ref.il
+rename cpu gold
+read_verilog -sv cpu_gen_golden.sv
+rename cpu gate
+proc
+
+flatten gold
+flatten gate
+
+select gold
+connect -set rst 1'b0
+select gate
+connect -set rst 1'b0
+select -clear
+
+memory_map
+
+equiv_make gold gate equiv
+hierarchy -top equiv
+equiv_induct equiv
+equiv_status -assert
