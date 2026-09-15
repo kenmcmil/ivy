@@ -85,10 +85,6 @@ def rtlil_const(value, width):
 # ----------------------------------------------------------------------------
 # Name helpers
 
-def conj(enable, cond):
-    """Conjoin a guard onto an (optional) enable term."""
-    return cond if enable is None else il.And(enable, cond)
-
 def concat_words(words, width):
     """Pack words into one integer, the first word in the low bits (matching
     the RTLIL $meminit DATA layout)."""
@@ -690,43 +686,82 @@ class Translator(object):
                 d = upd[2][newsym.name]
                 var = d.args[0].args[0]
                 wctx = Ctx(self, m, obj, upd[2])
-                self.collect_writes(d.args[1], arr, var, None, upd[2], writes)
+                self.collect_writes(d.args[1], arr, var, [], 0, upd[2], writes)
         if not writes:
             return   # a ROM: declared and read, never written
+        writes = self.dedup_writes(writes)
 
-        # combine the (mutually exclusive) writes into one write port
-        en_nets, addr_nets, data_nets = [], [], []
-        for (en, addr, data) in writes:
-            en_nets.append(self.emit_expr(wctx, en) if en is not None
-                           else rtlil_const(1, 1))
-            addr_nets.append(self.emit_expr(wctx, addr))
-            data_nets.append(self.emit_expr(wctx, data))
-        en = self.reduce_or(m, en_nets)
-        addr = self.fold_mux(m, en_nets, addr_nets, aw)
-        data = self.fold_mux(m, en_nets, data_nets, dw)
-        en_wide = en if dw == 1 else '{ ' + ' '.join([en] * dw) + ' }'
-        m.cell('$memwr_v2', m.fresh('$memwr$' + memname),
-               [('\\MEMID', mem_id(memname)), ('\\ABITS', aw), ('\\WIDTH', dw),
-                ('\\PORTID', 0), ('\\PRIORITY_MASK', "0'0"),
-                ('\\CLK_ENABLE', "1'1"), ('\\CLK_POLARITY', "1'1")],
-               [('\\ADDR', addr), ('\\DATA', data), ('\\EN', en_wide),
-                ('\\CLK', pub_id(clk_used))])
+        # Assign each point write to a write port. Two writes may share a port
+        # only if they are mutually exclusive: a port issues one address per
+        # cycle, so non-exclusive writes -- which may co-fire at different
+        # addresses -- would drop one if they shared. Ports are numbered so a
+        # later port has priority over every earlier one. Process the writes from
+        # deepest (program-earliest, lowest priority) to shallowest so that a
+        # write is placed strictly above every already-placed non-exclusive write
+        # -- whose same-address collision it must win -- and otherwise reuses the
+        # lowest port whose members are all exclusive with it (possibly a
+        # non-adjacent one), else opens a new port. Ordering by sequential depth
+        # (not flat list position, which the if/else linearization scrambles) is
+        # what makes the resulting PORTID priority match program order.
+        writes.sort(key=lambda w: -w[3])
+        groups = []
+        for w in writes:
+            lo = 0
+            for p, members in enumerate(groups):
+                if any(not self.writes_exclusive(w[0], u[0]) for u in members):
+                    lo = p + 1
+            if lo < len(groups):
+                groups[lo].append(w)
+            else:
+                groups.append([w])
 
-    def collect_writes(self, expr, arr, var, enable, defidx, out):
+        for portid, group in enumerate(groups):
+            en_nets, addr_nets, data_nets = [], [], []
+            for (conds, addr, data, _depth) in group:
+                en = self.enable_of(conds)
+                en_nets.append(self.emit_expr(wctx, en) if en is not None
+                               else rtlil_const(1, 1))
+                addr_nets.append(self.emit_expr(wctx, addr))
+                data_nets.append(self.emit_expr(wctx, data))
+            en = self.reduce_or(m, en_nets)
+            addr = self.fold_mux(m, en_nets, addr_nets, aw)
+            data = self.fold_mux(m, en_nets, data_nets, dw)
+            en_wide = en if dw == 1 else '{ ' + ' '.join([en] * dw) + ' }'
+            # priority over every lower-numbered (program-earlier) port
+            pmask = "0'0" if portid == 0 else "{}'{}".format(portid, '1' * portid)
+            m.cell('$memwr_v2', m.fresh('$memwr$' + memname),
+                   [('\\MEMID', mem_id(memname)), ('\\ABITS', aw), ('\\WIDTH', dw),
+                    ('\\PORTID', portid), ('\\PRIORITY_MASK', pmask),
+                    ('\\CLK_ENABLE', "1'1"), ('\\CLK_POLARITY', "1'1")],
+                   [('\\ADDR', addr), ('\\DATA', data), ('\\EN', en_wide),
+                    ('\\CLK', pub_id(clk_used))])
+
+    def collect_writes(self, expr, arr, var, conds, depth, defidx, out):
         """Decompose a functional array-update body new_arr(var) = expr into a
-        list of (enable, addr, data) point writes, appended to `out`. enable is
-        an Ivy bool term (None means unconditional)."""
+        list of (conds, addr, data, depth) point writes, appended to `out`.
+        `conds` is the list of control conditions guarding this write, each a
+        signed literal (cond_term, negated); the write fires iff all of them hold
+        (an empty list means unconditional). Keeping the guards as separate
+        literals -- rather than a single conjoined term -- lets the caller decide
+        when two writes are mutually exclusive (share a condition with opposite
+        sign). `depth` is the sequential-composition nesting: the update body
+        wraps later statements outside earlier ones, so a write's depth counts
+        the point writes it is layered on top of. A SMALLER depth is a
+        program-LATER write, which must win a same-address collision -- so depth
+        gives the write-port priority order, one that the flat list position
+        (scrambled by the if/else linearization) does not."""
         if self.is_base_read(expr, arr, var):
             return
         # When the array is written in several sequential statements, the
         # composed update body ends in a transition-relation mid-state copy
         # (__m_arr(var)) rather than the base array; chase it, as collect_init
-        # does, so the accumulated point writes are all recovered.
+        # does, so the accumulated point writes are all recovered. This is pure
+        # symbol-unwrapping, not a new sequential layer, so depth is unchanged.
         if (il.is_app(expr) and not il.is_constant(expr) and len(expr.args) == 1
                 and expr.args[0] == var and is_array_sort(expr.rep.sort)
                 and expr.rep.name in defidx):
             self.collect_writes(defidx[expr.rep.name].args[1], arr, var,
-                                enable, defidx, out)
+                                conds, depth, defidx, out)
             return
         if il.is_ite(expr):
             cond, then, els = expr.args
@@ -735,15 +770,95 @@ class Translator(object):
                 if addr is None:
                     raise iu.IvyError(None,
                         "unsupported array index expression: {}".format(cond))
-                out.append((enable, addr, then))
-                self.collect_writes(els, arr, var, enable, defidx, out)
+                # a point write layered on the prior state (els): the prior
+                # state's writes are one sequential layer deeper (lower priority)
+                out.append((conds, addr, then, depth))
+                self.collect_writes(els, arr, var, conds, depth + 1, defidx, out)
             else:
-                self.collect_writes(then, arr, var, conj(enable, cond), defidx, out)
-                self.collect_writes(els, arr, var,
-                                    conj(enable, il.Not(cond)), defidx, out)
+                # two arms of one control decision: same statement, same depth
+                self.collect_writes(then, arr, var, conds + [(cond, False)],
+                                    depth, defidx, out)
+                self.collect_writes(els, arr, var, conds + [(cond, True)],
+                                    depth, defidx, out)
             return
         raise iu.IvyError(None,
             "unsupported array update (not a point write): {}".format(expr))
+
+    def enable_of(self, conds):
+        """Conjoin a write's signed control literals into one enable term
+        (None if unconditional)."""
+        term = None
+        for (cond, negated) in conds:
+            lit = il.Not(cond) if negated else cond
+            term = lit if term is None else il.And(term, lit)
+        return term
+
+    def writes_exclusive(self, conds_a, conds_b):
+        """True if two point writes can never fire in the same cycle, decided
+        structurally: they take opposite sides of some common control condition
+        (one has it, the other its negation). Sound but not complete -- a missed
+        exclusion just costs an extra write port, never a dropped write."""
+        for (ca, na) in conds_a:
+            for (cb, nb) in conds_b:
+                if na != nb and ca == cb:
+                    return True
+        return False
+
+    def conds_equal(self, conds_a, conds_b):
+        """Order-independent equality of two signed-literal guard lists."""
+        if len(conds_a) != len(conds_b):
+            return False
+        return all(any(ca == cb and na == nb for (cb, nb) in conds_b)
+                   for (ca, na) in conds_a)
+
+    def merge_dup(self, wa, wb):
+        """If two writes are the same write duplicated by the sequential-update
+        decomposition -- identical addr and data, guard lists differing in
+        exactly one literal's polarity -- return the merged write with that
+        literal dropped; else None. The pair fires, together, exactly when the
+        shared guards hold, so dropping the split literal is exact. The merged
+        write keeps the DEEPER depth: the duplicate reached through a later
+        statement's else-arm sits at that statement's (shallow) depth, but the
+        write truly belongs to the earlier statement it fell through from, whose
+        depth is the larger one."""
+        conds_a, addr_a, data_a, depth_a = wa
+        conds_b, addr_b, data_b, depth_b = wb
+        if not (addr_a == addr_b and data_a == data_b):
+            return None
+        depth = max(depth_a, depth_b)
+        for i, (la, na) in enumerate(conds_a):
+            for j, (lb, nb) in enumerate(conds_b):
+                if la == lb and na != nb:
+                    rem_a = conds_a[:i] + conds_a[i + 1:]
+                    rem_b = conds_b[:j] + conds_b[j + 1:]
+                    if self.conds_equal(rem_a, rem_b):
+                        return (rem_a, addr_a, data_a, depth)
+        return None
+
+    def dedup_writes(self, writes):
+        """Collapse writes duplicated by the update decomposition. A guarded
+        statement `if g { arr := .. }` compiles to `if g then (.. else M) else M`,
+        so the prior state M's writes are collected under both (g,True) and
+        (g,False); with everything folded into one port that was harmless, but as
+        separate ports each duplicate would become a redundant port. Merge such
+        pairs (see merge_dup) to a fixpoint; the merged write carries the deeper
+        of the two depths, so port priority stays correct regardless of which
+        list slot survives."""
+        writes = list(writes)
+        changed = True
+        while changed:
+            changed = False
+            for i in range(len(writes)):
+                for j in range(i + 1, len(writes)):
+                    merged = self.merge_dup(writes[i], writes[j])
+                    if merged is not None:
+                        writes[i] = merged
+                        del writes[j]
+                        changed = True
+                        break
+                if changed:
+                    break
+        return writes
 
     def emit_meminit(self, m, obj, arr, aw, dw, defidx):
         """Translate an array's 'init' assignments into $meminit_v2 cells: a

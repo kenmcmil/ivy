@@ -1,0 +1,23 @@
+# Combinational equivalence: ivy_to_rtl output for multiwrite.ivy ("gold") against
+# the hand-written golden model ("gate"). equiv_induct proves that from any equal
+# state both compute the same next memory contents -- i.e. ivy_to_rtl emits enough
+# write ports, with the later write correctly prioritized. Run from this directory:
+#   ivy_to_rtl multiwrite.ivy
+#   yosys multiwrite_equiv.ys
+read_rtlil multiwrite.il
+rename top gold
+read_verilog -sv multiwrite_golden.sv
+rename top gate
+proc
+flatten gold
+flatten gate
+select gold
+connect -set rst 1'b0
+select gate
+connect -set rst 1'b0
+select -clear
+memory_map
+equiv_make gold gate equiv
+hierarchy -top equiv
+equiv_induct equiv
+equiv_status -assert

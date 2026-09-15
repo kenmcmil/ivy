@@ -90,6 +90,16 @@ tests = [
      'validate': _yosys_wf + ' && yosys -q cpu_equiv.ys',
      'timeout': 600, 'group': 'rtl'},
 
+    # Same, for the module-based cache CPU (memory subsystem = an idcache
+    # instance) against its own golden model (cpu_gen_golden.sv). This is what
+    # exercises ivy_to_rtl's multi-write-port handling: the idcache I-cache and
+    # D-cache each take several `after posedge` writes at distinct addresses in
+    # one cycle, which must map to separate, correctly-prioritized write ports.
+    # See cpu_gen_equiv.ys.
+    {'type': 'to_rtl', 'name': '5stage_gen_cache_cpu_ref',
+     'validate': _yosys_wf + ' && yosys -q cpu_gen_equiv.ys',
+     'timeout': 600, 'group': 'rtl'},
+
     # The dual-issue CPU on the GENERATED RTL (dual_issue.md Step 3d). sim_cpu.sh
     # injects dual_dep_prog.hex into the idcache main memory (\real_mem) and runs
     # yosys sim. The program loops over an aligned, intra-bundle RAW-DEPENDENT
@@ -247,6 +257,15 @@ tests = [
     # a single-address RAM write, so translation must error.
     {'type': 'to_rtl', 'name': 'arrcopy',
      'expect': 'not a point write', 'group': 'rtl'},
+
+    # multiwrite: two writes to one array at possibly-distinct addresses in a
+    # single `after posedge`. ivy_to_rtl must emit TWO write ports -- a single
+    # folded port silently drops one when the addresses differ -- with the
+    # program-later write prioritized so it wins when the addresses coincide.
+    # Proved against multiwrite_golden.sv (two nonblocking assignments, last to a
+    # given address wins) by equiv_induct. See multiwrite_equiv.ys.
+    {'type': 'to_rtl', 'name': 'multiwrite',
+     'validate': _yosys_wf + ' && yosys -q multiwrite_equiv.ys', 'group': 'rtl'},
 
     # Handling of functions defined by `definition` (see the ivy_to_rtl fix):
     # a wire function used by the implementation is inlined (no lookup memory),

@@ -1,0 +1,35 @@
+#lang ivy1.8
+# ivy_to_rtl regression: a memory written at TWO addresses in one `after posedge`.
+# Both writes must persist when the addresses differ (a<>b) -- the bug this checks
+# is ivy_to_rtl collapsing all writes into ONE port, which silently dropped one --
+# and the program-later write must win when they coincide (a==b). Verified against
+# multiwrite_golden.sv (two nonblocking assignments, last-to-same-address wins) by
+# multiwrite_equiv.ys.
+type addr
+interpret addr -> bv[4]
+type word
+interpret word -> bv[8]
+
+export action posedge
+
+isolate top = {
+    var mem(A:addr) : word
+
+    # free input wires (no definition -> primary inputs)
+    wire a : addr
+    wire b : addr
+    wire x : word
+    wire y : word
+
+    # a read port so the memory contents are observable (and comparable)
+    wire r  : addr
+    wire rd : word
+    definition rd = mem(r)
+
+    after init { mem(A) := 0 }
+
+    after posedge {
+        mem(a) := x;   # port 0 (lower priority)
+        mem(b) := y    # port 1 (higher priority: wins when b = a)
+    }
+}
