@@ -44,17 +44,19 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
   simulates real dual issue. See "Isolating a component's proof", "Widening to
   superscalar (dual issue)", "Common hardware design issues", and "A safety proof
   is not a live design" below.
-- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 3b of
+- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 3c of
   `doc/projects/ooo_cpu.md`**) — an out-of-order core: Tomasulo's algorithm with
   a 4-entry re-order buffer, single-wide dispatch, one ALU, the full ISA (ALU ops,
   BEQZ with a branch predictor and mispredicts resolved at retire, LD/ST/FLUSH
-  through the `idcache` module with a LD/ST queue: loads perform speculatively
-  ahead of older instructions, stores/FLUSHes at retire). Fully verified
-  (`ivy_check` OK in ~10 min); translates to RTL and simulates (`sim_cpu.sh
-  ooo_cpu_ref prog_lsq.hex`). Frozen earlier stages: `ooo_cpu_alu_ref.ivy`
-  (stage 1, ALU only, OK in ~17 s), `ooo_cpu_beqz_ref.ivy` (stage 2, +BEQZ,
-  ~2.5 min) and `ooo_cpu_mem_ref.ivy` (stage 3a, memory ops at the head,
-  ~3.5 min). Golden models `ooo_alu_golden.sv` (stage 1) and
+  through the `idcache` module with a LD/ST queue and store-to-load forwarding:
+  loads perform speculatively ahead of older instructions, forwarding from the
+  youngest older store to their address, stores/FLUSHes at retire). Fully
+  verified (`ivy_check` OK, ~20-40 min); translates to RTL and simulates
+  (`sim_cpu.sh ooo_cpu_ref prog_fwd.hex`). Frozen earlier stages:
+  `ooo_cpu_alu_ref.ivy` (stage 1, ALU only, OK in ~17 s), `ooo_cpu_beqz_ref.ivy`
+  (stage 2, +BEQZ, ~2.5 min), `ooo_cpu_mem_ref.ivy` (stage 3a, memory ops at the
+  head, ~3.5 min) and `ooo_cpu_lsq_ref.ivy` (stage 3b, LD/ST queue without
+  forwarding, ~10 min). Golden models `ooo_alu_golden.sv` (stage 1) and
   `ooo_beqz_golden.sv` (stage 2) are proven equivalent by `check_ooo_golden.sh
   [design] [golden]`. See "Out-of-order execution (Tomasulo + ROB)" below.
 - `reference_tagging.md` — the prose writeup of the method.
@@ -792,6 +794,27 @@ that also fired for NOPs whose operands are don't-cares).
   LD/ST queue *is* the ROB order plus a "oldest unperformed memory op" scan — no
   separate queue storage.
 
+- **Store-to-load forwarding needs no new ghost state — tie the datapath's
+  search to the ghost binding with derived invariants (stage 3c).** The
+  forwarding source the hardware finds (the youngest older unperformed store
+  with a known matching address, over the head-relative positions) must equal
+  the ghost `ld_src`. State it as `derived invariant [sel_fwd_src] fwd_perform &
+  ~shadow(fwd_sel) -> ld_src_valid(fwd_sel) & ld_src(fwd_sel) = fwd_src &
+  b_rdy(fwd_src)` and `[sel_nofwd] (cache-slot load) -> ~ld_src_valid`, each
+  `with` a purely combinational derived fact about the scan (`fwd_older_st`:
+  every store older than the selected load has a known address — i.e. no
+  blocker). They follow in one state from `rob_a_trk` (known addresses equal
+  the reference's), `ld_src_youngest`, `ld_src_trk` and `ld_nosrc_nostore`;
+  then `rob_val_trk` closes via `rob_b_trk` on the source. Zero CTIs. Two
+  design lessons: (1) with a *single* oldest-first memory slot, forwarding never
+  fires in practice — a store at the head missing in the cache owns the slot
+  and the dependent load queues behind it — so give forwarding its own slot
+  (it needs no cache access) and let the two perform in parallel: a third
+  result broadcast and dispatch bypass, no new state; (2) a test program has to
+  be *shaped* to exhibit forwarding (the store stuck behind older non-memory
+  work while its data is ready — here an ADD waiting on a cold-missing load),
+  and reading `fwd_perform` in the simulation is the only way to know it did.
+
 - **Stage-restricted ISA.** Stage 1 disables LD/ST/BEQZ/FLUSH by making them
   NOPs *in the ISA model* (and dropping `ddirty`/`error`/`mem_addr`/
   `take_branch`), so the proof is over all programs and needs no `~error`
@@ -1071,14 +1094,16 @@ The datapath must be free of ghost/abstract constructs:
   as a `bp` submodule whose `bht` pairs by name after flattening) and
   `ooo_mem_golden.sv` ↔ `ooo_cpu_mem_ref.ivy` (stage 3a; 5947 cones incl. the
   idcache's `real_mem`/`icache`/`dcache` and fill registers, ~2 min) and
-  `ooo_lsq_golden.sv` ↔ `ooo_cpu_ref.ivy` (stage 3b, the LD/ST queue; same
-  boundary, ~80 s)** — run `check_ooo_golden.sh [design] [golden]`;
-  mutation-tested (an ALU, bypass, squash-condition, redirect,
-  predictor-saturation, memory-stall, load-bypass, FLUSH-fetch-stall, reset-list,
-  speculative-store, memory-op-selection-order or load-completion bug in the
-  golden is reported on the registers it feeds). Once the stage-1 golden passed,
-  stages 2, 3a and 3b each passed on the first run — the boundary rules below are
-  the whole story. The idcache golden modules
+  `ooo_lsq_golden.sv` ↔ `ooo_cpu_lsq_ref.ivy` (stage 3b, the LD/ST queue; same
+  boundary, ~80 s) and `ooo_fwd_golden.sv` ↔ `ooo_cpu_ref.ivy` (stage 3c,
+  store-to-load forwarding with two memory slots; same boundary, ~2.5 min)** —
+  run `check_ooo_golden.sh [design] [golden]`; mutation-tested (an ALU, bypass,
+  squash-condition, redirect, predictor-saturation, memory-stall, load-bypass,
+  FLUSH-fetch-stall, reset-list, speculative-store, memory-op-selection-order,
+  load-completion, forwarding-source-priority, missing-blocker or
+  forward-before-data-ready bug in the golden is reported on the registers it
+  feeds). Once the stage-1 golden passed, stages 2, 3a, 3b and 3c each passed on
+  the first run — the boundary rules below are the whole story. The idcache golden modules
   (`idcache`/`main_mem`/`ic`/`dc`) are reused verbatim from `dual_issue_golden.sv`
   except that their `if (rst)` lists had to be *completed*: the address latches
   `mfa`, `ifill_miss`, `dfill_miss` reset to 0 too (ivy_to_rtl resets every

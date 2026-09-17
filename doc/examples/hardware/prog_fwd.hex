@@ -1,0 +1,20 @@
+# Store-to-load forwarding test for ooo_cpu_ref (stage 3c). 16-bit hex words,
+# one per address from 0. Encoding: [15:13] opcode [12:10] rd [9:7] ra [6:4] rb [7:0] imm
+# A load that misses in the D-cache (address 0 is only in the I-cache) feeds an
+# ADD; behind them a store with address and data ready cannot perform (it is
+# not the head) while the ADD is in flight, and a load to the same address
+# FORWARDS the store's data as soon as the missing load has left the memory
+# slot (mem_fwd is asserted at that ld_perform). The single memory slot is
+# oldest-first, so forwarding only helps when the store is stuck behind older
+# non-memory work -- which is exactly this shape.
+# Expected: r3 = 0x30, r4 = 7, r5 = 0x6c30 (word at address 0), r1 = 0xd860, r6 = 7.
+6c30        # 0: LI   r3, 0x30
+7007        # 1: LI   r4, 7
+9400        # 2: LD   r5, [r0]          -> 0x6c30, a D-cache miss (slow)
+26d0        # 3: ADD  r1, r5, r5        -> waits for r5; keeps the store from the head
+a1c0        # 4: ST   [r3], r4          -> ready, but not head
+9980        # 5: LD   r6, [r3]          -> forwards 7 from the store above
+0000        # 6: NOP
+0000
+0000
+0000

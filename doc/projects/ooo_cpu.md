@@ -158,6 +158,33 @@ round: `rob_done_issued` needs a load exclusion. The stage-3b golden
 `ooo_lsq_golden.sv` is proven equivalent by `check_ooo_golden.sh ooo_cpu_ref
 ooo_lsq_golden.sv` (5947 cones, ~80 s).
 
-Next: store-to-load forwarding (a bound load could take its value from the
-source store's rob_b when ready -- the ld_src ghost already names it), then
-resolve mispredicts at execution, dual-wide dispatch, more ALUs.
+Stage 3b is frozen as `ooo_cpu_lsq_ref.ivy` (its golden retargeted to it).
+
+Stage 3c (2026-09-17): `ooo_cpu_ref.ivy` adds STORE-TO-LOAD FORWARDING. A load
+is performable when its address is ready and no older unperformed memory op
+BLOCKS it (a FLUSH, or a store whose address is not yet known); it passes
+older stores to other addresses and older loads. The youngest older
+unperformed store with a known matching address is its forwarding source; if
+there is one the load takes that store's data (once ready) without touching
+the cache, else it reads idc. Two memory slots work in parallel: the CACHE
+slot serves the oldest performable op needing idc (ST/FLUSH at the head or a
+non-forwarding load), the FORWARDING slot the oldest performable forwarding
+load -- so a store missing in the cache does not hold up the loads that
+depend on it (with a single oldest-first slot, forwarding never fired in
+practice: the stalled store at the head owned the slot). Three result
+broadcasts (ALU, cache load, forwarded load) and three dispatch bypasses.
+Proof: no new ghost state -- the datapath's associative search is tied to
+the ld_src ghost by derived invariants: the forwarding slot's correct-path
+load forwards exactly from ld_src (`sel_fwd_src`, from "every older store's
+address is known" + ld_src_youngest/ld_src_trk), and the cache slot's load
+is unbound (`sel_nofwd`, from ld_nosrc_nostore); a forwarded value is then
+st(tag(ld_src)).b_val = the load's reference value. `ivy_check` OK (~39 min
+sharing the machine with another proof; the single-slot variant took
+17.5 min alone), zero CTIs. RTL translates; `sim_cpu.sh ooo_cpu_ref
+prog_fwd.hex` shows the forwarding slot completing a load while its source
+store is the head stalled on a D-cache miss. The stage-3c golden
+`ooo_fwd_golden.sv` is proven equivalent by `check_ooo_golden.sh ooo_cpu_ref
+ooo_fwd_golden.sv` (5947 cones, ~2.5 min).
+
+Next: resolve mispredicts at execution (rename-table recovery), dual-wide
+dispatch, more ALUs.
