@@ -6039,10 +6039,12 @@ def main_int(is_ivyc):
                             _dir = lib[1]
                             _libdir = lib[2] if len(lib) >= 3 else (_dir  + '/lib')
                             paths += ' -I {}/include -L {} -Xlinker -rpath -Xlinker {}'.format(_dir,_libdir,_libdir)
+                        cxx = os.environ.get('CXX') or ('clang++' if platform.system() == 'Darwin' else 'g++')
+                        cxx_flags = '-Wno-parentheses-equality' if 'clang' in os.path.basename(cxx) else ''
                         if emit_main:
-                            cmd = "g++ -Wno-parentheses-equality {} {} -g -o {} {}.cpp".format(gpp11_spec,paths,basename,basename)
+                            cmd = "{} {} {} {} -g -o {} {}.cpp".format(cxx,cxx_flags,gpp11_spec,paths,basename,basename)
                         else:
-                            cmd = "g++ -Wno-parentheses-equality {} {} -g -c {}.cpp".format(gpp11_spec,paths,basename)
+                            cmd = "{} {} {} {} -g -c {}.cpp".format(cxx,cxx_flags,gpp11_spec,paths,basename)
                         if target.get() in ['gen','test']:
                             cmd = cmd + ' -lz3'
                         cmd += libspec
