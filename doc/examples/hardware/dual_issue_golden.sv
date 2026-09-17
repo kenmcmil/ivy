@@ -234,6 +234,14 @@ module cpu ( \posedge , rst );
                 end
             end
         end
+        // synchronous reset (matches the Ivy `after init`: only these registers
+        // are reset; the ir/data pipeline regs are not, so they clock normally)
+        if (rst) begin
+            pc <= 8'd0;
+            d_valid <= 1'b0; e_valid <= 1'b0; m_valid <= 1'b0; w_valid <= 1'b0;
+            d_valid1 <= 1'b0; e_valid1 <= 1'b0; m_valid1 <= 1'b0; w_valid1 <= 1'b0;
+            for (ri = 0; ri < 8; ri = ri + 1) rf[ri] <= 16'd0;
+        end
     end
 endmodule
 
@@ -335,6 +343,7 @@ module main_mem (
         if (mbusy) mbusy <= 1'b0;
         else if (dfill_req) begin mbusy <= 1'b1; mfi <= 1'b0; mfa <= dfill_addr; end
         else if (ifill_req) begin mbusy <= 1'b1; mfi <= 1'b1; mfa <= ifill_addr; end
+        if (rst) begin mbusy <= 1'b0; mfi <= 1'b0; end   // synchronous reset
     end
 endmodule
 
@@ -422,6 +431,7 @@ module ic (
         if (flush_valid & (flush_addr == ifill_miss)) begin
             ifill_on <= 1'b0; ifill_got <= 1'b0;
         end
+        if (rst) begin ifill_on <= 1'b0; ifill_got <= 1'b0; end   // synchronous reset
     end
 endmodule
 
@@ -515,6 +525,7 @@ module dc (
             else
                 dcache[d_index] <= {1'b1, 1'b0, d_line[37], d_line[36:34], d_w1, d_w0, 2'b00};
         end
+        if (rst) begin dfill_on <= 1'b0; dfill_got <= 1'b0; end   // synchronous reset
     end
 endmodule
 
