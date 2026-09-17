@@ -624,34 +624,55 @@ any invalidation) on the same address.** A multi-cycle fill reads memory over
 several cycles; if a FLUSH of the address being filled lands in that window, the
 word in flight — or the miss word already installed — is stale w.r.t. the
 freshly-flushed memory, and installing or forwarding it violates coherence. The
-two-word I-cache needed three guards, each found from a counterexample:
+two-word I-cache needed guards on the *read* paths (don't forward a stale word)
+and on the *write* path (don't let two writers collide on the array), each found
+from a counterexample:
 
-  1. **Ignore the returned fill word** when a FLUSH this cycle targets the fill
-     address (`~(flush_valid & flush_addr = ifill_addr)` on the install).
-  2. **Void the fetch bypass** under the same condition, so fetch misses and
-     refetches rather than forwarding the stale word. Easy to forget: the install
-     and the fetch consume the same returned word by two different routes, so
-     both need the guard (the bypass one is what finally closed `icache_output`).
-  3. **Refetch the miss word** when a FLUSH hits the already-installed miss word
-     of a half-filled line (`flush_addr = ifill_miss -> ifill_got := false`), so
-     the machine rereads it from now-current memory. (The CTI showed the stale
-     address is `ifill_miss`, the cached word — not `fetch_addr`.)
-  4. **Same-*line*, different-address collision** (found in the stage-decomposition
-     port, a real bug latent in the reference): the FLUSH address and the fill
-     address can map to the *same cache line* (same index) while being different
-     addresses. Then the fill's half-line install and the FLUSH's whole-line
-     eviction (`icache(fl_index) := 0`) both target that line in the same edge, and
-     the eviction clobbers the just-installed half-line — violating `hard`. Guards
-     1–3 key on address equality (`flush_addr = ifill_addr`/`ifill_miss`) and miss
-     this. The simplest fix is to **delay the fill install when a FLUSH targets the
-     same line** (condition on `flush_addr<<4:1>> = ifill_addr<<4:1>>`, not just
-     address equality), so the FLUSH wins and the fill reissues. General point:
-     collision guards must be stated at the granularity of the *shared resource*
-     (the line/index), not the logical address.
+  1. **Void the fetch bypass** when a FLUSH this cycle targets the fill address
+     (`~(flush_valid & flush_addr = ifill_addr)` on `f_bypass`), so fetch misses
+     and refetches rather than forwarding the stale word being returned. Easy to
+     forget — the install and the fetch consume the same returned word by two
+     different routes; this read-path guard is what finally closed `icache_output`.
+  2. **Refetch the miss word** when a FLUSH hits the already-installed miss word of
+     a half-filled line (`flush_addr = ifill_miss -> ifill_on := false; ifill_got
+     := false`), so the machine rereads it from now-current memory. (The CTI showed
+     the stale address is `ifill_miss`, the cached word — not `fetch_addr`.)
+  3. **Give FLUSH blanket priority over the fill *install*** — suppress the install
+     on *any* flush cycle (`if ifill_on & ifill_data_valid & ~flush_valid {
+     …install… }`; the fill holds, `ifill_on` stays set, and the memory port
+     re-reads and reinstalls next cycle). This write-path guard **subsumes the
+     earlier per-address install guards**: both "ignore the returned word when the
+     FLUSH targets the fill address" and the subtler *same-line, different-address*
+     collision — a FLUSH evicting a whole line (`icache(fl_index) := 0`) while the
+     fill installs a half-line at the *same index* but a *different address*, both
+     writing the array in one edge and the eviction clobbering the just-installed
+     half-line. Keying the guard on address equality misses that case; keying it on
+     the shared resource (any flush suppresses any install) covers it and is
+     simpler. *Collision guards belong at the granularity of the shared resource —
+     here the icache array — not the logical address; and "one writer wins the whole
+     cycle" is often the cleanest statement of that.*
+
+**Why blanket priority rather than a same-line address guard — the `ivy_to_rtl`
+single-write-port limitation.** `ivy_to_rtl` groups `after posedge` writes to a
+memory into write ports, and originally emitted **one** port, so two writes to the
+array at *different* addresses in one cycle silently dropped one. The I-cache hit
+this exactly: the decoupled fill FSM can install a line the same cycle a FLUSH
+evicts a *different* line — two `icache` writes, one port, one lost. A
+combinational equivalence check against the golden model exposed it as all 576
+icache bits unproven while everything else (CPU, D-cache, main memory, rf,
+predictor) matched. Two complementary fixes: (a) `ivy_to_rtl` now emits multiple
+*mutually-exclusive* write ports when it can prove the write sets disjoint; (b)
+better, keep same-cycle writers to a memory mutually exclusive by design (FLUSH
+priority) so a single port is provably correct. Prefer (b) — the disjointness the
+translator needs is exactly what the design rule guarantees. (The inline
+`5stage_cache_cpu_ref` and the D-cache never tripped this: their icache writes were
+already mutually exclusive.)
 
 The general lesson: for any in-flight, multi-cycle operation (fill, prefetch,
 write-back), enumerate the invalidations that can occur *during* it and decide,
-per case, whether in-flight data must be dropped, re-issued, or is safe.
+per case, whether in-flight data must be dropped, re-issued, or is safe — and
+whenever two updates can hit the *same array* in one cycle, make them mutually
+exclusive so the emitted RTL's write port is sound.
 
 Two wiring lessons from connecting the I-cache into the decomposed pipeline:
 
@@ -818,15 +839,51 @@ The datapath must be free of ghost/abstract constructs:
 
 - **Equivalence-check against a golden model (optional, strong).** Because the
   emitted RTL is real hardware, you can cross-check it against an independent
-  hand-written model. `references/cpu_golden.sv` is a SystemVerilog transcription
-  of the cache-CPU datapath with register/memory names matching the Ivy model,
-  and `references/cpu_equiv.ys` proves combinational (per-cycle) equivalence in
-  yosys: `equiv_make` pairs registers/memories by name, `memory_map` expands the
-  memories, and `equiv_induct` proves the two compute the same next state from
-  any equal state. (Tie `rst=0` to compare the datapath, since ivy_to_rtl models
-  `after init` as a per-register synchronous-reset mux the golden model need not
-  reproduce.) When the design is hierarchical — e.g. the CPU instantiates the
-  predictor submodule `cpu.bp` — make the golden model hierarchical the same way
-  (a `bp` submodule instantiated as `bp`) and `flatten` both designs before
-  `equiv_make`, so the shared instance name lines the inlined names up (e.g. the
-  predictor's `bp.bht` memory pairs by name).
+  hand-written SystemVerilog model whose register/memory/port names match the Ivy
+  model. This is a *second, independent* correctness signal (it catches
+  `ivy_to_rtl` bugs and modeling slips the Ivy proof cannot), and it is how the
+  single-write-port limitation above was found. Worked goldens:
+  `references/cpu_golden.sv` for the cache CPU, `cpu_gen_golden.sv` for the
+  module-based `5stage_gen_cache_cpu_ref`, and `dual_issue_golden.sv` for the
+  dual-issue CPU (the last is WIP — see the register-boundary caveat below).
+
+- **Prefer the combinational, state-independent check (`rtlil_eqv`).** The goal is
+  *per-cycle* equivalence: from **any** equal register state (not just reachable
+  ones), the two designs compute the same next state and outputs. `rtlil_eqv
+  <config>.ileq` (`ivy/ivy_rtlil_eqv.py`, installed as a console script) does this
+  directly: yosys lowers each `.il` to AIGER (FFs become uninitialized latches =
+  cut points), it checks that inputs/outputs/registers match one-to-one by name,
+  builds a name-matched combinational miter (clk and reset paired across the two
+  designs), and `abc` proves it or returns a counterexample it maps back to the
+  offending cone. The `.ileq` config gives, per design, the `.il` file, top
+  module, clock name, and reset name. Because it cuts at the registers, it ignores
+  reachability *and* initial values — which sidesteps the init-attribute asymmetry
+  (ivy_to_rtl resets via per-register `rst`-muxes and emits no FF `init`
+  attributes; a golden's `initial` blocks do) that makes arbitrary-state checkers
+  report spurious mismatches. Uses `submodules/abc` + `submodules/aiger`
+  (overridable via `IVY_ABC`/`IVY_AIGER`/`IVY_YOSYS`).
+
+- **The golden must have the *same register boundary* as the Ivy model, or the
+  combinational check cannot pair the state.** `rtlil_eqv` matches registers by
+  name; if the golden stores different state it reports an incomplete match rather
+  than a false pass. This is a real design constraint on the golden, not a tool
+  limitation: e.g. the dual-issue golden initially stored the raw instruction word
+  per stage (`e_ir`/`d_ir`…) and re-decoded combinationally, while the Ivy model
+  stores *decoded* pipeline fields (`e_opcode`/`e_rd`/`e_ra`/…) — so the two are the
+  same machine with different pipeline-register encodings, and the golden has to be
+  rewritten to the Ivy boundary before it can be checked this way. (Also avoid
+  synthesizing stray state: a `for`-loop variable assigned in an `always @(posedge)`
+  reset becomes a register — name/scope it so it does not.)
+
+- **Older yosys-native routes and why they were dropped.** `references/cpu_equiv.ys`
+  uses yosys `equiv_make` (pairs registers/memories by name) + `memory_map` +
+  `equiv_induct`; it works for the cache CPU but `equiv_induct` proves a *sequential*
+  equivalence and was found brittle here (it ignores reset by comparing arbitrary
+  *equal* states, yet still stumbles on designs where one lone bit differs only in
+  unreachable states). The OSS-CAD **EQY** flow was also tried and its partitioner
+  segfaults in this build. `rtlil_eqv` exists because of these — reach for it first.
+  Whatever route you use: tie/pair the reset (ivy_to_rtl models `after init` as a
+  per-register synchronous-reset mux the golden need not reproduce), and when the
+  design is hierarchical — e.g. the CPU instantiates the predictor `cpu.bp` — make
+  the golden hierarchical the same way and `flatten` both before pairing, so shared
+  instance names line the inlined names up (the predictor's `bp.bht` pairs by name).
