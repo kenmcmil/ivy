@@ -1,0 +1,19 @@
+# Memory test program for ooo_cpu_ref (stage 3). 16-bit hex words, one per
+# address from 0. Encoding: [15:13] opcode [12:10] rd [9:7] ra [6:4] rb [7:0] imm
+#   LI = 011 rd ..imm8..  ADD = 001 rd ra rb 0000  LD = 100 rd ra . ....
+#   ST = 101 ... ra rb ....  FLUSH = 111 ... ra . ....
+# r2 = 0x20 (a data address), r4 = 5; ST [r2] <- r4; LD r6 <- [r2];
+# ADD r1 = r6 + r4 (= 10, waits on the load); ST [r2+1] <- r1 via r3 = 0x21;
+# FLUSH [r2]; LD r7 <- [r3].  Expected: r6 = 5, r1 = 10, r7 = 10.
+6820        # 0: LI   r2, 0x20
+7005        # 1: LI   r4, 5
+a940        # 2: ST   [r2], r4
+9900        # 3: LD   r6, [r2]
+2740        # 4: ADD  r1, r6, r4
+6c21        # 5: LI   r3, 0x21
+a190        # 6: ST   [r3], r1
+e100        # 7: FLUSH [r2]
+9d80        # 8: LD   r7, [r3]
+0000        # 9: NOP
+0000
+0000

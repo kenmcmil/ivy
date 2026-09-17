@@ -106,6 +106,32 @@ mispredicting back-branch correctly. The stage-2 golden `ooo_beqz_golden.sv`
 `check_ooo_golden.sh ooo_cpu_ref ooo_beqz_golden.sv` (605 cones, including
 the 32 bits of bp.bht).
 
-Next: stage 3 (LD/ST via idcache with an in-order LD/ST buffer, FLUSH,
-restore ddirty/error). Later refinements: resolve mispredicts at execution
-(needs rename-table recovery), dual-wide dispatch, more ALUs.
+Stage 2 is frozen as `ooo_cpu_beqz_ref.ivy`.
+
+Stage 3a (2026-09-17): `ooo_cpu_ref.ivy` restores the full ISA (LD/ST/FLUSH,
+`ddirty`/`error`) with the `idcache` module for the I/D caches, but WITHOUT a
+LD/ST queue: memory instructions execute in order AT THE HEAD of the ROB. A
+LD/ST/FLUSH entry is never issued to the ALU; when it is the head and its
+operands are ready it presents its request to idc and, if idc does not stall,
+completes and retires in one cycle (a LD writes rf, broadcasts its data to
+waiting entries -- a second broadcast source alongside the ALU -- and bypasses
+it to a same-cycle dispatch). A FLUSH stalls fetch from the moment it is
+fetched until it retires, so it is always the youngest instruction in flight.
+Proof: idc.mem/ddirty = st(commit).mem/ddirty exactly (memory ops are retire
+ops); fetch coherence needs only two one-step invariants -- with no FLUSH in
+flight every in-flight store leaves its address dirty at now, hence under the
+fetch condition memory at that address is unchanged across [commit, now).
+Every trace-relating invariant is guarded by ~st(now).error. `ivy_check` OK
+(~3.5 min). RTL translates; `sim_cpu.sh ooo_cpu_ref prog_mem.hex` (store,
+dependent load, add on the load, store, FLUSH, load) matches. Two CTI rounds:
+memory ops were marked `issued` at dispatch, and the pending-operand invariant
+had to say the producer is a register writer (else a consumer of a *store* is
+imaginable, and a store retires without broadcasting). The stage-3a golden
+`ooo_mem_golden.sv` (cpu + bp + the idcache/main_mem/ic/dc golden modules of
+dual_issue_golden.sv with completed reset lists) is proven equivalent by
+`check_ooo_golden.sh ooo_cpu_ref ooo_mem_golden.sv` (5947 cones, ~2 min).
+
+Next: stage 3b (a LD/ST queue so loads/stores execute before reaching the
+head: needs store-to-load forwarding or ordering, and the memory analogue of
+the rename table). Later: resolve mispredicts at execution, dual-wide
+dispatch, more ALUs.

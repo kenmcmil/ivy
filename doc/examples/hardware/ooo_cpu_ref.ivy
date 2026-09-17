@@ -3,13 +3,12 @@
 # An out-of-order CPU (Tomasulo's algorithm with a re-order buffer), verified
 # against the ISA reference by reference tagging.
 #
-# STAGE 1 (this file is the frozen stage-1 snapshot; development continues in ooo_cpu_ref.ivy): ALU instructions only, single-wide dispatch, one ALU,
-# a 4-entry ROB. There is no memory unit and no branch predictor. The ISA
-# below is the stage-1 restriction of the shared ISA (see
-# dual_issue_cpu_ref.ivy): opcodes 4..7 (LD/ST/BEQZ/FLUSH) execute as NOPs,
-# so memory is never written, there is no cache-coherence `ddirty`/`error`
-# state, and the PC always advances by one. Stages 2 and 3 restore branches
-# and memory instructions.
+# STAGE 3a (this file): the full ISA -- ALU ops, BEQZ with a branch predictor,
+# and the memory instructions LD/ST/FLUSH through the reusable I/D-cache module
+# `idcache` -- with single-wide dispatch, one ALU and a 4-entry ROB. Memory
+# instructions execute IN ORDER, AT THE HEAD OF THE ROB (there is no LD/ST
+# queue yet; that is stage 3b). Stage 1 (ALU only) is frozen as
+# ooo_cpu_alu_ref.ivy and stage 2 (+BEQZ) as ooo_cpu_beqz_ref.ivy.
 #
 # Instruction encoding (16 bits):
 #
@@ -19,87 +18,73 @@
 #          1  ADD  rd, ra, rb     rf[rd] := rf[ra] + rf[rb]
 #          2  SUB  rd, ra, rb     rf[rd] := rf[ra] - rf[rb]
 #          3  LI   rd, imm        rf[rd] := zero_extend(imm8)
+#          4  LD   rd, [ra]       rf[rd] := mem[ rf[ra] ]
+#          5  ST   [ra], rb       mem[ rf[ra] ] := rf[rb]
 #          6  BEQZ ra, target     if rf[ra] == 0 then pc := target
-#          4,5,7                   (stage 2: NOP)
+#          7  FLUSH [ra]          make prior writes to mem[ rf[ra] ] visible to fetch
+#
+# Memory is unified and the I- and D-caches are not coherent, so (as in
+# dual_issue_cpu_ref.ivy) the ISA carries a per-address dirty bit `ddirty(A)`
+# (set by ST, cleared by FLUSH) and a sticky `error` set when an instruction is
+# fetched from a dirty address; once error holds the implementation is no
+# longer required to match, and every invariant relating the implementation
+# to the trace is guarded by ~trace.st(trace.now).error.
 #
 # ---------------------------------------------------------------------------
 # Microarchitecture
 #
-#   Fetch (IF)        : d_ir := mem(pc); pc := predicted next pc (the branch
-#                       predictor `bp` predicts a fetched BEQZ; the prediction
-#                       d_pred and the instruction's pc d_pc ride with it).
-#                       Stalls when the ROB is full.
-#   Dispatch (ID)     : allocates ROB entry `rob_tail` for d_ir, renames rd in
-#                       the rename table (rat_*), and captures the operands:
-#                       from the register file if no in-flight writer, from
-#                       the ROB if the writer is done, from the ALU result bus
-#                       if the writer completes this very cycle, else it
-#                       records the writer's ROB index and waits.
-#   Issue             : the oldest ROB entry whose operands are ready and that
-#                       has not issued goes to the ALU latch (ex_*). A BEQZ is
-#                       a one-operand ALU op (it needs ra only).
-#   Execute           : one ALU, one cycle. On completion the result is
-#                       written to the entry (rob_val/rob_done) and BROADCAST
-#                       to every entry waiting on this ROB index. For a BEQZ
-#                       the ALU also records the true outcome (rob_take).
+#   Fetch (IF)        : d_ir := idc.fetch_data0 at pc (stalls on an I-cache
+#                       miss); pc := predicted next pc (bp predicts a fetched
+#                       BEQZ; d_pred/d_pc ride with the instruction). Stalls
+#                       when the ROB is full, and while a FLUSH is anywhere in
+#                       flight (IF/ID latch or ROB) -- so a FLUSH is always the
+#                       youngest instruction and nothing behind it is fetched
+#                       until it has taken effect.
+#   Dispatch (ID)     : allocates ROB entry `rob_tail`, renames rd (ALU ops and
+#                       LD), captures operands (from rf / the ROB / the ALU
+#                       result bus / the retiring load's data, else waits).
+#   Issue / Execute   : the oldest ready, un-issued ALU/BEQZ entry goes to the
+#                       one-cycle ALU; the result (and a BEQZ's outcome) is
+#                       written to the entry and broadcast to waiting entries.
+#   Memory (at head)  : a LD/ST/FLUSH entry executes only when it is the head
+#                       and its operands are ready: it presents its request to
+#                       idc and, if idc does not stall, completes AND retires in
+#                       the same cycle (a LD writes rf, broadcasts its data to
+#                       waiting entries and bypasses it to a dispatching
+#                       consumer). In-order, non-speculative memory access falls
+#                       out for free: the head is never wrong-path.
 #   Retire            : the head entry, once done, writes the register file,
-#                       frees its slot, and clears the rename entry if it is
-#                       still the youngest writer of its destination. A BEQZ
-#                       whose outcome (rob_take) differs from its prediction
-#                       (rob_pred) SQUASHES at retire: every ROB entry (all
-#                       younger than the branch) is freed, the rename table is
-#                       cleared, the ALU and fetch latches are killed, and the
-#                       PC is redirected. Misprediction recovery at retire is
-#                       the simplest correct scheme (no rename checkpoints);
-#                       resolving earlier is a performance refinement.
-#
-# The reservation stations are "keyed to the ROB": entry I of the ROB carries
-# its own operand fields (rob_a/rob_a_rdy/rob_a_src, rob_b/...), so there is
-# one reservation station per ROB entry and the ROB index doubles as the
-# rename tag.
+#                       frees its slot, clears the rename entry if it is still
+#                       the youngest writer; a mispredicted BEQZ squashes the
+#                       whole ROB, clears the rename table, kills the ALU/fetch
+#                       latches and redirects the pc.
 #
 # ---------------------------------------------------------------------------
 # Proof approach (reference tagging)
 #
-# Each ROB entry I has a ghost tag rob_tag(I) naming its instruction in the
-# trace. The busy entries form a contiguous run of tags from `commit` (the
-# head's tag; rf = st(commit).rf) to `trace.now` (the next tag to dispatch).
-# The per-entry invariants say: the entry's instruction word is
-# st(rob_tag(I)).fetched, its ready operands are st(rob_tag(I)).a_val/b_val,
-# its result (when done) is st(rob_tag(I)).res, and a pending operand is
-# waiting on a busy, not-yet-done entry whose result is that operand.
+# As in stages 1-2: rob_tag(I) names entry I's instruction in the trace, the
+# non-shadowed busy entries carry the tag run [commit, now), and the rename
+# table is characterized against the current trace position:
 #
-# The rename table is characterized WITHOUT reasoning about the window of
-# in-flight writers (which would need an unbounded/unrolled induction over
-# the trace step relation):
-#
-#   ~rat_valid(R) -> rf(R) = st(now).rf(R)                  (no in-flight writer:
-#                                                            rf already current)
+#   ~rat_valid(R) -> rf(R) = st(now).rf(R)
 #    rat_valid(R) -> st(now).rf(R) = st(rob_tag(rat_idx(R))).res
-#                                                           (the youngest in-flight
-#                                                            writer's result IS the
-#                                                            current value)
 #
-# Both are preserved by one trace step at dispatch, and together they make
-# every operand-capture case at dispatch correct in one step.
-#
-# Speculation (stage 2) uses the shadow-bit discipline of 5stage_bp_cpu_ref:
-# the trace steps only along the correct path. At dispatch of a BEQZ the
-# ghost compares the carried prediction with the true outcome recorded in the
-# trace (st(now).take_branch); on disagreement it sets `spec_wrong`, names the
-# branch's entry `mp_idx`, and everything dispatched from then on is
-# `rob_shadow`ed (no trace step, no data invariants). Shadowed entries are a
-# suffix of the ROB, strictly younger than mp_idx; the mispredicted branch is
-# the only non-shadowed mispredicted entry, so when it reaches the head every
-# other entry is shadowed and the squash leaves an empty ROB with commit = now
-# and the redirected pc = st(now).pc. Since a shadowed entry never retires
-# (the branch ahead of it squashes it), the architectural state is never
-# polluted -- that is the core obligation, and it follows from `busy(head) ->
-# ~shadow(head)`. Correctness is independent of the prediction: `bp`'s logic
-# is hidden in its isolate and the CPU is verified with predicted_taken
-# arbitrary.
+# (with res now also recording a LD's loaded value, so a load is just another
+# renamed writer). Speculation: rob_shadow/d_shadow/spec_wrong/mp_idx as in
+# stage 2. Memory needs no analogue of the rename table because memory ops
+# execute at the head: idc's abstract memory equals st(commit).mem exactly
+# (a store updates it in the cycle commit steps over the store), a load reads
+# st(commit).mem at st(commit).mem_addr, and a FLUSH updates ddirty in step.
+# Fetch coherence is the one place the window [commit, now) matters: a fetch
+# from A with ~st(now).ddirty(A) needs st(commit).mem(A) = st(now).mem(A). It
+# holds because fetch is stalled while any FLUSH is in flight, and with no
+# FLUSH in flight every in-flight store to A leaves st(now).ddirty(A) set
+# ([store_dirty]); so under the fetch condition no store to A is in flight
+# and memory at A is unchanged across the window ([mem_now]) -- both are
+# one-step inductive, no unrolling.
 
 include order
+include idcache
 
 type word
 interpret word -> bv[16]
@@ -111,6 +96,8 @@ type opc
 interpret opc -> bv[3]
 type robidx                      # re-order buffer index (4 entries)
 interpret robidx -> bv[2]
+type bit                         # an idcache type parameter
+interpret bit -> bv[1]
 
 export action posedge
 
@@ -119,14 +106,16 @@ export action posedge
 function init_mem(A:addr) : word
 
 # ===========================================================================
-# The ISA model (stage-1 restriction: ALU ops only).
+# The ISA model (the full shared ISA; `res` also records a LD's value).
 # ===========================================================================
 
 module isa_model(init_mem) = {
 
     var pc : addr                 # program counter
     var rf(R:reg) : word          # register file
-    var mem(A:addr) : word        # unified memory (constant in stage 1)
+    var mem(A:addr) : word        # unified memory (instructions and data)
+    var ddirty(A:addr) : bool     # A has been written since the last FLUSH of A
+    var error : bool              # an instruction was fetched from a dirty address
 
     # Temporary variables computed by `prepare`, not holding state
 
@@ -135,16 +124,19 @@ module isa_model(init_mem) = {
     var rd : reg
     var ra : reg
     var rb : reg
-    var target : addr             # low 8 bits: immediate
+    var target : addr             # low 8 bits: branch target or immediate
     var a_val : word
     var b_val : word
+    var mem_addr : addr           # address for LD/ST/FLUSH: low 8 bits of rf[ra]
     var take_branch : bool        # BEQZ outcome
-    var res : word                # ALU result (ADD/SUB/LI; 0 otherwise)
+    var res : word                # the value written to rd (ADD/SUB/LI/LD; 0 otherwise)
 
     after init {
         pc := 0;
         rf(R) := 0;
         mem(A) := init_mem(A);
+        ddirty(A) := false;
+        error := false;
     }
 
     action prepare = {
@@ -156,15 +148,27 @@ module isa_model(init_mem) = {
         target := fetched<<7:0>>;
         a_val := rf(ra);
         b_val := rf(rb);
+        mem_addr := a_val<<7:0>>;
         take_branch := (opcode = 6) & (a_val = 0);
         res := (a_val + b_val if opcode = 1 else
                (a_val - b_val if opcode = 2 else
-               ((0:addr) :: target if opcode = 3 else 0)));
+               ((0:addr) :: target if opcode = 3 else
+               (mem(mem_addr) if opcode = 4 else 0))));
     }
 
     action step = {
-        if opcode = 1 | opcode = 2 | opcode = 3 {
+        # Fetch coherence: an instruction executed from a dirty address is a
+        # stale fetch; the ISA enters the sticky error state.
+        if ddirty(pc) {
+            error := true;
+        }
+        if opcode = 1 | opcode = 2 | opcode = 3 | opcode = 4 {
             rf(rd) := res
+        } else if opcode = 5 {
+            mem(mem_addr) := b_val;
+            ddirty(mem_addr) := true;
+        } else if opcode = 7 {
+            ddirty(mem_addr) := false;
         };
         if take_branch {
             pc := target
@@ -190,6 +194,8 @@ isolate trace = {
             pc : addr,
             rf(R:reg) : word,
             mem(A:addr) : word,
+            ddirty(A:addr) : bool,
+            error : bool,
             fetched : word,
             opcode : opc,
             rd : reg,
@@ -198,6 +204,7 @@ isolate trace = {
             target : addr,
             a_val : word,
             b_val : word,
+            mem_addr : addr,
             take_branch : bool,
             res : word
         }
@@ -209,6 +216,8 @@ isolate trace = {
             res.pc := arch.pc;
             res.rf(R:reg) := arch.rf(R:reg);
             res.mem(A:addr) := arch.mem(A:addr);
+            res.ddirty(A:addr) := arch.ddirty(A:addr);
+            res.error := arch.error;
             res.fetched := arch.fetched;
             res.opcode := arch.opcode;
             res.rd := arch.rd;
@@ -217,6 +226,7 @@ isolate trace = {
             res.target := arch.target;
             res.a_val := arch.a_val;
             res.b_val := arch.b_val;
+            res.mem_addr := arch.mem_addr;
             res.take_branch := arch.take_branch;
             res.res := arch.res;
         }
@@ -237,6 +247,8 @@ isolate trace = {
         invariant st(now).pc = arch.pc
         invariant st(now).rf(R:reg) = arch.rf(R:reg)
         invariant st(now).mem(A:addr) = arch.mem(A:addr)
+        invariant st(now).ddirty(A:addr) = arch.ddirty(A:addr)
+        invariant st(now).error = arch.error
         invariant st(now).fetched = arch.fetched
         invariant st(now).opcode = arch.opcode
         invariant st(now).rd = arch.rd
@@ -245,6 +257,7 @@ isolate trace = {
         invariant st(now).target = arch.target
         invariant st(now).a_val = arch.a_val
         invariant st(now).b_val = arch.b_val
+        invariant st(now).mem_addr = arch.mem_addr
         invariant st(now).take_branch = arch.take_branch
         invariant st(now).res = arch.res
 
@@ -257,16 +270,26 @@ isolate trace = {
         invariant T <= now -> st(T).target = (st(T).fetched)<<7:0>>
         invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
         invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
+        invariant T <= now -> st(T).mem_addr = (st(T).a_val)<<7:0>>
         invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
-        invariant T <= now -> st(T).res = (st(T).a_val + st(T).b_val if st(T).opcode = 1 else (st(T).a_val - st(T).b_val if st(T).opcode = 2 else ((0:addr) :: st(T).target if st(T).opcode = 3 else 0)))
+        invariant T <= now -> st(T).res = (st(T).a_val + st(T).b_val if st(T).opcode = 1 else (st(T).a_val - st(T).b_val if st(T).opcode = 2 else ((0:addr) :: st(T).target if st(T).opcode = 3 else (st(T).mem(st(T).mem_addr) if st(T).opcode = 4 else 0))))
 
         # (b) consecutive recorded entries are related by one ISA step
         invariant (tag.succ(T,U) & U <= now) ->
                       st(U).pc = (st(T).target if st(T).take_branch else st(T).pc + 1)
-        invariant (tag.succ(T,U) & U <= now) -> st(U).mem(A) = st(T).mem(A)
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).error = (st(T).error | st(T).ddirty(st(T).pc))
+        invariant [tr_ddirty] (tag.succ(T,U) & U <= now) ->
+                      st(U).ddirty(A) =
+                          (true  if (st(T).opcode = 5 & A = st(T).mem_addr) else
+                          (false if (st(T).opcode = 7 & A = st(T).mem_addr) else
+                           st(T).ddirty(A)))
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).mem(A) = (st(T).b_val if (st(T).opcode = 5 & A = st(T).mem_addr)
+                                      else st(T).mem(A))
         invariant (tag.succ(T,U) & U <= now) ->
                       st(U).rf(R) = (st(T).res
-                                     if ((st(T).opcode = 1 | st(T).opcode = 2 | st(T).opcode = 3) & R = st(T).rd)
+                                     if ((st(T).opcode = 1 | st(T).opcode = 2 | st(T).opcode = 3 | st(T).opcode = 4) & R = st(T).rd)
                                      else st(T).rf(R))
     }
 } with addr, opc, tag
@@ -297,7 +320,12 @@ object cpu = {
     # ---- architectural state ----
     var pc : addr
     var rf(R:reg) : word
-    var mem(A:addr) : word            # instruction memory (never written in stage 1)
+
+    # ---- memory subsystem: the reusable `idcache` module (I-cache, D-cache,
+    # main memory, FLUSH-based coherence, multi-cycle fill port). Its spec is
+    # over its own abstract idc.mem / idc.ddirty, which the CPU relates to the
+    # reference at the retire tag (commit) below. Only fetch lane 0 is used.
+    instance idc : idcache(posedge, word, addr, bit, init_mem)
 
     # ---- IF/ID latch ----
     var d_ir : word
@@ -318,7 +346,7 @@ object cpu = {
     var rob_pred(I:robidx) : bool     # its carried branch prediction
     var rob_take(I:robidx) : bool     # its true branch outcome (valid when done)
     var rob_issued(I:robidx) : bool   # it has been sent to the ALU (or needs no ALU)
-    var rob_done(I:robidx) : bool     # its result is in rob_val
+    var rob_done(I:robidx) : bool     # its result is in rob_val (never for a memory op)
     var rob_val(I:robidx) : word
     var rob_a(I:robidx) : word        # operand a (valid when rob_a_rdy)
     var rob_a_rdy(I:robidx) : bool
@@ -337,12 +365,8 @@ object cpu = {
     implementation {
 
     # ---- ROB occupancy ----
-    # The busy entries are the circular range [rob_head, rob_tail); the head
-    # bit disambiguates full from empty when the pointers coincide.
     wire rob_full : bool
     definition rob_full = rob_busy(rob_tail)
-    wire retire : bool
-    definition retire = rob_busy(rob_head) & rob_done(rob_head)
 
     # ---- dispatch decode ----
     wire d_opcode : opc
@@ -355,18 +379,20 @@ object cpu = {
     definition d_rb = d_ir<<6:4>>
     wire d_target : addr
     definition d_target = d_ir<<7:0>>
-    wire d_alu : bool                 # writes rd (through the ALU)
-    definition d_alu = (d_opcode = 1 | d_opcode = 2 | d_opcode = 3)
+    wire d_wr : bool                  # writes rd (ALU op or LD): renamed
+    definition d_wr = (d_opcode = 1 | d_opcode = 2 | d_opcode = 3 | d_opcode = 4)
     wire d_branch : bool
     definition d_branch = (d_opcode = 6)
     wire d_exec : bool                # goes through the ALU (ALU op or branch)
-    definition d_exec = d_alu | d_branch
+    definition d_exec = (d_opcode = 1 | d_opcode = 2 | d_opcode = 3 | d_opcode = 6)
+    wire d_mem : bool                 # a memory op: executes at the head
+    definition d_mem = (d_opcode = 4 | d_opcode = 5 | d_opcode = 7)
     wire d_needs_a : bool             # reads ra
-    definition d_needs_a = (d_opcode = 1 | d_opcode = 2 | d_opcode = 6)
+    definition d_needs_a = (d_opcode = 1 | d_opcode = 2 | d_opcode = 4 | d_opcode = 5 | d_opcode = 6 | d_opcode = 7)
     wire d_needs_b : bool             # reads rb
-    definition d_needs_b = (d_opcode = 1 | d_opcode = 2)
+    definition d_needs_b = (d_opcode = 1 | d_opcode = 2 | d_opcode = 5)
 
-    # ---- retire decode (moved up: squash gates dispatch/issue/fetch) ----
+    # ---- retire / memory-at-head decode ----
     wire r_ir : word
     definition r_ir = rob_ir(rob_head)
     wire r_opcode : opc
@@ -375,11 +401,13 @@ object cpu = {
     definition r_rd = r_ir<<12:10>>
     wire r_target : addr
     definition r_target = r_ir<<7:0>>
-    wire r_alu : bool
-    definition r_alu = (r_opcode = 1 | r_opcode = 2 | r_opcode = 3)
+    wire r_wr : bool                  # writes rd (ALU op or LD)
+    definition r_wr = (r_opcode = 1 | r_opcode = 2 | r_opcode = 3 | r_opcode = 4)
     wire r_branch : bool
     definition r_branch = (r_opcode = 6)
-    wire r_val : word                 # the retiring result (pre-state read)
+    wire r_mem : bool
+    definition r_mem = (r_opcode = 4 | r_opcode = 5 | r_opcode = 7)
+    wire r_val : word                 # the retiring ALU result (pre-state read)
     definition r_val = rob_val(rob_head)
     wire r_rat_clear : bool           # the retiring entry is still rd's youngest writer
     definition r_rat_clear = rat_valid(r_rd) & rat_idx(r_rd) = rob_head
@@ -389,18 +417,45 @@ object cpu = {
     definition r_take = rob_take(rob_head)
     wire r_pred : bool
     definition r_pred = rob_pred(rob_head)
+    wire r_a : word                   # the head's operands (its address / store data)
+    definition r_a = rob_a(rob_head)
+    wire r_b : word
+    definition r_b = rob_b(rob_head)
+    wire r_addr : addr
+    definition r_addr = r_a<<7:0>>
+    # a memory op at the head with its operands ready presents its request to idc
+    wire mem_ready : bool
+    definition mem_ready = rob_busy(rob_head) & r_mem & rob_a_rdy(rob_head) & rob_b_rdy(rob_head)
+    wire mem_retire : bool            # ... and completes (and retires) if idc does not stall
+    definition mem_retire = mem_ready & ~idc.data_stall
+    wire ld_bcast : bool              # a retiring load broadcasts its data
+    definition ld_bcast = mem_retire & (r_opcode = 4)
+    wire retire : bool
+    definition retire = (rob_busy(rob_head) & rob_done(rob_head)) | mem_retire
+    wire r_wval : word                # the value written to rf at retire
+    definition r_wval = (idc.read_data if r_opcode = 4 else r_val)
     # a retiring BEQZ whose outcome differs from its prediction: squash
     wire squash : bool
     definition squash = retire & r_branch & (r_take ~= r_pred)
     wire redirect_pc : addr           # the correct next pc after the branch
     definition redirect_pc = (r_target if r_take else r_pc + 1)
 
+    # ---- a FLUSH in flight (IF/ID or ROB) stalls fetch until it retires ----
+    wire flush_pending : bool
+    definition flush_pending = (d_valid & d_opcode = 7)
+                             | (rob_busy(0) & (rob_ir(0)<<15:13>>:opc) = 7)
+                             | (rob_busy(1) & (rob_ir(1)<<15:13>>:opc) = 7)
+                             | (rob_busy(2) & (rob_ir(2)<<15:13>>:opc) = 7)
+                             | (rob_busy(3) & (rob_ir(3)<<15:13>>:opc) = 7)
+
     wire dispatch : bool
     definition dispatch = d_valid & ~rob_full & ~squash
     wire if_stall : bool
     definition if_stall = d_valid & rob_full
-    wire fetch_en : bool
-    definition fetch_en = ~if_stall & ~squash
+    wire fetch_active : bool          # IF presents the pc to idc
+    definition fetch_active = ~if_stall & ~squash & ~flush_pending
+    wire fetch_en : bool              # ... and latches the word if idc returns it
+    definition fetch_en = fetch_active & idc.fetch_valid0
 
     # ---- head-relative entry indices, for oldest-first issue ----
     wire h0 : robidx
@@ -426,38 +481,49 @@ object cpu = {
 
     # ---- operand capture at dispatch ----
     # An operand is ready if its register has no in-flight writer, or the
-    # writer is done, or the writer is completing on the result bus right now
-    # (the dispatching entry is not yet in the ROB, so it would otherwise miss
-    # this broadcast and wait forever).
+    # writer is done, or the writer is completing on the ALU result bus right
+    # now, or the writer is the load retiring right now (the dispatching entry
+    # is not yet in the ROB, so it would otherwise miss the broadcast).
     wire d_a_idx : robidx
     definition d_a_idx = rat_idx(d_ra)
     wire d_a_bus : bool
     definition d_a_bus = ex_valid & ex_idx = d_a_idx
+    wire d_a_ld : bool
+    definition d_a_ld = ld_bcast & d_a_idx = rob_head
     wire d_a_rdy : bool
-    definition d_a_rdy = ~d_needs_a | ~rat_valid(d_ra) | rob_done(d_a_idx) | d_a_bus
+    definition d_a_rdy = ~d_needs_a | ~rat_valid(d_ra) | rob_done(d_a_idx) | d_a_bus | d_a_ld
     wire d_a_val : word
     definition d_a_val = (rf(d_ra) if ~rat_valid(d_ra) else
-                         (ex_res if d_a_bus else rob_val(d_a_idx)))
+                         (ex_res if d_a_bus else
+                         (idc.read_data if d_a_ld else rob_val(d_a_idx))))
 
     wire d_b_idx : robidx
     definition d_b_idx = rat_idx(d_rb)
     wire d_b_bus : bool
     definition d_b_bus = ex_valid & ex_idx = d_b_idx
+    wire d_b_ld : bool
+    definition d_b_ld = ld_bcast & d_b_idx = rob_head
     wire d_b_rdy : bool
-    definition d_b_rdy = ~d_needs_b | ~rat_valid(d_rb) | rob_done(d_b_idx) | d_b_bus
+    definition d_b_rdy = ~d_needs_b | ~rat_valid(d_rb) | rob_done(d_b_idx) | d_b_bus | d_b_ld
     wire d_b_val : word
     definition d_b_val = (rf(d_rb) if ~rat_valid(d_rb) else
-                         (ex_res if d_b_bus else rob_val(d_b_idx)))
+                         (ex_res if d_b_bus else
+                         (idc.read_data if d_b_ld else rob_val(d_b_idx))))
 
-    # ---- issue selection: the oldest ready, un-issued entry ----
+    # ---- issue selection: the oldest ready, un-issued ALU/BEQZ entry ----
+    # (memory ops never issue to the ALU: they execute at the head)
     wire rdy0 : bool
     definition rdy0 = rob_busy(h0) & ~rob_issued(h0) & rob_a_rdy(h0) & rob_b_rdy(h0)
+                    & ~((rob_ir(h0)<<15:13>>:opc) = 4 | (rob_ir(h0)<<15:13>>:opc) = 5 | (rob_ir(h0)<<15:13>>:opc) = 7)
     wire rdy1 : bool
     definition rdy1 = rob_busy(h1) & ~rob_issued(h1) & rob_a_rdy(h1) & rob_b_rdy(h1)
+                    & ~((rob_ir(h1)<<15:13>>:opc) = 4 | (rob_ir(h1)<<15:13>>:opc) = 5 | (rob_ir(h1)<<15:13>>:opc) = 7)
     wire rdy2 : bool
     definition rdy2 = rob_busy(h2) & ~rob_issued(h2) & rob_a_rdy(h2) & rob_b_rdy(h2)
+                    & ~((rob_ir(h2)<<15:13>>:opc) = 4 | (rob_ir(h2)<<15:13>>:opc) = 5 | (rob_ir(h2)<<15:13>>:opc) = 7)
     wire rdy3 : bool
     definition rdy3 = rob_busy(h3) & ~rob_issued(h3) & rob_a_rdy(h3) & rob_b_rdy(h3)
+                    & ~((rob_ir(h3)<<15:13>>:opc) = 4 | (rob_ir(h3)<<15:13>>:opc) = 5 | (rob_ir(h3)<<15:13>>:opc) = 7)
     wire issue : bool
     definition issue = ~squash & (rdy0 | rdy1 | rdy2 | rdy3)
     wire issue_idx : robidx
@@ -466,9 +532,6 @@ object cpu = {
     }
 
     # ---- the branch predictor, as a sub-isolate `bp` (as in 5stage_bp_cpu_ref) ----
-    # bp declares its own I/O wires and its logic uses only those; the parent
-    # connects them below. Because bp's logic lives in its (hidden)
-    # implementation, the CPU is verified with bp.predicted_taken arbitrary.
     isolate bp = {
         wire fetch_pc : addr          # input: PC being fetched (to predict)
         wire br_valid : bool          # input: a conditional branch resolves this cycle
@@ -513,11 +576,25 @@ object cpu = {
     definition bp.br_pc = r_pc
     definition bp.br_taken = r_take
 
+    # ---- connect the idcache module (in the parent, so both the datapath and
+    # the sub-blocks see the interconnect) ----
+    # Fetch port: present the pc whenever IF is really fetching.
+    definition idc.fetch_req  = fetch_active
+    definition idc.fetch_addr = pc
+    # Data port: the memory op at the head, once its operands are ready. Its
+    # opcode is a single value, so read/write/flush are mutually exclusive
+    # (one_data_op).
+    definition idc.read_req   = mem_ready & (r_opcode = 4)
+    definition idc.write_req  = mem_ready & (r_opcode = 5)
+    definition idc.flush_req  = mem_ready & (r_opcode = 7)
+    definition idc.data_addr  = r_addr
+    definition idc.write_data = r_b
+
     implementation {
 
     # ---- fetch and prediction ----
     wire fetched : word
-    definition fetched = mem(pc)
+    definition fetched = idc.fetch_data0
     wire f_is_branch : bool
     definition f_is_branch = ((fetched<<15:13>>:opc) = 6)
     wire f_ptaken : bool             # predicted-taken for the fetched instruction
@@ -531,7 +608,6 @@ object cpu = {
     after init {
         pc := 0;
         rf(R) := 0;
-        mem(A) := init_mem(A);
         d_valid := false;
         rat_valid(R) := false;
         rob_head := 0;
@@ -540,34 +616,44 @@ object cpu = {
         rob_issued(I) := false;
         rob_done(I) := false;
         ex_valid := false;
+        # main memory and both caches are initialized inside idc.
     }
 
     # ---- clock edge ----
     # Every value read below is a pre-state value: the blocks are ordered so
-    # that no block reads an array element an earlier block wrote, and the
-    # retire block's reads go through wires (r_val, r_rat_clear). The action
-    # therefore has exactly the semantics of a nonblocking always-block, which
-    # is what lets a hand-written RTL golden model be checked combinationally
-    # equivalent to the emitted RTL from *arbitrary* (not only reachable) states.
+    # that no block reads an array element an earlier block wrote, the retire
+    # block's reads go through wires, and the two result broadcasts (ALU and
+    # retiring load) are written as one statement. The action therefore has
+    # exactly the semantics of a nonblocking always-block (see the golden).
     after posedge {
 
-        # Complete the ALU operation: write the result to its ROB entry and
-        # broadcast it to every entry waiting on that ROB index.
+        # Complete the ALU operation: write the result (and a BEQZ's outcome).
         if ex_valid {
             rob_val(ex_idx) := ex_res;
             rob_done(ex_idx) := true;
-            rob_take(ex_idx) := ex_take;
-            rob_a(I) := (ex_res if (rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = ex_idx) else rob_a(I));
-            rob_a_rdy(I) := rob_a_rdy(I) | (rob_busy(I) & rob_a_src(I) = ex_idx);
-            rob_b(I) := (ex_res if (rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = ex_idx) else rob_b(I));
-            rob_b_rdy(I) := rob_b_rdy(I) | (rob_busy(I) & rob_b_src(I) = ex_idx)
+            rob_take(ex_idx) := ex_take
         };
 
-        # Retire the head entry once its result is available. A mispredicted
-        # BEQZ squashes everything behind it and redirects the pc.
+        # Broadcast: the ALU result to every entry waiting on ex_idx, and the
+        # retiring load's data to every entry waiting on the head.
+        rob_a(I) := (ex_res if (ex_valid & rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = ex_idx) else
+                    (idc.read_data if (ld_bcast & rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = rob_head) else
+                     rob_a(I)));
+        rob_a_rdy(I) := rob_a_rdy(I) | (ex_valid & rob_busy(I) & rob_a_src(I) = ex_idx)
+                                     | (ld_bcast & rob_busy(I) & rob_a_src(I) = rob_head);
+        rob_b(I) := (ex_res if (ex_valid & rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = ex_idx) else
+                    (idc.read_data if (ld_bcast & rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = rob_head) else
+                     rob_b(I)));
+        rob_b_rdy(I) := rob_b_rdy(I) | (ex_valid & rob_busy(I) & rob_b_src(I) = ex_idx)
+                                     | (ld_bcast & rob_busy(I) & rob_b_src(I) = rob_head);
+
+        # Retire the head entry: a done ALU/BEQZ/NOP entry, or a memory op
+        # that idc serves this cycle (the store/flush effects on memory and the
+        # caches happen inside idc, driven by the request wires). A
+        # mispredicted BEQZ squashes everything behind it and redirects the pc.
         if retire {
-            if r_alu {
-                rf(r_rd) := r_val
+            if r_wr {
+                rf(r_rd) := r_wval
             };
             if r_rat_clear {
                 rat_valid(r_rd) := false
@@ -601,14 +687,15 @@ object cpu = {
 
         # Dispatch: allocate the tail entry, rename, capture operands. This
         # comes after retire so that a same-cycle retire of an older writer of
-        # d_rd does not clobber the new rename entry.
+        # d_rd does not clobber the new rename entry. The IF/ID latch empties
+        # unless the fetch below refills it.
         if dispatch {
             rob_busy(rob_tail) := true;
             rob_ir(rob_tail) := d_ir;
             rob_pc(rob_tail) := d_pc;
             rob_pred(rob_tail) := d_pred;
-            rob_issued(rob_tail) := ~d_exec;    # a NOP needs no ALU ...
-            rob_done(rob_tail) := ~d_exec;      # ... and is done at once
+            rob_issued(rob_tail) := ~d_exec & ~d_mem;   # a NOP is issued+done at once; an ALU/BEQZ op
+            rob_done(rob_tail) := ~d_exec & ~d_mem;     # issues later; a memory op is neither until the head
             rob_val(rob_tail) := 0;
             rob_a(rob_tail) := d_a_val;
             rob_a_rdy(rob_tail) := d_a_rdy;
@@ -616,15 +703,16 @@ object cpu = {
             rob_b(rob_tail) := d_b_val;
             rob_b_rdy(rob_tail) := d_b_rdy;
             rob_b_src(rob_tail) := d_b_idx;
-            if d_alu {
+            if d_wr {
                 rat_valid(d_rd) := true;
                 rat_idx(d_rd) := rob_tail
             };
-            rob_tail := rob_tail + 1
+            rob_tail := rob_tail + 1;
+            d_valid := false
         };
 
-        # Fetch (speculatively, along the predicted path), unless the dispatch
-        # stage is stalled on a full ROB or a squash is redirecting the pc.
+        # Fetch (speculatively, along the predicted path) when IF is active and
+        # idc returns the word (an I-cache miss stalls: the latch stays empty).
         if fetch_en {
             d_ir := fetched;
             d_valid := true;
@@ -635,24 +723,19 @@ object cpu = {
     }
     }
 
-    # ---- ghost monitor: tags and the trace step ---------------------------
+    # ---- ghost monitor: tags, shadows and the trace step ------------------
     specification {
         after posedge {
             if retire {
                 commit := commit.next
             };
             if squash {
-                # the mispredicted branch retires: the ROB is emptied of the
-                # wrong-path suffix and fetch resumes on the correct path
                 spec_wrong := false;
                 d_shadow := false
             };
             if dispatch {
                 rob_shadow(old rob_tail) := d_shadow;
                 if ~d_shadow {
-                    # a correct-path instruction: it is the trace's next step.
-                    # If it is a BEQZ whose prediction disagrees with the true
-                    # outcome, the fetch stream is wrong from here on.
                     rob_tag(old rob_tail) := trace.now;
                     if d_branch & (old d_pred ~= trace.st(trace.now).take_branch) {   # old: insensitive to monitor order
                         spec_wrong := true;
@@ -662,93 +745,125 @@ object cpu = {
                 }
             };
             if fetch_en {
-                d_shadow := spec_wrong   # the word fetched now is wrong-path iff
-                                         # the stream is (after this cycle's dispatch)
+                d_shadow := spec_wrong
             }
         }
     }
 
     # ---- invariants -------------------------------------------------------
+    # Every invariant relating the implementation to the trace is guarded by
+    # ~trace.st(trace.now).error (the fetch-coherence relaxation); the purely
+    # structural ones (rob_shape, the issued/done bookkeeping) are not.
     private {
 
         # ---- ROB occupancy structure ----
-        # busy(I) iff I is in the circular range [head, tail), or the ROB is full.
         invariant [rob_shape] rob_busy(I) <-> (((I - rob_head) < (rob_tail - rob_head)) | (rob_busy(rob_head) & rob_head = rob_tail))
+        invariant [rob_done_issued] (rob_busy(I) & rob_done(I)) -> rob_issued(I)
+        invariant [rob_issued_rdy] (rob_busy(I) & rob_issued(I)) -> (rob_a_rdy(I) & rob_b_rdy(I))
+        # an entry that does not execute (NOP) is done at dispatch; a memory op is never issued/done
+        invariant [rob_nonexec_done] (rob_busy(I) & ((rob_ir(I)<<15:13>>:opc) = 0)) -> rob_done(I)
+        invariant [rob_mem_notdone] (rob_busy(I) & ((rob_ir(I)<<15:13>>:opc) = 4 | (rob_ir(I)<<15:13>>:opc) = 5 | (rob_ir(I)<<15:13>>:opc) = 7)) -> (~rob_issued(I) & ~rob_done(I))
+        invariant [ex_trk] ex_valid -> (rob_busy(ex_idx) & rob_issued(ex_idx) & ~rob_done(ex_idx) & ex_ir = rob_ir(ex_idx))
+        invariant [issued_in_ex] (rob_busy(I) & rob_issued(I) & ~rob_done(I)) -> (ex_valid & ex_idx = I)
+        # a FLUSH is the youngest instruction in flight: nothing is fetched behind it
+        invariant [flush_youngest] (rob_busy(I) & (rob_ir(I)<<15:13>>:opc) = 7) -> (I + 1 = rob_tail & ~d_valid)
 
         # ---- speculation structure ----
-        # Shadowed entries are a suffix of the ROB, exist only while spec_wrong,
-        # and are strictly younger than the mispredicted branch mp_idx; hence the
-        # head is never shadowed (a shadowed entry never retires).
-        invariant [shadow_suffix] (rob_busy(I) & rob_shadow(I) & I + 1 ~= rob_tail) -> rob_shadow(I + 1)
-        invariant [shadow_spec] (rob_busy(I) & rob_shadow(I)) -> spec_wrong
-        invariant [d_shadow_char] d_valid -> (d_shadow = spec_wrong)
-        invariant [mp_char] spec_wrong ->
+        invariant [shadow_suffix] (~trace.st(trace.now).error & rob_busy(I) & rob_shadow(I) & I + 1 ~= rob_tail) -> rob_shadow(I + 1)
+        invariant [shadow_spec] (~trace.st(trace.now).error & rob_busy(I) & rob_shadow(I)) -> spec_wrong
+        invariant [d_shadow_char] (~trace.st(trace.now).error & d_valid) -> (d_shadow = spec_wrong)
+        invariant [mp_char] (~trace.st(trace.now).error & spec_wrong) ->
             (rob_busy(mp_idx) & ~rob_shadow(mp_idx) & (rob_ir(mp_idx)<<15:13>>:opc) = 6 &
              rob_pred(mp_idx) ~= trace.st(rob_tag(mp_idx)).take_branch)
-        invariant [mp_unique] (rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 6 &
+        invariant [mp_unique] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 6 &
                                rob_pred(I) ~= trace.st(rob_tag(I)).take_branch) -> (spec_wrong & I = mp_idx)
-        invariant [shadow_after_mp] (spec_wrong & rob_busy(I) & (I - rob_head) > (mp_idx - rob_head)) -> rob_shadow(I)
-        invariant [head_noshadow] rob_busy(rob_head) -> ~rob_shadow(rob_head)
+        invariant [shadow_after_mp] (~trace.st(trace.now).error & spec_wrong & rob_busy(I) & (I - rob_head) > (mp_idx - rob_head)) -> rob_shadow(I)
+        invariant [head_noshadow] (~trace.st(trace.now).error & rob_busy(rob_head)) -> ~rob_shadow(rob_head)
 
         # ---- the non-shadowed entries carry a contiguous run of tags [commit, now) ----
-        invariant [rob_head_tag] rob_busy(rob_head) -> rob_tag(rob_head) = commit
-        invariant [rob_empty_tag] ~rob_busy(rob_head) -> commit = trace.now
-        invariant [rob_chain] (rob_busy(I) & ~rob_shadow(I) & rob_busy(I + 1) & ~rob_shadow(I + 1) & I + 1 ~= rob_tail) -> tag.succ(rob_tag(I), rob_tag(I + 1))
-        invariant [rob_youngest] (rob_busy(I) & ~rob_shadow(I) & (I + 1 = rob_tail | rob_shadow(I + 1))) -> tag.succ(rob_tag(I), trace.now)
-        invariant [rob_tag_range] (rob_busy(I) & ~rob_shadow(I)) -> (commit <= rob_tag(I) & rob_tag(I) < trace.now)
+        invariant [rob_head_tag] (~trace.st(trace.now).error & rob_busy(rob_head)) -> rob_tag(rob_head) = commit
+        invariant [rob_empty_tag] (~trace.st(trace.now).error & ~rob_busy(rob_head)) -> commit = trace.now
+        invariant [rob_chain] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & rob_busy(I + 1) & ~rob_shadow(I + 1) & I + 1 ~= rob_tail) -> tag.succ(rob_tag(I), rob_tag(I + 1))
+        invariant [rob_youngest] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & (I + 1 = rob_tail | rob_shadow(I + 1))) -> tag.succ(rob_tag(I), trace.now)
+        invariant [rob_tag_range] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I)) -> (commit <= rob_tag(I) & rob_tag(I) < trace.now)
 
-        # ---- committed architectural state ----
-        invariant [rf_trk] rf(R) = trace.st(commit).rf(R)
-        invariant [mem_trk] mem(A) = trace.st(trace.now).mem(A)
+        # ---- committed architectural state; idc's abstract memory is the
+        #      reference memory at the retire tag ----
+        invariant [rf_trk] ~trace.st(trace.now).error -> rf(R) = trace.st(commit).rf(R)
+        invariant [idc_mem_rel] ~trace.st(trace.now).error -> idc.mem(A) = trace.st(commit).mem(A)
+        invariant [idc_ddirty_rel] ~trace.st(trace.now).error -> idc.ddirty(A) = trace.st(commit).ddirty(A)
+
+        # ---- fetch coherence across the window [commit, now) ----
+        # With no FLUSH in flight, every in-flight store to A leaves A dirty at
+        # now; hence a fetch condition (~ddirty at now) implies no in-flight
+        # store to A, and memory/dirtiness at A are unchanged across the window.
+        invariant [store_dirty] (~trace.st(trace.now).error & ~flush_pending & rob_busy(I) & ~rob_shadow(I) &
+                                 (rob_ir(I)<<15:13>>:opc) = 5) -> trace.st(trace.now).ddirty(trace.st(rob_tag(I)).mem_addr)
+        invariant [mem_now] (~trace.st(trace.now).error & ~flush_pending & ~trace.st(trace.now).ddirty(A)) ->
+            (trace.st(commit).mem(A) = trace.st(trace.now).mem(A) & ~trace.st(commit).ddirty(A))
+        # the fetched word is the reference instruction (zero-delay from idc's guarantee)
+        derived invariant [fetch_coh]
+            (fetch_active & idc.fetch_valid0 & ~trace.st(trace.now).error & ~trace.st(trace.now).ddirty(pc))
+                -> idc.fetch_data0 = trace.st(trace.now).mem(pc)
+            with idc.fetch_output0
+        # the loaded word is the reference value at the head's address
+        derived invariant [load_coh]
+            (mem_retire & r_opcode = 4 & ~trace.st(trace.now).error) -> idc.read_data = trace.st(commit).mem(r_addr)
+            with idc.data_output
 
         # ---- fetch: on the correct path the pc is the predicted successor of the
         #      IF/ID instruction (= the true one unless that instruction is a
-        #      not-yet-dispatched mispredicted branch) ----
-        invariant [pc_trk] ~spec_wrong ->
+        #      not-yet-dispatched mispredicted branch). A word fetched from a
+        #      dirty address is garbage (the ISA errors when it executes). ----
+        invariant [pc_trk] (~trace.st(trace.now).error & ~spec_wrong & (d_valid -> ~trace.st(trace.now).ddirty(trace.st(trace.now).pc))) ->
             pc = (trace.st(trace.now).pc if ~d_valid else
                  ((trace.st(trace.now).target if d_pred else trace.st(trace.now).pc + 1) if d_opcode = 6 else
                   trace.st(trace.now).pc + 1))
-        invariant [d_ir_trk] (d_valid & ~d_shadow) -> d_ir = trace.st(trace.now).fetched
-        invariant [d_pc_trk] (d_valid & ~d_shadow) -> d_pc = trace.st(trace.now).pc
+        invariant [d_ir_trk] (~trace.st(trace.now).error & d_valid & ~d_shadow & ~trace.st(trace.now).ddirty(trace.st(trace.now).pc)) -> d_ir = trace.st(trace.now).fetched
+        invariant [d_pc_trk] (~trace.st(trace.now).error & d_valid & ~d_shadow) -> d_pc = trace.st(trace.now).pc
 
         # ---- ROB entry contents (correct-path entries only) ----
-        invariant [rob_ir_trk] (rob_busy(I) & ~rob_shadow(I)) -> rob_ir(I) = trace.st(rob_tag(I)).fetched
-        invariant [rob_pc_trk] (rob_busy(I) & ~rob_shadow(I)) -> rob_pc(I) = trace.st(rob_tag(I)).pc
-        invariant [rob_done_issued] (rob_busy(I) & rob_done(I)) -> rob_issued(I)
-        invariant [rob_issued_rdy] (rob_busy(I) & rob_issued(I)) -> (rob_a_rdy(I) & rob_b_rdy(I))
-        invariant [rob_val_trk] (rob_busy(I) & ~rob_shadow(I) & rob_done(I)) -> rob_val(I) = trace.st(rob_tag(I)).res
-        invariant [rob_take_trk] (rob_busy(I) & ~rob_shadow(I) & rob_done(I) & (rob_ir(I)<<15:13>>:opc) = 6) -> rob_take(I) = trace.st(rob_tag(I)).take_branch
-        invariant [rob_a_trk] (rob_busy(I) & ~rob_shadow(I) & rob_a_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 6)) -> rob_a(I) = trace.st(rob_tag(I)).a_val
-        invariant [rob_b_trk] (rob_busy(I) & ~rob_shadow(I) & rob_b_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2)) -> rob_b(I) = trace.st(rob_tag(I)).b_val
-        # a pending operand waits on a busy, not-yet-done, correct-path entry whose result it is
-        invariant [rob_a_pend] (rob_busy(I) & ~rob_shadow(I) & ~rob_a_rdy(I)) ->
+        invariant [rob_ir_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I)) -> rob_ir(I) = trace.st(rob_tag(I)).fetched
+        invariant [rob_pc_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I)) -> rob_pc(I) = trace.st(rob_tag(I)).pc
+        invariant [rob_val_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & rob_done(I)) -> rob_val(I) = trace.st(rob_tag(I)).res
+        invariant [rob_take_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & rob_done(I) & (rob_ir(I)<<15:13>>:opc) = 6) -> rob_take(I) = trace.st(rob_tag(I)).take_branch
+        invariant [rob_a_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & rob_a_rdy(I) &
+                               ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 4 |
+                                (rob_ir(I)<<15:13>>:opc) = 5 | (rob_ir(I)<<15:13>>:opc) = 6 | (rob_ir(I)<<15:13>>:opc) = 7)) -> rob_a(I) = trace.st(rob_tag(I)).a_val
+        invariant [rob_b_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & rob_b_rdy(I) &
+                               ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 5)) -> rob_b(I) = trace.st(rob_tag(I)).b_val
+        # a pending operand waits on a busy, not-yet-done, correct-path REGISTER-WRITING
+        # entry (ALU op or LD -- the only entries the rename table points at) whose result it is
+        invariant [rob_a_pend] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & ~rob_a_rdy(I)) ->
             (rob_busy(rob_a_src(I)) & ~rob_shadow(rob_a_src(I)) & ~rob_done(rob_a_src(I)) &
+             ((rob_ir(rob_a_src(I))<<15:13>>:opc) = 1 | (rob_ir(rob_a_src(I))<<15:13>>:opc) = 2 |
+              (rob_ir(rob_a_src(I))<<15:13>>:opc) = 3 | (rob_ir(rob_a_src(I))<<15:13>>:opc) = 4) &
              trace.st(rob_tag(rob_a_src(I))).res = trace.st(rob_tag(I)).a_val)
-        invariant [rob_b_pend] (rob_busy(I) & ~rob_shadow(I) & ~rob_b_rdy(I)) ->
+        invariant [rob_b_pend] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & ~rob_b_rdy(I)) ->
             (rob_busy(rob_b_src(I)) & ~rob_shadow(rob_b_src(I)) & ~rob_done(rob_b_src(I)) &
+             ((rob_ir(rob_b_src(I))<<15:13>>:opc) = 1 | (rob_ir(rob_b_src(I))<<15:13>>:opc) = 2 |
+              (rob_ir(rob_b_src(I))<<15:13>>:opc) = 3 | (rob_ir(rob_b_src(I))<<15:13>>:opc) = 4) &
              trace.st(rob_tag(rob_b_src(I))).res = trace.st(rob_tag(I)).b_val)
-        # an entry that does not execute (NOP) is done at dispatch
-        invariant [rob_nonexec_done] (rob_busy(I) & ~((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3 | (rob_ir(I)<<15:13>>:opc) = 6)) -> rob_done(I)
 
         # ---- ALU latch ----
-        invariant [ex_trk] ex_valid -> (rob_busy(ex_idx) & rob_issued(ex_idx) & ~rob_done(ex_idx) & ex_ir = rob_ir(ex_idx))
-        invariant [ex_a_trk] (ex_valid & ~rob_shadow(ex_idx) & (ex_opcode = 1 | ex_opcode = 2 | ex_opcode = 6)) -> ex_a = trace.st(rob_tag(ex_idx)).a_val
-        invariant [ex_b_trk] (ex_valid & ~rob_shadow(ex_idx) & (ex_opcode = 1 | ex_opcode = 2)) -> ex_b = trace.st(rob_tag(ex_idx)).b_val
-        # an issued-but-not-done entry is exactly the one in the ALU latch
-        invariant [issued_in_ex] (rob_busy(I) & rob_issued(I) & ~rob_done(I)) -> (ex_valid & ex_idx = I)
+        invariant [ex_a_trk] (~trace.st(trace.now).error & ex_valid & ~rob_shadow(ex_idx) & (ex_opcode = 1 | ex_opcode = 2 | ex_opcode = 6)) -> ex_a = trace.st(rob_tag(ex_idx)).a_val
+        invariant [ex_b_trk] (~trace.st(trace.now).error & ex_valid & ~rob_shadow(ex_idx) & (ex_opcode = 1 | ex_opcode = 2)) -> ex_b = trace.st(rob_tag(ex_idx)).b_val
 
-        # ---- rename table (meaningful only on the correct path: while spec_wrong,
-        #      only wrong-path instructions dispatch, and the squash clears it) ----
-        invariant [rat_trk] (~spec_wrong & rat_valid(R)) ->
+        # ---- rename table (meaningful only on the correct path) ----
+        invariant [rat_trk] (~trace.st(trace.now).error & ~spec_wrong & rat_valid(R)) ->
             (rob_busy(rat_idx(R)) &
-             ((rob_ir(rat_idx(R))<<15:13>>:opc) = 1 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 2 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 3) &
+             ((rob_ir(rat_idx(R))<<15:13>>:opc) = 1 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 2 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 3 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 4) &
              (rob_ir(rat_idx(R))<<12:10>>:reg) = R &
              trace.st(trace.now).rf(R) = trace.st(rob_tag(rat_idx(R))).res)
-        invariant [rf_now_trk] (~spec_wrong & ~rat_valid(R)) -> rf(R) = trace.st(trace.now).rf(R)
+        invariant [rf_now_trk] (~trace.st(trace.now).error & ~spec_wrong & ~rat_valid(R)) -> rf(R) = trace.st(trace.now).rf(R)
         # every busy writer of R is recorded, and rat_idx(R) is the youngest of them
         invariant [rat_youngest] (rob_busy(I) &
-             ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3)) ->
+             ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3 | (rob_ir(I)<<15:13>>:opc) = 4)) ->
             (rat_valid(rob_ir(I)<<12:10>>) &
              (I - rob_head) <= (rat_idx(rob_ir(I)<<12:10>>) - rob_head))
     }
 }
+
+# The CPU discharges idc's only assumption: the memory op at the head issues at
+# most one data request per cycle (its opcode is a single value).
+provide cpu.idc.one_data_op

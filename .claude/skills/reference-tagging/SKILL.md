@@ -44,13 +44,15 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
   simulates real dual issue. See "Isolating a component's proof", "Widening to
   superscalar (dual issue)", "Common hardware design issues", and "A safety proof
   is not a live design" below.
-- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 2 of
+- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 3a of
   `doc/projects/ooo_cpu.md`**) — an out-of-order core: Tomasulo's algorithm with
-  a 4-entry re-order buffer, single-wide dispatch, one ALU, ALU instructions plus
-  BEQZ with a branch predictor (mispredicts resolved at retire). Fully verified
-  (`ivy_check` OK in ~2.5 min); translates to RTL and simulates (`sim_cpu.sh
-  ooo_cpu_ref prog_br.hex`). `ooo_cpu_alu_ref.ivy` is the frozen ALU-only stage 1
-  (OK in ~17 s). Golden models `ooo_alu_golden.sv` (stage 1) and
+  a 4-entry re-order buffer, single-wide dispatch, one ALU, the full ISA (ALU ops,
+  BEQZ with a branch predictor and mispredicts resolved at retire, LD/ST/FLUSH
+  through the `idcache` module executing in order at the ROB head). Fully
+  verified (`ivy_check` OK in ~3.5 min); translates to RTL and simulates
+  (`sim_cpu.sh ooo_cpu_ref prog_mem.hex`). Frozen earlier stages:
+  `ooo_cpu_alu_ref.ivy` (stage 1, ALU only, OK in ~17 s) and
+  `ooo_cpu_beqz_ref.ivy` (stage 2, +BEQZ, OK in ~2.5 min). Golden models `ooo_alu_golden.sv` (stage 1) and
   `ooo_beqz_golden.sv` (stage 2) are proven equivalent by `check_ooo_golden.sh
   [design] [golden]`. See "Out-of-order execution (Tomasulo + ROB)" below.
 - `reference_tagging.md` — the prose writeup of the method.
@@ -734,6 +736,30 @@ that also fired for NOPs whose operands are don't-cares).
   monitor may run first and overwrite it with the *next* fetch's prediction) —
   the skill's "read real state via `old` in the monitor" rule, again.
 
+- **Memory ops at the head need no memory rename table (stage 3a).** With no
+  LD/ST queue, LD/ST/FLUSH entries are never issued to the ALU (`issued` and
+  `done` both stay false — getting `issued` right cost a CTI round); the head
+  entry, once its operands are ready, drives the `idcache` request wires and
+  retires in the same cycle idc serves it, so `idc.mem/ddirty =
+  st(commit).mem/ddirty` *exactly* and a load reads `st(commit).mem` at
+  `st(commit).mem_addr` (`load_coh`, a derived invariant `with idc.data_output`).
+  Recording the loaded value in the ISA's `res` makes a LD just another renamed
+  writer, so `rat_trk`/`rob_val_trk` are unchanged. A retiring load is a second
+  broadcast source: write the ALU and load broadcasts as ONE array statement
+  (pre-state reads) and add a dispatch bypass for the retiring load, exactly as
+  for the ALU bus. Fetch coherence across the window `[commit, now)` closes with
+  two one-step invariants instead of an unrolling: a FLUSH stalls fetch from the
+  cycle it is fetched until it retires (so `busy(I) & flush(I) -> I+1 = tail &
+  ~d_valid`), and then `~flush_pending & store(I) in flight ->
+  st(now).ddirty(addr(I))` and `~flush_pending & ~st(now).ddirty(A) ->
+  st(commit).mem(A) = st(now).mem(A) & ~st(commit).ddirty(A)`. The IF/ID word
+  fetched from a *dirty* address is garbage until it executes and sets `error`,
+  so `d_ir_trk`/`pc_trk` carry an extra `~st(now).ddirty(st(now).pc)` guard (the
+  in-order designs got this for free because their ID tag was already past
+  `now`). CTI lesson: the pending-operand invariant must say the producer is a
+  *register writer* — otherwise the prover imagines a consumer waiting on a
+  store, which retires without broadcasting.
+
 - **Stage-restricted ISA.** Stage 1 disables LD/ST/BEQZ/FLUSH by making them
   NOPs *in the ISA model* (and dropping `ddirty`/`error`/`mem_addr`/
   `take_branch`), so the proof is over all programs and needs no `~error`
@@ -1009,13 +1035,19 @@ The datapath must be free of ghost/abstract constructs:
   (overridable via `IVY_ABC`/`IVY_AIGER`/`IVY_YOSYS`).
 
 - **Worked, passing goldens: `ooo_alu_golden.sv` ↔ `ooo_cpu_alu_ref.ivy` (524
-  cones) and `ooo_beqz_golden.sv` ↔ `ooo_cpu_ref.ivy` (605 cones, the predictor
-  as a `bp` submodule whose `bht` pairs by name after flattening)** — run
-  `check_ooo_golden.sh [design] [golden]`, ~0.6 s each; mutation-tested (an ALU,
-  bypass, squash-condition, redirect or predictor-saturation bug in the golden is
-  reported on the registers it feeds). Once the stage-1 golden passed, the stage-2
-  one passed on the first run — the boundary rules below are the whole story.
-  Lessons from getting it to pass:
+  cones), `ooo_beqz_golden.sv` ↔ `ooo_cpu_beqz_ref.ivy` (605 cones, the predictor
+  as a `bp` submodule whose `bht` pairs by name after flattening) and
+  `ooo_mem_golden.sv` ↔ `ooo_cpu_ref.ivy` (stage 3a; 5947 cones incl. the
+  idcache's `real_mem`/`icache`/`dcache` and fill registers, ~2 min)** — run
+  `check_ooo_golden.sh [design] [golden]`; mutation-tested (an ALU, bypass,
+  squash-condition, redirect, predictor-saturation, memory-stall, load-bypass,
+  FLUSH-fetch-stall or reset-list bug in the golden is reported on the registers
+  it feeds). Once the stage-1 golden passed, stages 2 and 3a passed on the first
+  run — the boundary rules below are the whole story. The idcache golden modules
+  (`idcache`/`main_mem`/`ic`/`dc`) are reused verbatim from `dual_issue_golden.sv`
+  except that their `if (rst)` lists had to be *completed*: the address latches
+  `mfa`, `ifill_miss`, `dfill_miss` reset to 0 too (ivy_to_rtl resets every
+  scalar), which the dual-issue golden omits. Lessons from getting it to pass:
   - *Give the Ivy clock action nonblocking semantics first.* Ivy's action is
     sequential: a later block reads what an earlier block wrote in the same
     cycle. That is invisible on reachable states but a combinational check from

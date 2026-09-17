@@ -1,8 +1,8 @@
-// Hand-written "golden" SystemVerilog model of ooo_cpu_ref.ivy at stage 2 (the
-// out-of-order core with ALU ops and the conditional branch BEQZ: Tomasulo with
+// Hand-written "golden" SystemVerilog model of ooo_cpu_beqz_ref.ivy, the frozen stage-2
+// snapshot of the out-of-order core (ALU ops and the conditional branch BEQZ: Tomasulo with
 // a 4-entry re-order buffer, single dispatch, one ALU, a bimodal branch
 // predictor, and misprediction recovery at retire), for combinational
-// equivalence checking against the Ivy-generated RTL (ooo_cpu_ref.il) with
+// equivalence checking against the Ivy-generated RTL (ooo_cpu_beqz_ref.il) with
 // rtlil_eqv (see check_ooo_golden.sh). It extends ooo_alu_golden.sv (stage 1).
 //
 // The register boundary matches the Ivy model exactly, register for register:
