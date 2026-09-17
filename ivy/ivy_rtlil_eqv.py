@@ -179,6 +179,9 @@ def _strip_name(n):
     return n[1:] if n.startswith('\\') else n
 
 def parse_map(mapf):
+    """Parse the yosys AIGER name map into dicts position -> [(name, bit)].
+    A position may carry several names (public wires aliased to the same
+    signal, e.g. a register and a wire that is a slice of it), or none."""
     ins, lats, outs = {}, {}, {}
     with open(mapf) as f:
         for line in f:
@@ -188,12 +191,9 @@ def parse_map(mapf):
             kind, idx, bit = parts[0], parts[1], parts[2]
             name = _strip_name(' '.join(parts[3:]))
             entry = (name, int(bit))
-            if kind == 'input':
-                ins[int(idx)] = entry
-            elif kind == 'output':
-                outs[int(idx)] = entry
-            elif kind == 'latch':
-                lats[int(idx)] = entry
+            tbl = {'input': ins, 'output': outs, 'latch': lats}.get(kind)
+            if tbl is not None:
+                tbl.setdefault(int(idx), []).append(entry)
     return ins, lats, outs
 
 def parse_design(cfg, aigf, mapf, aigtoaig):
@@ -231,19 +231,48 @@ def parse_design(cfg, aigf, mapf, aigtoaig):
     # the map may have fewer, equal, or more lines than there are positions.
     ins, lats, outs = parse_map(mapf)
 
-    for idx, (name, bit) in ins.items():
+    for idx, names in ins.items():
         if 0 <= idx < I:
-            d.inputs[(name, bit)] = in_lits[idx]
-    for idx, (name, bit) in lats.items():
-        if 0 <= idx < L:
-            d.latches[(name, bit)] = lat_defs[idx]
-    for idx, (name, bit) in outs.items():
+            for (name, bit) in names:
+                d.inputs[(name, bit)] = in_lits[idx]
+    for idx, names in outs.items():
         if 0 <= idx < O:
-            d.outputs[(name, bit)] = out_lits[idx]
+            for (name, bit) in names:
+                d.outputs[(name, bit)] = out_lits[idx]
+
+    # Registers are handled by position, with the full alias list of each
+    # position, so that two designs naming the same flip-flop by different
+    # aliases (one by the register, one by a wire sliced from it) still pair.
+    d.latch_defs = lat_defs                 # position -> (cur_lit, next_lit)
+    d.latch_names = {}                      # position -> [(name, bit), ...]
+    for idx, names in lats.items():
+        if 0 <= idx < L:
+            d.latch_names[idx] = names
+            for (name, bit) in names:
+                d.latches[(name, bit)] = lat_defs[idx]
+
+    # A latch whose current-state literal is referenced nowhere (no AND gate,
+    # no latch next-state, no output) is dead: it influences no cone.  yosys
+    # leaves such flip-flops behind (e.g. the temporaries `proc` creates for a
+    # Verilog memory write, whose values feed the port directly), and on a
+    # design without outputs opt_clean cannot be used to sweep them since it
+    # would sweep everything.  Unnamed dead latches are therefore ignored;
+    # unnamed *live* latches remain an error (they cannot be matched).
+    used = set()
+    for (r0, r1) in d.ands.values():
+        used.add(r0 >> 1)
+        used.add(r1 >> 1)
+    for (cur, nxt) in lat_defs:
+        used.add(nxt >> 1)
+    for lit in out_lits:
+        used.add(lit >> 1)
+    d.dead_anon = [i for i in range(L)
+                   if i not in d.latch_names and (lat_defs[i][0] >> 1) not in used]
+    dead = set(d.dead_anon)
 
     d.anon_inputs = I - len(set(ins))
     d.anon_outputs = O - len(set(outs))
-    d.anon_latches = L - len(set(lats))
+    d.anon_latches = L - len(d.latch_names) - len(dead)
     return d
 
 
@@ -368,7 +397,61 @@ def check_match(gold, gate):
 
     report("input", gset, tset)
     report("output", set(gold.outputs), set(gate.outputs))
-    report("register", set(gold.latches), set(gate.latches))
+
+    # Registers: pair positions that share at least one (name, bit) alias.
+    def name2pos(d):
+        res = {}
+        for pos, names in d.latch_names.items():
+            for k in names:
+                res.setdefault(k, set()).add(pos)
+        return res
+    g_n2p, t_n2p = name2pos(gold), name2pos(gate)
+
+    def label(d, pos):
+        names = d.latch_names[pos]
+        base = sorted(set(n for (n, b) in names), key=lambda n: (len(n), n))
+        return '/'.join(base), names[0][1]
+
+    def summarize_pos(d, positions, where):
+        bits = {}
+        for pos in positions:
+            name, bit = label(d, pos)
+            bits.setdefault(name, []).append(bit)
+        for name in sorted(bits):
+            bs = sorted(bits[name])
+            rng = ("bit %d" % bs[0] if len(bs) == 1
+                   else "%d bits [%d..%d]" % (len(bs), min(bs), max(bs)))
+            errs.append("register '%s' (%s) only in %s" % (name, rng, where))
+
+    gold.pair = {}             # gold position -> gate position
+    gold.canon = {}            # gold position -> canonical (name, bit) key
+    unmatched_g, matched_t = [], {}
+    for pos in sorted(gold.latch_names):
+        cands = set()
+        shared = []
+        for k in gold.latch_names[pos]:
+            for q in t_n2p.get(k, ()):
+                cands.add(q)
+                shared.append(k)
+        if len(cands) == 1:
+            q = cands.pop()
+            if q in matched_t:
+                errs.append("register '%s' in gold and '%s' in gold both alias "
+                            "gate register '%s'" % (label(gold, pos)[0],
+                            label(gold, matched_t[q])[0], label(gate, q)[0]))
+                continue
+            gold.pair[pos] = q
+            matched_t[q] = pos
+            gold.canon[pos] = sorted(set(shared), key=lambda k: (len(k[0]), k))[0]
+        elif not cands:
+            unmatched_g.append(pos)
+        else:
+            errs.append("register '%s' in gold aliases several gate registers: %s"
+                        % (label(gold, pos)[0],
+                           ', '.join(sorted(label(gate, q)[0] for q in cands))))
+    summarize_pos(gold, unmatched_g, "gold")
+    summarize_pos(gate, [q for q in sorted(gate.latch_names) if q not in matched_t],
+                  "gate")
 
     if errs:
         sys.exit("error: input/output/register match is incomplete:\n  "
@@ -384,7 +467,7 @@ def build_miter(gold, gate):
     for d in (gold, gate):
         for (n, b) in d.inputs:
             in_keys.add(canon_input_key(d.cfg, n, b))
-    reg_keys = set(('reg',) + k for k in gold.latches)
+    reg_keys = set(('reg',) + gold.canon[p] for p in gold.pair)
 
     pi_keys = sorted(in_keys) + sorted(reg_keys)
     pi_lit = {}
@@ -394,13 +477,21 @@ def build_miter(gold, gate):
         pi_lit[k] = lit
         pi_order.append((k, lit))
 
-    def translate(design):
+    # register current-state literal (by position) -> canonical PI key
+    reg_of_pos = {'gold': {}, 'gate': {}}
+    for p, q in gold.pair.items():
+        key = ('reg',) + gold.canon[p]
+        reg_of_pos['gold'][p] = key
+        reg_of_pos['gate'][q] = key
+
+    def translate(design, side):
         # var -> positive global literal
         gmap = {0: 0}
         for (n, b), lit in design.inputs.items():
             gmap[lit >> 1] = pi_lit[canon_input_key(design.cfg, n, b)]
-        for (n, b), (cur, nxt) in design.latches.items():
-            gmap[cur >> 1] = pi_lit[('reg', n, b)]
+        for pos, (cur, nxt) in enumerate(design.latch_defs):
+            if pos in reg_of_pos[side]:
+                gmap[cur >> 1] = pi_lit[reg_of_pos[side][pos]]
         for lhs_var in sorted(design.ands):
             r0, r1 = design.ands[lhs_var]
             g0 = gmap[r0 >> 1] ^ (r0 & 1)
@@ -408,8 +499,8 @@ def build_miter(gold, gate):
             gmap[lhs_var] = aig.mk_and(g0, g1)
         return gmap
 
-    gmap_g = translate(gold)
-    gmap_t = translate(gate)
+    gmap_g = translate(gold, 'gold')
+    gmap_t = translate(gate, 'gate')
 
     def lit_of(gmap, lit):
         return gmap[lit >> 1] ^ (lit & 1)
@@ -420,10 +511,11 @@ def build_miter(gold, gate):
         dl = aig.mk_xor(lit_of(gmap_g, gold.outputs[key]),
                         lit_of(gmap_t, gate.outputs[key]))
         cones.append(("output %s[%d]" % (n, b), dl))
-    for key in sorted(gold.latches):
-        n, b = key
-        dl = aig.mk_xor(lit_of(gmap_g, gold.latches[key][1]),
-                        lit_of(gmap_t, gate.latches[key][1]))
+    for p in sorted(gold.pair, key=lambda p: gold.canon[p]):
+        n, b = gold.canon[p]
+        q = gold.pair[p]
+        dl = aig.mk_xor(lit_of(gmap_g, gold.latch_defs[p][1]),
+                        lit_of(gmap_t, gate.latch_defs[q][1]))
         cones.append(("reg %s[%d]" % (n, b), dl))
 
     bad = 0
@@ -551,7 +643,7 @@ def main():
 
         if cex is None:
             print("compared %d cones (%d outputs, %d registers) in %.2fs"
-                  % (len(cones), len(gold.outputs), len(gold.latches),
+                  % (len(cones), len(gold.outputs), len(gold.pair),
                      elapsed))
             print("OK")
             return 0

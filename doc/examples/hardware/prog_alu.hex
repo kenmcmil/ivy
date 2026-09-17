@@ -1,0 +1,15 @@
+# ALU-only test program for ooo_cpu_ref (stage 1). 16-bit hex words, one per
+# address from 0.  Encoding: [15:13] opcode [12:10] rd [9:7] ra [6:4] rb [7:0] imm
+#   LI  = 011 rd ..imm8..         ADD = 001 rd ra rb 0000     SUB = 010 rd ra rb 0000
+6405        # 0: LI  r1, 5              -> r1 = 5
+6803        # 1: LI  r2, 3              -> r2 = 3
+2ca0        # 2: ADD r3, r1, r2         -> r3 = 8      (waits on r1, r2)
+3080        # 3: ADD r4, r1, r0         -> r4 = 5      (independent of r3: may issue before it)
+5530        # 4: SUB r5, r2, r3         -> r5 = 3 - 8 = 0xfffb
+2d80        # 5: ADD r3, r3, r0         -> r3 = 8      (WAW on r3 with 2)
+7c07        # 6: LI  r7, 7              -> r7 = 7
+0000        # 7: NOP
+7d80        # 8: LI  r7, 0x80           -> r7 = 128
+0000        # 9: NOP
+0000
+0000

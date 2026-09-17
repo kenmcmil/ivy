@@ -44,6 +44,12 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
   simulates real dual issue. See "Isolating a component's proof", "Widening to
   superscalar (dual issue)", "Common hardware design issues", and "A safety proof
   is not a live design" below.
+- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 1 of
+  `doc/projects/ooo_cpu.md`**) — an out-of-order core: Tomasulo's algorithm with
+  a 4-entry re-order buffer, single-wide dispatch, one ALU, ALU instructions
+  only. Fully verified (`ivy_check` OK in ~17 s); translates to RTL and simulates
+  (`sim_cpu.sh ooo_cpu_ref prog_alu.hex`). See "Out-of-order execution (Tomasulo
+  + ROB)" below.
 - `reference_tagging.md` — the prose writeup of the method.
 
 ## The three ingredients
@@ -616,6 +622,92 @@ invariants by lane*. Lessons from the dual-issue CPU (`dual_issue_cpu_ref.ivy`):
   RTL-translatable — and a reminder to re-verify after the swap, since it changes
   the SMT encoding.
 
+## Out-of-order execution (Tomasulo + ROB)
+
+`ooo_cpu_ref.ivy` verifies an out-of-order core against the *same* reference
+tagging setup: the ISA model and `trace` isolate are unchanged in shape; only
+where the tags live and what they tie together changes. Lessons from stage 1
+(ALU ops, single-wide dispatch, 4-entry ROB, one ALU; the proof closed after two
+CTI rounds, both spurious: uninitialized `rob_done`, and operand-tracking guards
+that also fired for NOPs whose operands are don't-cares).
+
+- **Tag the ROB entries; the ROB is the tag run.** Each entry has a ghost
+  `rob_tag(I)`, set to `trace.now` at dispatch (where `trace.step` is called —
+  dispatch is in program order, so the trace never needs to see the
+  out-of-order execution at all). `commit` is the head's tag (`rf(R) =
+  st(commit).rf(R)`) and steps at retire. The structural facts are the
+  single-issue tag-run facts read off a circular queue: `busy(head) ->
+  rob_tag(head) = commit`, `~busy(head) -> commit = now`, `busy(I) & busy(I+1) &
+  I+1 ~= tail -> succ(rob_tag(I), rob_tag(I+1))`, and `busy(I) & I+1 = tail ->
+  succ(rob_tag(I), now)`. The occupancy itself is one bi-implication over
+  head-relative distances: `busy(I) <-> ((I-head) < (tail-head)) | (busy(head) &
+  head = tail)` — per-entry busy bits plus head/tail, with `busy(head)`
+  disambiguating full from empty. bv[2] modular arithmetic on the distances is
+  cheap for Z3.
+
+- **Characterize the rename table so no window reasoning is needed.** The
+  obvious statement — "no busy entry between `commit` and the reader's tag
+  writes R, hence `st(reader).rf(R) = st(commit).rf(R)`" — needs an induction
+  over the trace step relation across up to ROB-depth entries, which Z3 will not
+  do for you. Instead state two facts about the *current* trace position that
+  each step of dispatch/retire preserves in one ISA step:
+
+      ~rat_valid(R) -> rf(R) = st(now).rf(R)                        [rf_now_trk]
+       rat_valid(R) -> st(now).rf(R) = st(rob_tag(rat_idx(R))).res  [rat_trk]
+
+  i.e. with no in-flight writer the architectural file is already current, and
+  otherwise the youngest in-flight writer's *result* is the current value. Plus
+  the youngest-writer fact `busy(I) & writes(I) -> rat_valid(rd(I)) & (I-head) <=
+  (rat_idx(rd(I))-head)`, which is what lets retire clear the rename entry only
+  when `rat_idx = head` and know that no other busy writer remains. Every operand
+  capture case at dispatch then closes in one step: from `rf` (`rf_now_trk`),
+  from a done ROB entry (`rat_trk` + `rob_val_trk`), from the result bus
+  (`rat_trk` + the ALU-latch tracking), or pending on the writer's index.
+
+- **A pending operand points at a busy, NOT-done entry whose result it is.**
+  `busy(I) & ~a_rdy(I) -> busy(src) & ~done(src) & st(rob_tag(src)).res =
+  st(rob_tag(I)).a_val`. The `~done(src)` part is load-bearing twice: it rules
+  out the classic dangling-pointer bug (a producer retiring and its slot being
+  reallocated while a consumer still waits on it — impossible, since retire
+  requires done), and it is a *liveness guard the safety proof enforces*: if the
+  dispatching instruction missed a same-cycle result broadcast (no bypass from
+  the ALU result bus into dispatch), after the edge the producer is done but the
+  consumer is not ready, and this invariant fails. Without it, the deadlock would
+  be invisible to the inductive check.
+
+- **Operand/result tracking is guarded by what the instruction actually reads.**
+  `a_rdy(I)` is set true at dispatch for LI/NOP with a don't-care value, so
+  `rob_a_trk` must be guarded by `opcode = ADD | SUB`, not by `~LI`. The general
+  rule from the in-order designs (only claim a value equals the trace when the
+  datapath actually uses it) applies per operand here.
+
+- **The issued-but-not-done entry is exactly the ALU latch.** `busy(I) &
+  issued(I) & ~done(I) -> ex_valid & ex_idx = I` and its converse (`ex_valid ->
+  busy(ex_idx) & issued & ~done & ex_ir = rob_ir(ex_idx)`) tie the execution
+  latch to the ROB, so the completion write `rob_val(ex_idx) := ex_res` lands on
+  the right entry and `rob_val_trk` follows from the latch's operand tracking.
+  With several ALUs this becomes one such pair per unit.
+
+- **Issue selection is irrelevant to the proof; write it as nullary wires.**
+  Oldest-first selection over `head, head+1, ..` is four `rdyK` wires and a
+  priority mux — no invariant mentions it (any ready entry may issue). A
+  parameterized `ready(I)` would be cleaner but is not RTL-translatable.
+
+- **The result broadcast is not a point write — it lowers to a register bank.**
+  Tomasulo's CDB updates *every* entry waiting on the completing tag in one
+  cycle (`rob_a(I) := ex_res if (busy(I) & ~a_rdy(I) & a_src(I) = ex_idx) else
+  rob_a(I)`). That has no memory write-port form, so `ivy_to_rtl` now lowers a
+  small array whose update is not a set of point writes to one register per
+  index (see "Preparing the model for ivy_to_rtl"). Arrays that *are*
+  point-written (`rob_busy`, `rob_val`, `rat_*`, `rf`) stay memories — mixing is
+  fine.
+
+- **Stage-restricted ISA.** Stage 1 disables LD/ST/BEQZ/FLUSH by making them
+  NOPs *in the ISA model* (and dropping `ddirty`/`error`/`mem_addr`/
+  `take_branch`), so the proof is over all programs and needs no `~error`
+  guards. Later stages restore the full ISA; the cpu-side invariants are then
+  re-guarded as in the cache designs.
+
 ## Common hardware design issues
 
 Verification surfaces genuine design bugs, not only proof-engineering ones. When
@@ -826,6 +918,18 @@ The datapath must be free of ghost/abstract constructs:
   (`valid(I) := false`) or a per-index function — that becomes a `$meminit`.
   Writing an array in several sequential branches of one clock action is fine
   (each is a point write); it composes to the memory's write port.
+  **Exception — small arrays with a non-point update become register banks.** If
+  the update cannot be decomposed into point writes (a broadcast `rob_a(I) :=
+  v if cond(I) else rob_a(I)`, or an index test that is not an equality) and
+  the array has at most `BANK_MAX_ENTRIES` (16) entries, `ivy_to_rtl` emits one
+  synchronously-reset flip-flop per index (`rob_a_0..rob_a_3`), each with the
+  update body instantiated at its constant index; reads at a variable index
+  become a mux tree on the index bits, reads at a constant index the element
+  net, and reads of a mid-state copy (`__m_arr(i)`, from an earlier write in the
+  same action) are inlined by substitution. This is the natural RTL for a
+  reservation-station file. Larger non-point updates are still an error.
+  (Validated: old-vs-new translator output on `pipe_cpu_ref` is combinationally
+  equivalent under `rtlil_eqv`; the OoO CPU's RTL simulates correctly.)
 
 - Translate with `ivy_to_rtl <file>.ivy` and sanity-check the RTLIL with
   `yosys -q -p "read_rtlil <file>.il"`.
@@ -856,12 +960,52 @@ The datapath must be free of ghost/abstract constructs:
   builds a name-matched combinational miter (clk and reset paired across the two
   designs), and `abc` proves it or returns a counterexample it maps back to the
   offending cone. The `.ileq` config gives, per design, the `.il` file, top
-  module, clock name, and reset name. Because it cuts at the registers, it ignores
+  module, clock name, and reset name. (If `rtlil_eqv` is not on PATH, run
+  `python3 -m ivy.ivy_rtlil_eqv <cfg>.ileq` from the repo root.) Registers are
+  paired by *any shared alias name*: yosys names a flip-flop bit by whichever
+  public wire it picks (the register `d_ir` or a wire sliced from it, `d_opcode`),
+  nondeterministically per run, so the checker collects every name of each
+  position and pairs positions that share one. Unnamed latches with **no
+  fanout** are ignored — yosys's `proc` leaves such dead temporaries behind for
+  every Verilog memory write (`$memwr$..._EN/_ADDR/_DATA`), and on a design
+  with no outputs `opt_clean` cannot sweep them without sweeping everything.
+  Unnamed *live* latches remain an error. Because it cuts at the registers, it ignores
   reachability *and* initial values — which sidesteps the init-attribute asymmetry
   (ivy_to_rtl resets via per-register `rst`-muxes and emits no FF `init`
   attributes; a golden's `initial` blocks do) that makes arbitrary-state checkers
   report spurious mismatches. Uses `submodules/abc` + `submodules/aiger`
   (overridable via `IVY_ABC`/`IVY_AIGER`/`IVY_YOSYS`).
+
+- **Worked, passing golden: `ooo_alu_golden.sv` ↔ `ooo_cpu_ref.ivy`** (run
+  `check_ooo_golden.sh`; 524 register cones, ~0.6 s; mutation-tested — an ALU
+  or bypass bug in the golden is reported on the operand-bank registers it
+  feeds). Lessons from getting it to pass:
+  - *Give the Ivy clock action nonblocking semantics first.* Ivy's action is
+    sequential: a later block reads what an earlier block wrote in the same
+    cycle. That is invisible on reachable states but a combinational check from
+    *arbitrary* states sees it (e.g. the broadcast reading `rob_busy(head)` just
+    cleared by retire). Order the blocks so no block reads an array an earlier
+    block wrote, and route the remaining reads through wires (`r_val =
+    rob_val(rob_head)`, `r_rat_clear`), which are frozen at the pre-state. Then
+    the golden is a line-by-line transcription. Re-run `ivy_check` after the
+    reorder (it is semantics-preserving on reachable states, but check).
+  - *The RTL boundary includes the translator's choices:* every scalar register
+    is reset by `rst` (to its `after init` value, else 0 — including `d_ir`,
+    `ex_ir`, `ex_a`, `ex_b`, which Ivy never initializes); banked arrays are
+    per-index registers `rob_a_0..3` reset to 0; point-written arrays are
+    memories with a power-on `$meminit` and NO `rst` reset — so the golden
+    resets scalars/banks under `if (rst)` and gives memories only `initial`
+    blocks.
+  - *Never call a Verilog function inside the always block* — yosys
+    synthesizes its `$result`/argument locals into stray registers (16+2 bits
+    per call) that break the boundary. Call it in a `wire` assignment and use
+    the wire.
+  - *Do NOT run `memory_dff` on the golden.* It merges the read-side registers
+    (`ex_ir <= rob_ir[issue_idx]`) into synchronous read ports, which
+    `memory_map` then lowers into anonymous registers — and it does not even
+    remove the dead write-port temporaries. Plain `read_verilog -sv; proc;
+    write_rtlil` is the right elaboration; the checker ignores the dead
+    temporaries itself.
 
 - **The golden must have the *same register boundary* as the Ivy model, or the
   combinational check cannot pair the state.** `rtlil_eqv` matches registers by

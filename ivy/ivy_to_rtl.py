@@ -199,6 +199,15 @@ class Ctx(object):
 
 RESET = 'rst'   # global reset net name
 
+# An array whose clock update is NOT a set of point writes (e.g. a result
+# broadcast that updates every reservation station waiting on a tag) has no
+# single-port memory form. If it is small enough, it is lowered instead to a
+# BANK of individual registers, one per index, each with its own next-state
+# logic (the update body instantiated at that constant index); reads at a
+# variable index become a mux tree over the bank. This is the natural RTL for
+# a reservation-station file or any small fully-associative structure.
+BANK_MAX_ENTRIES = 16
+
 class Translator(object):
     def __init__(self, mod):
         self.mod = mod
@@ -230,6 +239,7 @@ class Translator(object):
         self.objects = set(mod.hierarchy.keys())
         self.wire_by_name = dict((s.name, s) for s in mod.wires)
         self._update_cache = {}
+        self.bank_nets = {}              # (obj, array name) -> [element net ids]
         self.compute_state()
         self.top = self.top_object()
         self.compute_has_state()
@@ -529,6 +539,17 @@ class Translator(object):
         for w in internals:
             m.add_wire(pub_id(local_name(obj, w.name)), sort_width(w.sort))
 
+        # arrays that must be lowered to register banks (see BANK_MAX_ENTRIES);
+        # their element nets are declared up front so wire logic can read them
+        banked = []
+        for arr in self.memories(obj):
+            if self.needs_bank(obj, arr):
+                aw, dw = array_dims(arr.sort)
+                nets = [m.add_wire(pub_id(self.bank_elem_name(obj, arr, k)), dw)
+                        for k in range(1 << aw)]
+                self.bank_nets[(obj, arr.name)] = nets
+                banked.append(arr)
+
         ctx = Ctx(self, m, obj)
 
         # child input ports: a wire of a child defined by a definition in obj
@@ -556,9 +577,13 @@ class Translator(object):
             if not is_array_sort(v.sort):
                 self.emit_dff(m, obj, v)
 
-        # array state variables and read-only arrays -> memories
+        # array state variables and read-only arrays -> memories, except the
+        # banked ones -> one register per index
         for arr in self.memories(obj):
-            self.emit_memory(m, ctx, obj, arr)
+            if (obj, arr.name) in self.bank_nets:
+                self.emit_bank(m, ctx, obj, arr)
+            else:
+                self.emit_memory(m, ctx, obj, arr)
 
         self.modules.append(m)
         for c in self.children(obj):
@@ -735,6 +760,118 @@ class Translator(object):
                     ('\\CLK_ENABLE', "1'1"), ('\\CLK_POLARITY', "1'1")],
                    [('\\ADDR', addr), ('\\DATA', data), ('\\EN', en_wide),
                     ('\\CLK', pub_id(clk_used))])
+
+    # -- register banks -------------------------------------------------------
+
+    def bank_elem_name(self, obj, arr, k):
+        return '{}_{}'.format(local_name(obj, arr.name), k)
+
+    def array_update(self, obj, arr):
+        """(clock, update, definition) of arr's clocked update, or None."""
+        newsym = tr.new(arr)
+        for clk in self.clocks:
+            upd = self.get_update(obj, clk)
+            if upd and newsym.name in upd[2]:
+                return clk, upd, upd[2][newsym.name]
+        return None
+
+    def needs_bank(self, obj, arr):
+        """True if arr's clocked update cannot be decomposed into point writes
+        (so it has no memory write-port form) and the array is small enough to
+        become a register bank. A non-point update of a large array is an
+        error, reported here as it would be by emit_memory."""
+        au = self.array_update(obj, arr)
+        if au is None:
+            return False
+        clk, upd, d = au
+        var = d.args[0].args[0]
+        try:
+            self.collect_writes(d.args[1], arr, var, [], 0, upd[2], [])
+            return False
+        except iu.IvyError:
+            aw, _ = array_dims(arr.sort)
+            if (1 << aw) <= BANK_MAX_ENTRIES:
+                return True
+            raise
+
+    def bank_reset_values(self, m, obj, arr, size):
+        """Per-element reset nets of a banked array, from its 'init' update
+        (a broadcast fill and/or point assignments), defaulting to 0."""
+        _, dw = array_dims(arr.sort)
+        vals = [rtlil_const(0, dw)] * size
+        init = self.get_update(obj, 'init')
+        newsym = tr.new(arr)
+        if not (init and newsym.name in init[2]):
+            return vals
+        d = init[2][newsym.name]
+        var = d.args[0].args[0]
+        points = []
+        default = self.collect_init(d.args[1], arr, var, init[2], points)
+        ictx = Ctx(self, m, obj, init[2])
+        if default is not None:
+            fill = self.emit_expr(ictx, default)
+            vals = [fill] * size
+        # points are listed latest-write-first, so the first match wins
+        for k in range(size):
+            for (addr, data) in points:
+                if self.eval_const(addr) == k:
+                    vals[k] = self.emit_expr(ictx, data)
+                    break
+        return vals
+
+    def emit_bank(self, m, ctx, obj, arr):
+        """Emit a banked array as one synchronously-reset D flip-flop per index.
+        Element k's next state is the array-update body with the index variable
+        instantiated to k; reads of the array (and of its mid-state copies)
+        inside that body resolve to element nets (see emit_read/emit_expr)."""
+        aw, dw = array_dims(arr.sort)
+        size = 1 << aw
+        nets = self.bank_nets[(obj, arr.name)]
+        rstvals = self.bank_reset_values(m, obj, arr, size)
+        au = self.array_update(obj, arr)
+        clk_used, upd, d = au
+        var = d.args[0].args[0]
+        idx_sort = arr.sort.dom[0]
+        cctx = Ctx(self, m, obj, upd[2])
+        for k in range(size):
+            body = ilu.substitute_ast(d.args[1], {var.rep: il.Symbol(str(k), idx_sort)})
+            dval = self.emit_expr(cctx, body)
+            dnet = m.new_net(dw)
+            ename = self.bank_elem_name(obj, arr, k)
+            m.cell('$mux', '$mux$' + ename,
+                   [('\\WIDTH', dw)],
+                   [('\\A', dval), ('\\B', rstvals[k]), ('\\S', pub_id(RESET)),
+                    ('\\Y', dnet)])
+            m.cell('$dff', '$dff$' + ename,
+                   [('\\WIDTH', dw), ('\\CLK_POLARITY', 1)],
+                   [('\\CLK', pub_id(clk_used)), ('\\D', dnet), ('\\Q', nets[k])])
+
+    def emit_bank_read(self, ctx, arr, index):
+        """A read of a banked array: the element net for a constant index, else
+        a mux tree over the bank selected by the index bits."""
+        nets = self.bank_nets[(self.owning_object(arr.name), arr.name)]
+        aw, dw = array_dims(arr.sort)
+        if il.is_numeral(index):
+            return nets[int(index.name)]
+        m = ctx.m
+        sel = self.emit_expr(ctx, index)
+        if not sel.startswith('\\') and not sel.startswith('$'):
+            net = m.new_net(aw)
+            m.connect(net, sel)
+            sel = net
+        level = list(nets)
+        for bit in range(aw):
+            s = '{} [{}]'.format(sel, bit)
+            nxt = []
+            for i in range(0, len(level), 2):
+                y = m.new_net(dw)
+                m.cell('$mux', m.fresh('$mux'),
+                       [('\\WIDTH', dw)],
+                       [('\\A', level[i]), ('\\B', level[i + 1]), ('\\S', s),
+                        ('\\Y', y)])
+                nxt.append(y)
+            level = nxt
+        return level[0]
 
     def collect_writes(self, expr, arr, var, conds, depth, defidx, out):
         """Decompose a functional array-update body new_arr(var) = expr into a
@@ -1082,6 +1219,14 @@ class Translator(object):
                     "signal.".format(term.rep.name))
             if self.is_array_ref(term):
                 return self.emit_read(ctx, term)
+            if (term.rep.name in ctx.local_defs and is_array_sort(term.rep.sort)
+                    and len(term.args) == 1):
+                # A read of a mid-state copy of an array (__m_arr(i)) within an
+                # update body, as produced by an earlier write in the same
+                # action: inline the copy's defining lambda at this index.
+                d = ctx.local_defs[term.rep.name]
+                var = d.args[0].args[0]
+                return self.emit_expr(ctx, ilu.substitute_ast(d.args[1], {var.rep: term.args[0]}))
             return self.emit_op(ctx, term)
         raise iu.IvyError(None, "cannot translate expression: {}".format(term))
 
@@ -1106,8 +1251,11 @@ class Translator(object):
                 and self.in_design(self.owning_object(term.rep.name)))
 
     def emit_read(self, ctx, term):
-        """Emit an asynchronous memory read port for term = arr(index)."""
+        """Emit an asynchronous memory read port for term = arr(index), or a
+        bank select if the array is lowered to a register bank."""
         arr = term.rep
+        if (self.owning_object(arr.name), arr.name) in self.bank_nets:
+            return self.emit_bank_read(ctx, arr, term.args[0])
         aw, dw = array_dims(arr.sort)
         addr = self.emit_expr(ctx, term.args[0])
         data = ctx.m.new_net(dw)
