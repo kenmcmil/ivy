@@ -87,6 +87,25 @@ combinationally equivalent to the emitted RTL, register for register
 state-independent the Ivy clock action is ordered complete/retire/issue/
 dispatch/fetch with wire-based reads, so it has exactly nonblocking semantics.
 
-Next: stage 2 (BEQZ with prediction: shadow bits per ROB entry, squash on
-mispredict at retire or at branch resolution), then stage 3 (LD/ST via idcache
-with an in-order LD/ST buffer, FLUSH, restore ddirty/error).
+The stage-1 design is frozen as `ooo_cpu_alu_ref.ivy` (the golden and
+`check_ooo_golden.sh` target it).
+
+Stage 2 (2026-09-17): `ooo_cpu_ref.ivy` adds BEQZ with the bimodal predictor
+`bp` (predict at fetch, train at retire). A branch is a one-operand ALU op;
+the ALU records its outcome in `rob_take`, the prediction rides in `rob_pred`,
+and a mispredicted branch is resolved AT RETIRE: it squashes the whole ROB
+(all younger), clears the rename table, kills the ALU and fetch latches and
+redirects the pc. Proof: shadow bits per ROB entry + `d_shadow`, `spec_wrong`,
+and a ghost `mp_idx` naming the single unresolved mispredicted branch;
+shadowed entries are a suffix strictly younger than it, so the head is never
+shadowed. `ivy_check` OK (~2 min 20 s). RTL translates (rob_busy/rat_valid
+become register banks because of the squash's whole-array clear) and
+`sim_cpu.sh ooo_cpu_ref prog_br.hex` runs a countdown loop with a
+mispredicting back-branch correctly. The stage-2 golden `ooo_beqz_golden.sv`
+(with the predictor as a `bp` submodule) is proven equivalent by
+`check_ooo_golden.sh ooo_cpu_ref ooo_beqz_golden.sv` (605 cones, including
+the 32 bits of bp.bht).
+
+Next: stage 3 (LD/ST via idcache with an in-order LD/ST buffer, FLUSH,
+restore ddirty/error). Later refinements: resolve mispredicts at execution
+(needs rename-table recovery), dual-wide dispatch, more ALUs.

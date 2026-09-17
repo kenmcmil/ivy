@@ -1,7 +1,7 @@
-// Hand-written "golden" SystemVerilog model of ooo_cpu_ref.ivy (stage 1: the
+// Hand-written "golden" SystemVerilog model of ooo_cpu_alu_ref.ivy (stage 1: the
 // ALU-only out-of-order core -- Tomasulo with a 4-entry re-order buffer, single
 // dispatch, one ALU), for combinational equivalence checking against the
-// Ivy-generated RTL (ooo_cpu_ref.il) with rtlil_eqv (see check_ooo_golden.sh).
+// Ivy-generated RTL (ooo_cpu_alu_ref.il) with rtlil_eqv (see check_ooo_golden.sh).
 //
 // The register boundary matches the Ivy model exactly, register for register:
 //

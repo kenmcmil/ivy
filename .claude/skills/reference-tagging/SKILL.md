@@ -44,12 +44,15 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
   simulates real dual issue. See "Isolating a component's proof", "Widening to
   superscalar (dual issue)", "Common hardware design issues", and "A safety proof
   is not a live design" below.
-- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 1 of
+- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 2 of
   `doc/projects/ooo_cpu.md`**) — an out-of-order core: Tomasulo's algorithm with
-  a 4-entry re-order buffer, single-wide dispatch, one ALU, ALU instructions
-  only. Fully verified (`ivy_check` OK in ~17 s); translates to RTL and simulates
-  (`sim_cpu.sh ooo_cpu_ref prog_alu.hex`). See "Out-of-order execution (Tomasulo
-  + ROB)" below.
+  a 4-entry re-order buffer, single-wide dispatch, one ALU, ALU instructions plus
+  BEQZ with a branch predictor (mispredicts resolved at retire). Fully verified
+  (`ivy_check` OK in ~2.5 min); translates to RTL and simulates (`sim_cpu.sh
+  ooo_cpu_ref prog_br.hex`). `ooo_cpu_alu_ref.ivy` is the frozen ALU-only stage 1
+  (OK in ~17 s). Golden models `ooo_alu_golden.sv` (stage 1) and
+  `ooo_beqz_golden.sv` (stage 2) are proven equivalent by `check_ooo_golden.sh
+  [design] [golden]`. See "Out-of-order execution (Tomasulo + ROB)" below.
 - `reference_tagging.md` — the prose writeup of the method.
 
 ## The three ingredients
@@ -702,6 +705,35 @@ that also fired for NOPs whose operands are don't-cares).
   point-written (`rob_busy`, `rob_val`, `rat_*`, `rf`) stay memories — mixing is
   fine.
 
+- **Speculation in an OoO core: resolve at retire, name the mispredicted entry
+  (stage 2, `ooo_cpu_ref.ivy`; the ALU-only stage 1 is frozen as
+  `ooo_cpu_alu_ref.ivy`).** A BEQZ is a one-operand ALU op; the ALU stores the
+  outcome (`rob_take`), the fetch-time prediction rides in the entry
+  (`rob_pred`), and the branch is resolved when it reaches the head: on a
+  mismatch retire squashes the *entire* ROB (everything is younger), clears the
+  rename table wholesale, kills the ALU/fetch latches and redirects the pc. No
+  rename checkpoints are needed, and the proof is the in-order shadow discipline
+  transplanted: `rob_shadow(I)` per entry, `d_shadow` for the fetch latch,
+  `spec_wrong`, plus a ghost **`mp_idx`** naming the mispredicted branch's
+  entry. The structural facts: `spec_wrong -> busy(mp) & ~shadow(mp) & branch &
+  pred(mp) ~= st(tag(mp)).take_branch`; its converse (any non-shadowed
+  mispredicted entry *is* mp_idx, so there is exactly one); shadowed entries are
+  a suffix (`shadow(I) & I+1 ~= tail -> shadow(I+1)`) strictly younger than
+  `mp_idx`; `busy & shadow -> spec_wrong`; and `d_valid -> d_shadow = spec_wrong`.
+  From these, `busy(head) -> ~shadow(head)` (a wrong-path instruction never
+  retires — the core obligation) and, at the squash, "the youngest non-shadowed
+  entry is the head" gives `commit.next = now` and the redirect
+  `pc = st(now).pc`. The rename invariants are simply guarded by `~spec_wrong`
+  (only wrong-path instructions dispatch while it holds, and the squash clears
+  the table). Every tag/data invariant gets a `~rob_shadow(I)` guard; the
+  tag-chain facts skip shadowed entries. `pc_trk` has one extra case: when the
+  fetch latch holds a not-yet-dispatched branch the pc is its *predicted*
+  successor (`st(now).target if d_pred else st(now).pc+1`) — the ghost only
+  learns of the mispredict at dispatch. Closed on the first CTI round; the one
+  bug was **reading `d_pred` in the ghost monitor without `old`** (the datapath
+  monitor may run first and overwrite it with the *next* fetch's prediction) —
+  the skill's "read real state via `old` in the monitor" rule, again.
+
 - **Stage-restricted ISA.** Stage 1 disables LD/ST/BEQZ/FLUSH by making them
   NOPs *in the ISA model* (and dropping `ddirty`/`error`/`mem_addr`/
   `take_branch`), so the proof is over all programs and needs no `~error`
@@ -976,10 +1008,14 @@ The datapath must be free of ghost/abstract constructs:
   report spurious mismatches. Uses `submodules/abc` + `submodules/aiger`
   (overridable via `IVY_ABC`/`IVY_AIGER`/`IVY_YOSYS`).
 
-- **Worked, passing golden: `ooo_alu_golden.sv` ↔ `ooo_cpu_ref.ivy`** (run
-  `check_ooo_golden.sh`; 524 register cones, ~0.6 s; mutation-tested — an ALU
-  or bypass bug in the golden is reported on the operand-bank registers it
-  feeds). Lessons from getting it to pass:
+- **Worked, passing goldens: `ooo_alu_golden.sv` ↔ `ooo_cpu_alu_ref.ivy` (524
+  cones) and `ooo_beqz_golden.sv` ↔ `ooo_cpu_ref.ivy` (605 cones, the predictor
+  as a `bp` submodule whose `bht` pairs by name after flattening)** — run
+  `check_ooo_golden.sh [design] [golden]`, ~0.6 s each; mutation-tested (an ALU,
+  bypass, squash-condition, redirect or predictor-saturation bug in the golden is
+  reported on the registers it feeds). Once the stage-1 golden passed, the stage-2
+  one passed on the first run — the boundary rules below are the whole story.
+  Lessons from getting it to pass:
   - *Give the Ivy clock action nonblocking semantics first.* Ivy's action is
     sequential: a later block reads what an earlier block wrote in the same
     cycle. That is invisible on reachable states but a combinational check from

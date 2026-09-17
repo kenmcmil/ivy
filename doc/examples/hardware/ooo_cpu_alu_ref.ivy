@@ -19,16 +19,13 @@
 #          1  ADD  rd, ra, rb     rf[rd] := rf[ra] + rf[rb]
 #          2  SUB  rd, ra, rb     rf[rd] := rf[ra] - rf[rb]
 #          3  LI   rd, imm        rf[rd] := zero_extend(imm8)
-#          6  BEQZ ra, target     if rf[ra] == 0 then pc := target
-#          4,5,7                   (stage 2: NOP)
+#          4..7                    (stage 1: NOP)
 #
 # ---------------------------------------------------------------------------
 # Microarchitecture
 #
-#   Fetch (IF)        : d_ir := mem(pc); pc := predicted next pc (the branch
-#                       predictor `bp` predicts a fetched BEQZ; the prediction
-#                       d_pred and the instruction's pc d_pc ride with it).
-#                       Stalls when the ROB is full.
+#   Fetch (IF)        : d_ir := mem(pc); pc := pc + 1. Stalls when the ROB is
+#                       full.
 #   Dispatch (ID)     : allocates ROB entry `rob_tail` for d_ir, renames rd in
 #                       the rename table (rat_*), and captures the operands:
 #                       from the register file if no in-flight writer, from
@@ -36,22 +33,13 @@
 #                       if the writer completes this very cycle, else it
 #                       records the writer's ROB index and waits.
 #   Issue             : the oldest ROB entry whose operands are ready and that
-#                       has not issued goes to the ALU latch (ex_*). A BEQZ is
-#                       a one-operand ALU op (it needs ra only).
+#                       has not issued goes to the ALU latch (ex_*).
 #   Execute           : one ALU, one cycle. On completion the result is
 #                       written to the entry (rob_val/rob_done) and BROADCAST
-#                       to every entry waiting on this ROB index. For a BEQZ
-#                       the ALU also records the true outcome (rob_take).
+#                       to every entry waiting on this ROB index.
 #   Retire            : the head entry, once done, writes the register file,
 #                       frees its slot, and clears the rename entry if it is
-#                       still the youngest writer of its destination. A BEQZ
-#                       whose outcome (rob_take) differs from its prediction
-#                       (rob_pred) SQUASHES at retire: every ROB entry (all
-#                       younger than the branch) is freed, the rename table is
-#                       cleared, the ALU and fetch latches are killed, and the
-#                       PC is redirected. Misprediction recovery at retire is
-#                       the simplest correct scheme (no rename checkpoints);
-#                       resolving earlier is a performance refinement.
+#                       still the youngest writer of its destination.
 #
 # The reservation stations are "keyed to the ROB": entry I of the ROB carries
 # its own operand fields (rob_a/rob_a_rdy/rob_a_src, rob_b/...), so there is
@@ -82,22 +70,6 @@
 #
 # Both are preserved by one trace step at dispatch, and together they make
 # every operand-capture case at dispatch correct in one step.
-#
-# Speculation (stage 2) uses the shadow-bit discipline of 5stage_bp_cpu_ref:
-# the trace steps only along the correct path. At dispatch of a BEQZ the
-# ghost compares the carried prediction with the true outcome recorded in the
-# trace (st(now).take_branch); on disagreement it sets `spec_wrong`, names the
-# branch's entry `mp_idx`, and everything dispatched from then on is
-# `rob_shadow`ed (no trace step, no data invariants). Shadowed entries are a
-# suffix of the ROB, strictly younger than mp_idx; the mispredicted branch is
-# the only non-shadowed mispredicted entry, so when it reaches the head every
-# other entry is shadowed and the squash leaves an empty ROB with commit = now
-# and the redirected pc = st(now).pc. Since a shadowed entry never retires
-# (the branch ahead of it squashes it), the architectural state is never
-# polluted -- that is the core obligation, and it follows from `busy(head) ->
-# ~shadow(head)`. Correctness is independent of the prediction: `bp`'s logic
-# is hidden in its isolate and the CPU is verified with predicted_taken
-# arbitrary.
 
 include order
 
@@ -138,7 +110,6 @@ module isa_model(init_mem) = {
     var target : addr             # low 8 bits: immediate
     var a_val : word
     var b_val : word
-    var take_branch : bool        # BEQZ outcome
     var res : word                # ALU result (ADD/SUB/LI; 0 otherwise)
 
     after init {
@@ -156,7 +127,6 @@ module isa_model(init_mem) = {
         target := fetched<<7:0>>;
         a_val := rf(ra);
         b_val := rf(rb);
-        take_branch := (opcode = 6) & (a_val = 0);
         res := (a_val + b_val if opcode = 1 else
                (a_val - b_val if opcode = 2 else
                ((0:addr) :: target if opcode = 3 else 0)));
@@ -166,11 +136,7 @@ module isa_model(init_mem) = {
         if opcode = 1 | opcode = 2 | opcode = 3 {
             rf(rd) := res
         };
-        if take_branch {
-            pc := target
-        } else {
-            pc := pc + 1
-        }
+        pc := pc + 1;
     }
 }
 
@@ -198,7 +164,6 @@ isolate trace = {
             target : addr,
             a_val : word,
             b_val : word,
-            take_branch : bool,
             res : word
         }
 
@@ -217,7 +182,6 @@ isolate trace = {
             res.target := arch.target;
             res.a_val := arch.a_val;
             res.b_val := arch.b_val;
-            res.take_branch := arch.take_branch;
             res.res := arch.res;
         }
 
@@ -245,7 +209,6 @@ isolate trace = {
         invariant st(now).target = arch.target
         invariant st(now).a_val = arch.a_val
         invariant st(now).b_val = arch.b_val
-        invariant st(now).take_branch = arch.take_branch
         invariant st(now).res = arch.res
 
         # (a) every recorded entry's intermediate values decode its own state
@@ -257,12 +220,10 @@ isolate trace = {
         invariant T <= now -> st(T).target = (st(T).fetched)<<7:0>>
         invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
         invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
-        invariant T <= now -> st(T).take_branch = ((st(T).opcode = 6) & (st(T).a_val = 0))
         invariant T <= now -> st(T).res = (st(T).a_val + st(T).b_val if st(T).opcode = 1 else (st(T).a_val - st(T).b_val if st(T).opcode = 2 else ((0:addr) :: st(T).target if st(T).opcode = 3 else 0)))
 
         # (b) consecutive recorded entries are related by one ISA step
-        invariant (tag.succ(T,U) & U <= now) ->
-                      st(U).pc = (st(T).target if st(T).take_branch else st(T).pc + 1)
+        invariant (tag.succ(T,U) & U <= now) -> st(U).pc = st(T).pc + 1
         invariant (tag.succ(T,U) & U <= now) -> st(U).mem(A) = st(T).mem(A)
         invariant (tag.succ(T,U) & U <= now) ->
                       st(U).rf(R) = (st(T).res
@@ -282,15 +243,9 @@ object cpu = {
         var commit : tag                  # tag of the oldest un-retired instruction
                                           # (= trace.now when the ROB is empty)
         var rob_tag(I:robidx) : tag       # the trace tag of the instruction in entry I
-        var rob_shadow(I:robidx) : bool   # entry I is wrong-path (behind a mispredict)
-        var d_shadow : bool               # the IF/ID instruction is wrong-path
-        var spec_wrong : bool             # the fetch stream is on a mispredicted path
-        var mp_idx : robidx               # while spec_wrong: the mispredicted branch's entry
 
         after init {
             commit := 0;
-            d_shadow := false;
-            spec_wrong := false;
         }
     }
 
@@ -302,8 +257,6 @@ object cpu = {
     # ---- IF/ID latch ----
     var d_ir : word
     var d_valid : bool
-    var d_pred : bool                 # predicted-taken bit carried with the instruction
-    var d_pc : addr                   # the instruction's own pc
 
     # ---- rename table ----
     var rat_valid(R:reg) : bool       # R has an in-flight writer
@@ -314,9 +267,6 @@ object cpu = {
     var rob_tail : robidx             # next free entry
     var rob_busy(I:robidx) : bool     # entry holds an instruction
     var rob_ir(I:robidx) : word       # its instruction word
-    var rob_pc(I:robidx) : addr       # its pc (for the branch redirect)
-    var rob_pred(I:robidx) : bool     # its carried branch prediction
-    var rob_take(I:robidx) : bool     # its true branch outcome (valid when done)
     var rob_issued(I:robidx) : bool   # it has been sent to the ALU (or needs no ALU)
     var rob_done(I:robidx) : bool     # its result is in rob_val
     var rob_val(I:robidx) : word
@@ -355,52 +305,15 @@ object cpu = {
     definition d_rb = d_ir<<6:4>>
     wire d_target : addr
     definition d_target = d_ir<<7:0>>
-    wire d_alu : bool                 # writes rd (through the ALU)
+    wire d_alu : bool                 # goes through the ALU and writes rd
     definition d_alu = (d_opcode = 1 | d_opcode = 2 | d_opcode = 3)
-    wire d_branch : bool
-    definition d_branch = (d_opcode = 6)
-    wire d_exec : bool                # goes through the ALU (ALU op or branch)
-    definition d_exec = d_alu | d_branch
-    wire d_needs_a : bool             # reads ra
-    definition d_needs_a = (d_opcode = 1 | d_opcode = 2 | d_opcode = 6)
-    wire d_needs_b : bool             # reads rb
-    definition d_needs_b = (d_opcode = 1 | d_opcode = 2)
-
-    # ---- retire decode (moved up: squash gates dispatch/issue/fetch) ----
-    wire r_ir : word
-    definition r_ir = rob_ir(rob_head)
-    wire r_opcode : opc
-    definition r_opcode = r_ir<<15:13>>
-    wire r_rd : reg
-    definition r_rd = r_ir<<12:10>>
-    wire r_target : addr
-    definition r_target = r_ir<<7:0>>
-    wire r_alu : bool
-    definition r_alu = (r_opcode = 1 | r_opcode = 2 | r_opcode = 3)
-    wire r_branch : bool
-    definition r_branch = (r_opcode = 6)
-    wire r_val : word                 # the retiring result (pre-state read)
-    definition r_val = rob_val(rob_head)
-    wire r_rat_clear : bool           # the retiring entry is still rd's youngest writer
-    definition r_rat_clear = rat_valid(r_rd) & rat_idx(r_rd) = rob_head
-    wire r_pc : addr
-    definition r_pc = rob_pc(rob_head)
-    wire r_take : bool
-    definition r_take = rob_take(rob_head)
-    wire r_pred : bool
-    definition r_pred = rob_pred(rob_head)
-    # a retiring BEQZ whose outcome differs from its prediction: squash
-    wire squash : bool
-    definition squash = retire & r_branch & (r_take ~= r_pred)
-    wire redirect_pc : addr           # the correct next pc after the branch
-    definition redirect_pc = (r_target if r_take else r_pc + 1)
+    wire d_needs_ab : bool            # reads ra and rb
+    definition d_needs_ab = (d_opcode = 1 | d_opcode = 2)
 
     wire dispatch : bool
-    definition dispatch = d_valid & ~rob_full & ~squash
+    definition dispatch = d_valid & ~rob_full
     wire if_stall : bool
     definition if_stall = d_valid & rob_full
-    wire fetch_en : bool
-    definition fetch_en = ~if_stall & ~squash
 
     # ---- head-relative entry indices, for oldest-first issue ----
     wire h0 : robidx
@@ -421,8 +334,6 @@ object cpu = {
     definition ex_res = (ex_a + ex_b if ex_opcode = 1 else
                         (ex_a - ex_b if ex_opcode = 2 else
                         ((0:addr) :: ex_target if ex_opcode = 3 else 0)))
-    wire ex_take : bool               # the true BEQZ outcome
-    definition ex_take = (ex_opcode = 6) & (ex_a = 0)
 
     # ---- operand capture at dispatch ----
     # An operand is ready if its register has no in-flight writer, or the
@@ -434,7 +345,7 @@ object cpu = {
     wire d_a_bus : bool
     definition d_a_bus = ex_valid & ex_idx = d_a_idx
     wire d_a_rdy : bool
-    definition d_a_rdy = ~d_needs_a | ~rat_valid(d_ra) | rob_done(d_a_idx) | d_a_bus
+    definition d_a_rdy = ~d_needs_ab | ~rat_valid(d_ra) | rob_done(d_a_idx) | d_a_bus
     wire d_a_val : word
     definition d_a_val = (rf(d_ra) if ~rat_valid(d_ra) else
                          (ex_res if d_a_bus else rob_val(d_a_idx)))
@@ -444,7 +355,7 @@ object cpu = {
     wire d_b_bus : bool
     definition d_b_bus = ex_valid & ex_idx = d_b_idx
     wire d_b_rdy : bool
-    definition d_b_rdy = ~d_needs_b | ~rat_valid(d_rb) | rob_done(d_b_idx) | d_b_bus
+    definition d_b_rdy = ~d_needs_ab | ~rat_valid(d_rb) | rob_done(d_b_idx) | d_b_bus
     wire d_b_val : word
     definition d_b_val = (rf(d_rb) if ~rat_valid(d_rb) else
                          (ex_res if d_b_bus else rob_val(d_b_idx)))
@@ -459,73 +370,23 @@ object cpu = {
     wire rdy3 : bool
     definition rdy3 = rob_busy(h3) & ~rob_issued(h3) & rob_a_rdy(h3) & rob_b_rdy(h3)
     wire issue : bool
-    definition issue = ~squash & (rdy0 | rdy1 | rdy2 | rdy3)
+    definition issue = rdy0 | rdy1 | rdy2 | rdy3
     wire issue_idx : robidx
     definition issue_idx = (h0 if rdy0 else (h1 if rdy1 else (h2 if rdy2 else h3)))
 
-    }
-
-    # ---- the branch predictor, as a sub-isolate `bp` (as in 5stage_bp_cpu_ref) ----
-    # bp declares its own I/O wires and its logic uses only those; the parent
-    # connects them below. Because bp's logic lives in its (hidden)
-    # implementation, the CPU is verified with bp.predicted_taken arbitrary.
-    isolate bp = {
-        wire fetch_pc : addr          # input: PC being fetched (to predict)
-        wire br_valid : bool          # input: a conditional branch resolves this cycle
-        wire br_pc : addr             # input: the resolving branch's PC
-        wire br_taken : bool          # input: its true outcome
-        wire predicted_taken : bool   # output: the prediction for fetch_pc
-
-        implementation {
-            type bhtidx
-            interpret bhtidx -> bv[4]  # 16-entry branch history table
-            type ctr
-            interpret ctr -> bv[2]     # 2-bit saturating counter, states 0..3
-
-            var bht(I:bhtidx) : ctr
-
-            wire pred_idx : bhtidx
-            definition pred_idx = fetch_pc<<3:0>>
-            wire upd_idx : bhtidx
-            definition upd_idx = br_pc<<3:0>>
-
-            definition predicted_taken = (bht(pred_idx) = 2) | (bht(pred_idx) = 3)
-
-            after init {
-                bht(I) := 1            # weakly not-taken
-            }
-
-            after posedge {
-                if br_valid {
-                    if br_taken {
-                        if bht(upd_idx) ~= 3 { bht(upd_idx) := bht(upd_idx) + 1 }
-                    } else {
-                        if bht(upd_idx) ~= 0 { bht(upd_idx) := bht(upd_idx) - 1 }
-                    }
-                }
-            }
-        }
-    }
-
-    # connect the predictor (in the parent): predict at fetch, train at retire
-    definition bp.fetch_pc = pc
-    definition bp.br_valid = retire & r_branch
-    definition bp.br_pc = r_pc
-    definition bp.br_taken = r_take
-
-    implementation {
-
-    # ---- fetch and prediction ----
-    wire fetched : word
-    definition fetched = mem(pc)
-    wire f_is_branch : bool
-    definition f_is_branch = ((fetched<<15:13>>:opc) = 6)
-    wire f_ptaken : bool             # predicted-taken for the fetched instruction
-    definition f_ptaken = f_is_branch & bp.predicted_taken
-    wire f_target : addr
-    definition f_target = fetched<<7:0>>
-    wire pred_next_pc : addr
-    definition pred_next_pc = (f_target if f_ptaken else pc + 1)
+    # ---- retire decode ----
+    wire r_ir : word
+    definition r_ir = rob_ir(rob_head)
+    wire r_opcode : opc
+    definition r_opcode = r_ir<<15:13>>
+    wire r_rd : reg
+    definition r_rd = r_ir<<12:10>>
+    wire r_alu : bool
+    definition r_alu = (r_opcode = 1 | r_opcode = 2 | r_opcode = 3)
+    wire r_val : word                 # the retiring result (pre-state read)
+    definition r_val = rob_val(rob_head)
+    wire r_rat_clear : bool           # the retiring entry is still rd's youngest writer
+    definition r_rat_clear = rat_valid(r_rd) & rat_idx(r_rd) = rob_head
 
     # ---- reset ----
     after init {
@@ -556,15 +417,13 @@ object cpu = {
         if ex_valid {
             rob_val(ex_idx) := ex_res;
             rob_done(ex_idx) := true;
-            rob_take(ex_idx) := ex_take;
             rob_a(I) := (ex_res if (rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = ex_idx) else rob_a(I));
             rob_a_rdy(I) := rob_a_rdy(I) | (rob_busy(I) & rob_a_src(I) = ex_idx);
             rob_b(I) := (ex_res if (rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = ex_idx) else rob_b(I));
             rob_b_rdy(I) := rob_b_rdy(I) | (rob_busy(I) & rob_b_src(I) = ex_idx)
         };
 
-        # Retire the head entry once its result is available. A mispredicted
-        # BEQZ squashes everything behind it and redirects the pc.
+        # Retire the head entry once its result is available.
         if retire {
             if r_alu {
                 rf(r_rd) := r_val
@@ -573,14 +432,6 @@ object cpu = {
                 rat_valid(r_rd) := false
             };
             rob_busy(rob_head) := false;
-            if squash {
-                rob_busy(I) := false;             # every other entry is younger: drop it
-                rat_valid(R) := false;            # no in-flight writers remain
-                rob_tail := rob_head + 1;         # empty ROB (pre-state head)
-                ex_valid := false;                # kill the in-flight ALU op
-                d_valid := false;                 # kill the fetched instruction
-                pc := redirect_pc
-            };
             rob_head := rob_head + 1
         };
 
@@ -605,10 +456,8 @@ object cpu = {
         if dispatch {
             rob_busy(rob_tail) := true;
             rob_ir(rob_tail) := d_ir;
-            rob_pc(rob_tail) := d_pc;
-            rob_pred(rob_tail) := d_pred;
-            rob_issued(rob_tail) := ~d_exec;    # a NOP needs no ALU ...
-            rob_done(rob_tail) := ~d_exec;      # ... and is done at once
+            rob_issued(rob_tail) := ~d_alu;     # a NOP needs no ALU ...
+            rob_done(rob_tail) := ~d_alu;       # ... and is done at once
             rob_val(rob_tail) := 0;
             rob_a(rob_tail) := d_a_val;
             rob_a_rdy(rob_tail) := d_a_rdy;
@@ -623,14 +472,11 @@ object cpu = {
             rob_tail := rob_tail + 1
         };
 
-        # Fetch (speculatively, along the predicted path), unless the dispatch
-        # stage is stalled on a full ROB or a squash is redirecting the pc.
-        if fetch_en {
-            d_ir := fetched;
+        # Fetch, unless the dispatch stage is stalled on a full ROB.
+        if ~if_stall {
+            d_ir := mem(pc);
             d_valid := true;
-            d_pred := f_ptaken;
-            d_pc := pc;
-            pc := pred_next_pc
+            pc := pc + 1
         }
     }
     }
@@ -641,29 +487,9 @@ object cpu = {
             if retire {
                 commit := commit.next
             };
-            if squash {
-                # the mispredicted branch retires: the ROB is emptied of the
-                # wrong-path suffix and fetch resumes on the correct path
-                spec_wrong := false;
-                d_shadow := false
-            };
             if dispatch {
-                rob_shadow(old rob_tail) := d_shadow;
-                if ~d_shadow {
-                    # a correct-path instruction: it is the trace's next step.
-                    # If it is a BEQZ whose prediction disagrees with the true
-                    # outcome, the fetch stream is wrong from here on.
-                    rob_tag(old rob_tail) := trace.now;
-                    if d_branch & (old d_pred ~= trace.st(trace.now).take_branch) {   # old: insensitive to monitor order
-                        spec_wrong := true;
-                        mp_idx := old rob_tail
-                    };
-                    trace.step
-                }
-            };
-            if fetch_en {
-                d_shadow := spec_wrong   # the word fetched now is wrong-path iff
-                                         # the stream is (after this cycle's dispatch)
+                rob_tag(old rob_tail) := trace.now;
+                trace.step
             }
         }
     }
@@ -675,76 +501,55 @@ object cpu = {
         # busy(I) iff I is in the circular range [head, tail), or the ROB is full.
         invariant [rob_shape] rob_busy(I) <-> (((I - rob_head) < (rob_tail - rob_head)) | (rob_busy(rob_head) & rob_head = rob_tail))
 
-        # ---- speculation structure ----
-        # Shadowed entries are a suffix of the ROB, exist only while spec_wrong,
-        # and are strictly younger than the mispredicted branch mp_idx; hence the
-        # head is never shadowed (a shadowed entry never retires).
-        invariant [shadow_suffix] (rob_busy(I) & rob_shadow(I) & I + 1 ~= rob_tail) -> rob_shadow(I + 1)
-        invariant [shadow_spec] (rob_busy(I) & rob_shadow(I)) -> spec_wrong
-        invariant [d_shadow_char] d_valid -> (d_shadow = spec_wrong)
-        invariant [mp_char] spec_wrong ->
-            (rob_busy(mp_idx) & ~rob_shadow(mp_idx) & (rob_ir(mp_idx)<<15:13>>:opc) = 6 &
-             rob_pred(mp_idx) ~= trace.st(rob_tag(mp_idx)).take_branch)
-        invariant [mp_unique] (rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 6 &
-                               rob_pred(I) ~= trace.st(rob_tag(I)).take_branch) -> (spec_wrong & I = mp_idx)
-        invariant [shadow_after_mp] (spec_wrong & rob_busy(I) & (I - rob_head) > (mp_idx - rob_head)) -> rob_shadow(I)
-        invariant [head_noshadow] rob_busy(rob_head) -> ~rob_shadow(rob_head)
-
-        # ---- the non-shadowed entries carry a contiguous run of tags [commit, now) ----
+        # ---- the busy entries carry a contiguous run of tags [commit, now) ----
         invariant [rob_head_tag] rob_busy(rob_head) -> rob_tag(rob_head) = commit
         invariant [rob_empty_tag] ~rob_busy(rob_head) -> commit = trace.now
-        invariant [rob_chain] (rob_busy(I) & ~rob_shadow(I) & rob_busy(I + 1) & ~rob_shadow(I + 1) & I + 1 ~= rob_tail) -> tag.succ(rob_tag(I), rob_tag(I + 1))
-        invariant [rob_youngest] (rob_busy(I) & ~rob_shadow(I) & (I + 1 = rob_tail | rob_shadow(I + 1))) -> tag.succ(rob_tag(I), trace.now)
-        invariant [rob_tag_range] (rob_busy(I) & ~rob_shadow(I)) -> (commit <= rob_tag(I) & rob_tag(I) < trace.now)
+        invariant [rob_chain] (rob_busy(I) & rob_busy(I + 1) & I + 1 ~= rob_tail) -> tag.succ(rob_tag(I), rob_tag(I + 1))
+        invariant [rob_youngest] (rob_busy(I) & I + 1 = rob_tail) -> tag.succ(rob_tag(I), trace.now)
+        invariant [rob_tag_range] rob_busy(I) -> (commit <= rob_tag(I) & rob_tag(I) < trace.now)
 
         # ---- committed architectural state ----
         invariant [rf_trk] rf(R) = trace.st(commit).rf(R)
         invariant [mem_trk] mem(A) = trace.st(trace.now).mem(A)
 
-        # ---- fetch: on the correct path the pc is the predicted successor of the
-        #      IF/ID instruction (= the true one unless that instruction is a
-        #      not-yet-dispatched mispredicted branch) ----
-        invariant [pc_trk] ~spec_wrong ->
-            pc = (trace.st(trace.now).pc if ~d_valid else
-                 ((trace.st(trace.now).target if d_pred else trace.st(trace.now).pc + 1) if d_opcode = 6 else
-                  trace.st(trace.now).pc + 1))
-        invariant [d_ir_trk] (d_valid & ~d_shadow) -> d_ir = trace.st(trace.now).fetched
-        invariant [d_pc_trk] (d_valid & ~d_shadow) -> d_pc = trace.st(trace.now).pc
+        # ---- fetch ----
+        invariant [pc_trk] pc = (trace.st(trace.now).pc + 1 if d_valid else trace.st(trace.now).pc)
+        invariant [d_ir_trk] d_valid -> d_ir = trace.st(trace.now).fetched
 
-        # ---- ROB entry contents (correct-path entries only) ----
-        invariant [rob_ir_trk] (rob_busy(I) & ~rob_shadow(I)) -> rob_ir(I) = trace.st(rob_tag(I)).fetched
-        invariant [rob_pc_trk] (rob_busy(I) & ~rob_shadow(I)) -> rob_pc(I) = trace.st(rob_tag(I)).pc
+        # ---- ROB entry contents ----
+        invariant [rob_ir_trk] rob_busy(I) -> rob_ir(I) = trace.st(rob_tag(I)).fetched
         invariant [rob_done_issued] (rob_busy(I) & rob_done(I)) -> rob_issued(I)
         invariant [rob_issued_rdy] (rob_busy(I) & rob_issued(I)) -> (rob_a_rdy(I) & rob_b_rdy(I))
-        invariant [rob_val_trk] (rob_busy(I) & ~rob_shadow(I) & rob_done(I)) -> rob_val(I) = trace.st(rob_tag(I)).res
-        invariant [rob_take_trk] (rob_busy(I) & ~rob_shadow(I) & rob_done(I) & (rob_ir(I)<<15:13>>:opc) = 6) -> rob_take(I) = trace.st(rob_tag(I)).take_branch
-        invariant [rob_a_trk] (rob_busy(I) & ~rob_shadow(I) & rob_a_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 6)) -> rob_a(I) = trace.st(rob_tag(I)).a_val
-        invariant [rob_b_trk] (rob_busy(I) & ~rob_shadow(I) & rob_b_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2)) -> rob_b(I) = trace.st(rob_tag(I)).b_val
-        # a pending operand waits on a busy, not-yet-done, correct-path entry whose result it is
-        invariant [rob_a_pend] (rob_busy(I) & ~rob_shadow(I) & ~rob_a_rdy(I)) ->
-            (rob_busy(rob_a_src(I)) & ~rob_shadow(rob_a_src(I)) & ~rob_done(rob_a_src(I)) &
+        invariant [rob_val_trk] (rob_busy(I) & rob_done(I)) -> rob_val(I) = trace.st(rob_tag(I)).res
+        invariant [rob_a_trk] (rob_busy(I) & rob_a_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2)) -> rob_a(I) = trace.st(rob_tag(I)).a_val
+        invariant [rob_b_trk] (rob_busy(I) & rob_b_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2)) -> rob_b(I) = trace.st(rob_tag(I)).b_val
+        # a pending operand waits on a busy, not-yet-done entry whose result it is
+        invariant [rob_a_pend] (rob_busy(I) & ~rob_a_rdy(I)) ->
+            (rob_busy(rob_a_src(I)) & ~rob_done(rob_a_src(I)) &
              trace.st(rob_tag(rob_a_src(I))).res = trace.st(rob_tag(I)).a_val)
-        invariant [rob_b_pend] (rob_busy(I) & ~rob_shadow(I) & ~rob_b_rdy(I)) ->
-            (rob_busy(rob_b_src(I)) & ~rob_shadow(rob_b_src(I)) & ~rob_done(rob_b_src(I)) &
+        invariant [rob_b_pend] (rob_busy(I) & ~rob_b_rdy(I)) ->
+            (rob_busy(rob_b_src(I)) & ~rob_done(rob_b_src(I)) &
              trace.st(rob_tag(rob_b_src(I))).res = trace.st(rob_tag(I)).b_val)
-        # an entry that does not execute (NOP) is done at dispatch
-        invariant [rob_nonexec_done] (rob_busy(I) & ~((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3 | (rob_ir(I)<<15:13>>:opc) = 6)) -> rob_done(I)
+        # a non-ALU entry is done at dispatch; an ALU entry is done only by the ALU
+        invariant [rob_nonalu_done] (rob_busy(I) & ~((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3)) -> rob_done(I)
 
         # ---- ALU latch ----
         invariant [ex_trk] ex_valid -> (rob_busy(ex_idx) & rob_issued(ex_idx) & ~rob_done(ex_idx) & ex_ir = rob_ir(ex_idx))
-        invariant [ex_a_trk] (ex_valid & ~rob_shadow(ex_idx) & (ex_opcode = 1 | ex_opcode = 2 | ex_opcode = 6)) -> ex_a = trace.st(rob_tag(ex_idx)).a_val
-        invariant [ex_b_trk] (ex_valid & ~rob_shadow(ex_idx) & (ex_opcode = 1 | ex_opcode = 2)) -> ex_b = trace.st(rob_tag(ex_idx)).b_val
+        invariant [ex_a_trk] (ex_valid & (ex_opcode = 1 | ex_opcode = 2)) -> ex_a = trace.st(rob_tag(ex_idx)).a_val
+        invariant [ex_b_trk] (ex_valid & (ex_opcode = 1 | ex_opcode = 2)) -> ex_b = trace.st(rob_tag(ex_idx)).b_val
         # an issued-but-not-done entry is exactly the one in the ALU latch
         invariant [issued_in_ex] (rob_busy(I) & rob_issued(I) & ~rob_done(I)) -> (ex_valid & ex_idx = I)
 
-        # ---- rename table (meaningful only on the correct path: while spec_wrong,
-        #      only wrong-path instructions dispatch, and the squash clears it) ----
-        invariant [rat_trk] (~spec_wrong & rat_valid(R)) ->
+        # ---- rename table ----
+        # rat_idx(R) is a busy ALU entry writing R, and the current (trace-now)
+        # value of R is its result.
+        invariant [rat_trk] rat_valid(R) ->
             (rob_busy(rat_idx(R)) &
              ((rob_ir(rat_idx(R))<<15:13>>:opc) = 1 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 2 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 3) &
              (rob_ir(rat_idx(R))<<12:10>>:reg) = R &
              trace.st(trace.now).rf(R) = trace.st(rob_tag(rat_idx(R))).res)
-        invariant [rf_now_trk] (~spec_wrong & ~rat_valid(R)) -> rf(R) = trace.st(trace.now).rf(R)
+        # with no in-flight writer, the register file already holds the current value
+        invariant [rf_now_trk] ~rat_valid(R) -> rf(R) = trace.st(trace.now).rf(R)
         # every busy writer of R is recorded, and rat_idx(R) is the youngest of them
         invariant [rat_youngest] (rob_busy(I) &
              ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3)) ->

@@ -1,0 +1,18 @@
+# Branch test program for ooo_cpu_ref (stage 2). 16-bit hex words, one per
+# address from 0. Encoding: [15:13] opcode [12:10] rd [9:7] ra [6:4] rb [7:0] imm
+#   LI = 011 rd ..imm8..   SUB = 010 rd ra rb 0000   BEQZ = 110 000 ra . imm8
+# NB: the BEQZ target (bits 7:0) shares bit 7 with ra (bits 9:7), so a BEQZ on
+# an odd register can only target addresses >= 128; loop counters go in r2/r4.
+# A countdown loop: r2 = 3; do { r2 -= 1 } while (r2 != 0); then r3 = 0x77.
+# The back-branch (BEQZ r0, 2; r0 == 0 so always taken) mispredicts with the
+# weakly-not-taken initial predictor, exercising the squash path.
+6803        # 0: LI   r2, 3
+7001        # 1: LI   r4, 1
+4940        # 2: SUB  r2, r2, r4
+c106        # 3: BEQZ r2, 6          exit when r2 == 0
+c002        # 4: BEQZ r0, 2          loop
+0000        # 5: NOP
+6c77        # 6: LI   r3, 0x77
+0000        # 7: NOP
+0000
+0000
