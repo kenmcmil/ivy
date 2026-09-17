@@ -3,15 +3,12 @@
 # An out-of-order CPU (Tomasulo's algorithm with a re-order buffer), verified
 # against the ISA reference by reference tagging.
 #
-# STAGE 3b (this file): the full ISA -- ALU ops, BEQZ with a branch predictor,
+# STAGE 3a (this file is the frozen stage-3a snapshot; development continues in ooo_cpu_ref.ivy): the full ISA -- ALU ops, BEQZ with a branch predictor,
 # and the memory instructions LD/ST/FLUSH through the reusable I/D-cache module
-# `idcache` -- with single-wide dispatch, one ALU, a 4-entry ROB, and a LD/ST
-# QUEUE: memory ops issue to the memory port in program order, but a LOAD
-# executes as soon as it is the oldest unperformed memory op and its address is
-# ready (speculatively, ahead of older ALU ops and branches), while stores and
-# FLUSHes still perform at retire. Frozen earlier stages: ooo_cpu_alu_ref.ivy
-# (1, ALU only), ooo_cpu_beqz_ref.ivy (2, +BEQZ), ooo_cpu_mem_ref.ivy (3a,
-# memory ops at the head).
+# `idcache` -- with single-wide dispatch, one ALU and a 4-entry ROB. Memory
+# instructions execute IN ORDER, AT THE HEAD OF THE ROB (there is no LD/ST
+# queue yet; that is stage 3b). Stage 1 (ALU only) is frozen as
+# ooo_cpu_alu_ref.ivy and stage 2 (+BEQZ) as ooo_cpu_beqz_ref.ivy.
 #
 # Instruction encoding (16 bits):
 #
@@ -49,19 +46,13 @@
 #   Issue / Execute   : the oldest ready, un-issued ALU/BEQZ entry goes to the
 #                       one-cycle ALU; the result (and a BEQZ's outcome) is
 #                       written to the entry and broadcast to waiting entries.
-#   Memory (LD/ST Q)  : the LD/ST queue is the ROB order itself: the memory
-#                       port serves the OLDEST UNPERFORMED memory op (found by
-#                       scanning the ROB from the head, like issue selection).
-#                       A LOAD performs when it is that op and its address is
-#                       ready -- possibly speculatively, long before it is the
-#                       head: it reads idc, its value goes into the entry
-#                       (rob_val/rob_done), is broadcast to waiting entries and
-#                       bypassed to a dispatching consumer, and the load later
-#                       retires like an ALU op. A ST/FLUSH performs only when it
-#                       is the head (memory is never written speculatively),
-#                       completing and retiring in the cycle idc serves it. A
-#                       load behind an unretired store therefore waits for it
-#                       (no store-to-load forwarding yet).
+#   Memory (at head)  : a LD/ST/FLUSH entry executes only when it is the head
+#                       and its operands are ready: it presents its request to
+#                       idc and, if idc does not stall, completes AND retires in
+#                       the same cycle (a LD writes rf, broadcasts its data to
+#                       waiting entries and bypasses it to a dispatching
+#                       consumer). In-order, non-speculative memory access falls
+#                       out for free: the head is never wrong-path.
 #   Retire            : the head entry, once done, writes the register file,
 #                       frees its slot, clears the rename entry if it is still
 #                       the youngest writer; a mispredicted BEQZ squashes the
@@ -78,28 +69,13 @@
 #   ~rat_valid(R) -> rf(R) = st(now).rf(R)
 #    rat_valid(R) -> st(now).rf(R) = st(rob_tag(rat_idx(R))).res
 #
-# (with res also recording a LD's loaded value, so a load is just another
+# (with res now also recording a LD's loaded value, so a load is just another
 # renamed writer). Speculation: rob_shadow/d_shadow/spec_wrong/mp_idx as in
-# stage 2. idc's abstract memory equals st(commit).mem exactly (stores perform
-# at retire). A load that performs early reads st(commit).mem, but its
-# reference value is st(tag).mem at its own tag; the two agree iff no older
-# store to its address is still in flight. That is stated with the MEMORY
-# ANALOGUE OF THE RENAME TABLE, as ghost state:
-#
-#   mrat_valid(A)/mrat_idx(A)  the youngest in-flight (correct-path) store to A
-#   ~mrat_valid(A) -> st(now).mem(A) = st(commit).mem(A)
-#    mrat_valid(A) -> st(now).mem(A) = st(tag(mrat_idx(A))).b_val
-#   ld_src_valid(I)/ld_src(I)  per load: the youngest OLDER store to its address
-#                              (captured from mrat at dispatch, released when
-#                              that store retires)
-#   ~ld_src_valid(I) -> st(tag(I)).mem(addr) = st(commit).mem(addr)
-#    ld_src_valid(I) -> st(tag(I)).mem(addr) = st(tag(ld_src(I))).b_val
-#
-# each one-step inductive like rat_trk/rf_now_trk. A load performs only when
-# it is the oldest unperformed memory op, and an unretired older store is an
-# unperformed memory op, so a performing load has no source store and idc's
-# value is its reference value. Fetch coherence is the other place the window
-# [commit, now) matters: a fetch
+# stage 2. Memory needs no analogue of the rename table because memory ops
+# execute at the head: idc's abstract memory equals st(commit).mem exactly
+# (a store updates it in the cycle commit steps over the store), a load reads
+# st(commit).mem at st(commit).mem_addr, and a FLUSH updates ddirty in step.
+# Fetch coherence is the one place the window [commit, now) matters: a fetch
 # from A with ~st(now).ddirty(A) needs st(commit).mem(A) = st(now).mem(A). It
 # holds because fetch is stalled while any FLUSH is in flight, and with no
 # FLUSH in flight every in-flight store to A leaves st(now).ddirty(A) set
@@ -333,18 +309,11 @@ object cpu = {
         var d_shadow : bool               # the IF/ID instruction is wrong-path
         var spec_wrong : bool             # the fetch stream is on a mispredicted path
         var mp_idx : robidx               # while spec_wrong: the mispredicted branch's entry
-        # the memory rename table (ghost): youngest in-flight store per address,
-        # and per load the youngest older store to its address (if any)
-        var mrat_valid(A:addr) : bool
-        var mrat_idx(A:addr) : robidx
-        var ld_src_valid(I:robidx) : bool
-        var ld_src(I:robidx) : robidx
 
         after init {
             commit := 0;
             d_shadow := false;
             spec_wrong := false;
-            mrat_valid(A) := false;
         }
     }
 
@@ -377,7 +346,7 @@ object cpu = {
     var rob_pred(I:robidx) : bool     # its carried branch prediction
     var rob_take(I:robidx) : bool     # its true branch outcome (valid when done)
     var rob_issued(I:robidx) : bool   # it has been sent to the ALU (or needs no ALU)
-    var rob_done(I:robidx) : bool     # its result is in rob_val (never for a ST/FLUSH)
+    var rob_done(I:robidx) : bool     # its result is in rob_val (never for a memory op)
     var rob_val(I:robidx) : word
     var rob_a(I:robidx) : word        # operand a (valid when rob_a_rdy)
     var rob_a_rdy(I:robidx) : bool
@@ -448,54 +417,23 @@ object cpu = {
     definition r_take = rob_take(rob_head)
     wire r_pred : bool
     definition r_pred = rob_pred(rob_head)
-
-    # ---- head-relative entry indices, for oldest-first selection ----
-    wire h0 : robidx
-    definition h0 = rob_head
-    wire h1 : robidx
-    definition h1 = rob_head + 1
-    wire h2 : robidx
-    definition h2 = rob_head + 2
-    wire h3 : robidx
-    definition h3 = rob_head + 3
-
-    # ---- the LD/ST queue: the oldest unperformed memory op in the ROB ----
-    wire m0 : bool
-    definition m0 = rob_busy(h0) & ~rob_done(h0) & ((rob_ir(h0)<<15:13>>:opc) = 4 | (rob_ir(h0)<<15:13>>:opc) = 5 | (rob_ir(h0)<<15:13>>:opc) = 7)
-    wire m1 : bool
-    definition m1 = rob_busy(h1) & ~rob_done(h1) & ((rob_ir(h1)<<15:13>>:opc) = 4 | (rob_ir(h1)<<15:13>>:opc) = 5 | (rob_ir(h1)<<15:13>>:opc) = 7)
-    wire m2 : bool
-    definition m2 = rob_busy(h2) & ~rob_done(h2) & ((rob_ir(h2)<<15:13>>:opc) = 4 | (rob_ir(h2)<<15:13>>:opc) = 5 | (rob_ir(h2)<<15:13>>:opc) = 7)
-    wire m3 : bool
-    definition m3 = rob_busy(h3) & ~rob_done(h3) & ((rob_ir(h3)<<15:13>>:opc) = 4 | (rob_ir(h3)<<15:13>>:opc) = 5 | (rob_ir(h3)<<15:13>>:opc) = 7)
-    wire mem_valid : bool
-    definition mem_valid = m0 | m1 | m2 | m3
-    wire mem_sel : robidx
-    definition mem_sel = (h0 if m0 else (h1 if m1 else (h2 if m2 else h3)))
-    wire mem_ir : word
-    definition mem_ir = rob_ir(mem_sel)
-    wire mem_opcode : opc
-    definition mem_opcode = mem_ir<<15:13>>
-    wire mem_is_load : bool
-    definition mem_is_load = (mem_opcode = 4)
-    wire mem_a : word                 # its operands (address / store data)
-    definition mem_a = rob_a(mem_sel)
-    wire mem_b : word
-    definition mem_b = rob_b(mem_sel)
-    wire mem_addr : addr
-    definition mem_addr = mem_a<<7:0>>
-    # it presents its request to idc when its operands are ready; a ST/FLUSH
-    # additionally only when it is the head (memory is never written speculatively)
+    wire r_a : word                   # the head's operands (its address / store data)
+    definition r_a = rob_a(rob_head)
+    wire r_b : word
+    definition r_b = rob_b(rob_head)
+    wire r_addr : addr
+    definition r_addr = r_a<<7:0>>
+    # a memory op at the head with its operands ready presents its request to idc
     wire mem_ready : bool
-    definition mem_ready = mem_valid & rob_a_rdy(mem_sel) & rob_b_rdy(mem_sel) & (mem_is_load | mem_sel = rob_head)
-    wire mem_perform : bool           # ... and performs if idc does not stall
-    definition mem_perform = mem_ready & ~idc.data_stall
-    wire ld_perform : bool            # a load performs: its data lands in the entry and is broadcast
-    definition ld_perform = mem_perform & mem_is_load
-    wire mem_retire : bool            # a ST/FLUSH performs at the head: it retires now
-    definition mem_retire = mem_perform & ~mem_is_load
+    definition mem_ready = rob_busy(rob_head) & r_mem & rob_a_rdy(rob_head) & rob_b_rdy(rob_head)
+    wire mem_retire : bool            # ... and completes (and retires) if idc does not stall
+    definition mem_retire = mem_ready & ~idc.data_stall
+    wire ld_bcast : bool              # a retiring load broadcasts its data
+    definition ld_bcast = mem_retire & (r_opcode = 4)
     wire retire : bool
     definition retire = (rob_busy(rob_head) & rob_done(rob_head)) | mem_retire
+    wire r_wval : word                # the value written to rf at retire
+    definition r_wval = (idc.read_data if r_opcode = 4 else r_val)
     # a retiring BEQZ whose outcome differs from its prediction: squash
     wire squash : bool
     definition squash = retire & r_branch & (r_take ~= r_pred)
@@ -519,6 +457,16 @@ object cpu = {
     wire fetch_en : bool              # ... and latches the word if idc returns it
     definition fetch_en = fetch_active & idc.fetch_valid0
 
+    # ---- head-relative entry indices, for oldest-first issue ----
+    wire h0 : robidx
+    definition h0 = rob_head
+    wire h1 : robidx
+    definition h1 = rob_head + 1
+    wire h2 : robidx
+    definition h2 = rob_head + 2
+    wire h3 : robidx
+    definition h3 = rob_head + 3
+
     # ---- ALU ----
     wire ex_opcode : opc
     definition ex_opcode = ex_ir<<15:13>>
@@ -534,14 +482,14 @@ object cpu = {
     # ---- operand capture at dispatch ----
     # An operand is ready if its register has no in-flight writer, or the
     # writer is done, or the writer is completing on the ALU result bus right
-    # now, or the writer is the load performing right now (the dispatching entry
+    # now, or the writer is the load retiring right now (the dispatching entry
     # is not yet in the ROB, so it would otherwise miss the broadcast).
     wire d_a_idx : robidx
     definition d_a_idx = rat_idx(d_ra)
     wire d_a_bus : bool
     definition d_a_bus = ex_valid & ex_idx = d_a_idx
     wire d_a_ld : bool
-    definition d_a_ld = ld_perform & d_a_idx = mem_sel
+    definition d_a_ld = ld_bcast & d_a_idx = rob_head
     wire d_a_rdy : bool
     definition d_a_rdy = ~d_needs_a | ~rat_valid(d_ra) | rob_done(d_a_idx) | d_a_bus | d_a_ld
     wire d_a_val : word
@@ -554,7 +502,7 @@ object cpu = {
     wire d_b_bus : bool
     definition d_b_bus = ex_valid & ex_idx = d_b_idx
     wire d_b_ld : bool
-    definition d_b_ld = ld_perform & d_b_idx = mem_sel
+    definition d_b_ld = ld_bcast & d_b_idx = rob_head
     wire d_b_rdy : bool
     definition d_b_rdy = ~d_needs_b | ~rat_valid(d_rb) | rob_done(d_b_idx) | d_b_bus | d_b_ld
     wire d_b_val : word
@@ -563,7 +511,7 @@ object cpu = {
                          (idc.read_data if d_b_ld else rob_val(d_b_idx))))
 
     # ---- issue selection: the oldest ready, un-issued ALU/BEQZ entry ----
-    # (memory ops never issue to the ALU: they go through the LD/ST queue)
+    # (memory ops never issue to the ALU: they execute at the head)
     wire rdy0 : bool
     definition rdy0 = rob_busy(h0) & ~rob_issued(h0) & rob_a_rdy(h0) & rob_b_rdy(h0)
                     & ~((rob_ir(h0)<<15:13>>:opc) = 4 | (rob_ir(h0)<<15:13>>:opc) = 5 | (rob_ir(h0)<<15:13>>:opc) = 7)
@@ -633,13 +581,14 @@ object cpu = {
     # Fetch port: present the pc whenever IF is really fetching.
     definition idc.fetch_req  = fetch_active
     definition idc.fetch_addr = pc
-    # Data port: the oldest unperformed memory op, once ready. Its opcode is a
-    # single value, so read/write/flush are mutually exclusive (one_data_op).
-    definition idc.read_req   = mem_ready & (mem_opcode = 4)
-    definition idc.write_req  = mem_ready & (mem_opcode = 5)
-    definition idc.flush_req  = mem_ready & (mem_opcode = 7)
-    definition idc.data_addr  = mem_addr
-    definition idc.write_data = mem_b
+    # Data port: the memory op at the head, once its operands are ready. Its
+    # opcode is a single value, so read/write/flush are mutually exclusive
+    # (one_data_op).
+    definition idc.read_req   = mem_ready & (r_opcode = 4)
+    definition idc.write_req  = mem_ready & (r_opcode = 5)
+    definition idc.flush_req  = mem_ready & (r_opcode = 7)
+    definition idc.data_addr  = r_addr
+    definition idc.write_data = r_b
 
     implementation {
 
@@ -684,33 +633,27 @@ object cpu = {
             rob_done(ex_idx) := true;
             rob_take(ex_idx) := ex_take
         };
-        # Perform a load: its data lands in its entry (ex_idx is an issued ALU
-        # op and mem_sel a never-issued load, so the two never coincide).
-        if ld_perform {
-            rob_val(mem_sel) := idc.read_data;
-            rob_done(mem_sel) := true
-        };
 
         # Broadcast: the ALU result to every entry waiting on ex_idx, and the
-        # performing load's data to every entry waiting on mem_sel.
+        # retiring load's data to every entry waiting on the head.
         rob_a(I) := (ex_res if (ex_valid & rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = ex_idx) else
-                    (idc.read_data if (ld_perform & rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = mem_sel) else
+                    (idc.read_data if (ld_bcast & rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = rob_head) else
                      rob_a(I)));
         rob_a_rdy(I) := rob_a_rdy(I) | (ex_valid & rob_busy(I) & rob_a_src(I) = ex_idx)
-                                     | (ld_perform & rob_busy(I) & rob_a_src(I) = mem_sel);
+                                     | (ld_bcast & rob_busy(I) & rob_a_src(I) = rob_head);
         rob_b(I) := (ex_res if (ex_valid & rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = ex_idx) else
-                    (idc.read_data if (ld_perform & rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = mem_sel) else
+                    (idc.read_data if (ld_bcast & rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = rob_head) else
                      rob_b(I)));
         rob_b_rdy(I) := rob_b_rdy(I) | (ex_valid & rob_busy(I) & rob_b_src(I) = ex_idx)
-                                     | (ld_perform & rob_busy(I) & rob_b_src(I) = mem_sel);
+                                     | (ld_bcast & rob_busy(I) & rob_b_src(I) = rob_head);
 
-        # Retire the head entry: a done ALU/BEQZ/NOP/LD entry, or a ST/FLUSH
+        # Retire the head entry: a done ALU/BEQZ/NOP entry, or a memory op
         # that idc serves this cycle (the store/flush effects on memory and the
         # caches happen inside idc, driven by the request wires). A
         # mispredicted BEQZ squashes everything behind it and redirects the pc.
         if retire {
             if r_wr {
-                rf(r_rd) := r_val
+                rf(r_rd) := r_wval
             };
             if r_rat_clear {
                 rat_valid(r_rd) := false
@@ -752,7 +695,7 @@ object cpu = {
             rob_pc(rob_tail) := d_pc;
             rob_pred(rob_tail) := d_pred;
             rob_issued(rob_tail) := ~d_exec & ~d_mem;   # a NOP is issued+done at once; an ALU/BEQZ op
-            rob_done(rob_tail) := ~d_exec & ~d_mem;     # issues later; a memory op is neither until it performs
+            rob_done(rob_tail) := ~d_exec & ~d_mem;     # issues later; a memory op is neither until the head
             rob_val(rob_tail) := 0;
             rob_a(rob_tail) := d_a_val;
             rob_a_rdy(rob_tail) := d_a_rdy;
@@ -784,16 +727,11 @@ object cpu = {
     specification {
         after posedge {
             if retire {
-                commit := commit.next;
-                # a retiring store stops being its address's youngest writer, and
-                # releases the loads bound to it (they now read committed memory)
-                mrat_valid(A) := mrat_valid(A) & ~(mrat_idx(A) = old rob_head);
-                ld_src_valid(I) := ld_src_valid(I) & ~(ld_src(I) = old rob_head)
+                commit := commit.next
             };
             if squash {
                 spec_wrong := false;
-                d_shadow := false;
-                mrat_valid(A) := false          # the ROB is emptied: no in-flight stores
+                d_shadow := false
             };
             if dispatch {
                 rob_shadow(old rob_tail) := d_shadow;
@@ -802,15 +740,6 @@ object cpu = {
                     if d_branch & (old d_pred ~= trace.st(trace.now).take_branch) {   # old: insensitive to monitor order
                         spec_wrong := true;
                         mp_idx := old rob_tail
-                    };
-                    # memory rename: a load binds to the youngest older store to its
-                    # address (if any); a store becomes its address's youngest writer.
-                    # The address is the reference's (the ghost need not wait for it).
-                    ld_src_valid(old rob_tail) := (d_opcode = 4) & mrat_valid(trace.st(trace.now).mem_addr);
-                    ld_src(old rob_tail) := mrat_idx(trace.st(trace.now).mem_addr);
-                    if d_opcode = 5 {
-                        mrat_valid(trace.st(trace.now).mem_addr) := true;
-                        mrat_idx(trace.st(trace.now).mem_addr) := old rob_tail
                     };
                     trace.step
                 }
@@ -829,18 +758,11 @@ object cpu = {
 
         # ---- ROB occupancy structure ----
         invariant [rob_shape] rob_busy(I) <-> (((I - rob_head) < (rob_tail - rob_head)) | (rob_busy(rob_head) & rob_head = rob_tail))
-        # a done entry was issued to the ALU -- unless it is a load, done by the memory port
-        invariant [rob_done_issued] (rob_busy(I) & rob_done(I) & (rob_ir(I)<<15:13>>:opc) ~= 4) -> rob_issued(I)
+        invariant [rob_done_issued] (rob_busy(I) & rob_done(I)) -> rob_issued(I)
         invariant [rob_issued_rdy] (rob_busy(I) & rob_issued(I)) -> (rob_a_rdy(I) & rob_b_rdy(I))
-        # an entry that does not execute (NOP) is done at dispatch; a memory op is never
-        # issued to the ALU; a ST/FLUSH is never done (it performs as it retires)
+        # an entry that does not execute (NOP) is done at dispatch; a memory op is never issued/done
         invariant [rob_nonexec_done] (rob_busy(I) & ((rob_ir(I)<<15:13>>:opc) = 0)) -> rob_done(I)
-        invariant [rob_mem_notissued] (rob_busy(I) & ((rob_ir(I)<<15:13>>:opc) = 4 | (rob_ir(I)<<15:13>>:opc) = 5 | (rob_ir(I)<<15:13>>:opc) = 7)) -> ~rob_issued(I)
-        invariant [rob_stfl_notdone] (rob_busy(I) & ((rob_ir(I)<<15:13>>:opc) = 5 | (rob_ir(I)<<15:13>>:opc) = 7)) -> ~rob_done(I)
-        # the memory port serves the OLDEST unperformed memory op: every busy entry
-        # older than mem_sel is done or not a memory op (a fact about the selection logic)
-        invariant [mem_sel_oldest] (mem_valid & rob_busy(J) & (J - rob_head) < (mem_sel - rob_head)) ->
-            (rob_done(J) | ~((rob_ir(J)<<15:13>>:opc) = 4 | (rob_ir(J)<<15:13>>:opc) = 5 | (rob_ir(J)<<15:13>>:opc) = 7))
+        invariant [rob_mem_notdone] (rob_busy(I) & ((rob_ir(I)<<15:13>>:opc) = 4 | (rob_ir(I)<<15:13>>:opc) = 5 | (rob_ir(I)<<15:13>>:opc) = 7)) -> (~rob_issued(I) & ~rob_done(I))
         invariant [ex_trk] ex_valid -> (rob_busy(ex_idx) & rob_issued(ex_idx) & ~rob_done(ex_idx) & ex_ir = rob_ir(ex_idx))
         invariant [issued_in_ex] (rob_busy(I) & rob_issued(I) & ~rob_done(I)) -> (ex_valid & ex_idx = I)
         # a FLUSH is the youngest instruction in flight: nothing is fetched behind it
@@ -884,41 +806,10 @@ object cpu = {
             (fetch_active & idc.fetch_valid0 & ~trace.st(trace.now).error & ~trace.st(trace.now).ddirty(pc))
                 -> idc.fetch_data0 = trace.st(trace.now).mem(pc)
             with idc.fetch_output0
-        # the loaded word is committed memory at the load's address
+        # the loaded word is the reference value at the head's address
         derived invariant [load_coh]
-            (ld_perform & ~trace.st(trace.now).error) -> idc.read_data = trace.st(commit).mem(mem_addr)
+            (mem_retire & r_opcode = 4 & ~trace.st(trace.now).error) -> idc.read_data = trace.st(commit).mem(r_addr)
             with idc.data_output
-
-        # ---- the memory rename table (ghost) ----
-        # mrat_idx(A) is a busy correct-path store to A whose data is A's current
-        # (trace-now) value; with no in-flight store to A, committed memory is current.
-        invariant [mrat_trk] (~trace.st(trace.now).error & mrat_valid(A)) ->
-            (rob_busy(mrat_idx(A)) & ~rob_shadow(mrat_idx(A)) & (rob_ir(mrat_idx(A))<<15:13>>:opc) = 5 &
-             trace.st(rob_tag(mrat_idx(A))).mem_addr = A &
-             trace.st(trace.now).mem(A) = trace.st(rob_tag(mrat_idx(A))).b_val)
-        invariant [mem_now_trk] (~trace.st(trace.now).error & ~mrat_valid(A)) -> trace.st(trace.now).mem(A) = trace.st(commit).mem(A)
-        # every busy correct-path store is recorded, and mrat_idx is the youngest to its address
-        invariant [mrat_youngest] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 5) ->
-            (mrat_valid(trace.st(rob_tag(I)).mem_addr) &
-             (I - rob_head) <= (mrat_idx(trace.st(rob_tag(I)).mem_addr) - rob_head))
-        # a load bound to a source store: the store is an older busy correct-path store
-        # to the load's address, the youngest such, and the load's value is its data
-        invariant [ld_src_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 4 & ld_src_valid(I)) ->
-            (rob_busy(ld_src(I)) & ~rob_shadow(ld_src(I)) & (rob_ir(ld_src(I))<<15:13>>:opc) = 5 &
-             (ld_src(I) - rob_head) < (I - rob_head) &
-             trace.st(rob_tag(ld_src(I))).mem_addr = trace.st(rob_tag(I)).mem_addr &
-             trace.st(rob_tag(I)).mem(trace.st(rob_tag(I)).mem_addr) = trace.st(rob_tag(ld_src(I))).b_val)
-        invariant [ld_src_youngest] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 4 & ld_src_valid(I) &
-                                     rob_busy(J) & ~rob_shadow(J) & (rob_ir(J)<<15:13>>:opc) = 5 &
-                                     trace.st(rob_tag(J)).mem_addr = trace.st(rob_tag(I)).mem_addr & (J - rob_head) < (I - rob_head)) ->
-            (J - rob_head) <= (ld_src(I) - rob_head)
-        # an unbound load: no older store to its address is in flight, and committed
-        # memory at its address is its reference value
-        invariant [ld_nosrc_nostore] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 4 & ~ld_src_valid(I) &
-                                      rob_busy(J) & ~rob_shadow(J) & (rob_ir(J)<<15:13>>:opc) = 5 & (J - rob_head) < (I - rob_head)) ->
-            trace.st(rob_tag(J)).mem_addr ~= trace.st(rob_tag(I)).mem_addr
-        invariant [ld_nosrc_trk] (~trace.st(trace.now).error & rob_busy(I) & ~rob_shadow(I) & (rob_ir(I)<<15:13>>:opc) = 4 & ~ld_src_valid(I)) ->
-            trace.st(rob_tag(I)).mem(trace.st(rob_tag(I)).mem_addr) = trace.st(commit).mem(trace.st(rob_tag(I)).mem_addr)
 
         # ---- fetch: on the correct path the pc is the predicted successor of the
         #      IF/ID instruction (= the true one unless that instruction is a

@@ -1,0 +1,20 @@
+# LD/ST-queue test program for ooo_cpu_ref (stage 3b). 16-bit hex words, one
+# per address from 0. Encoding: [15:13] opcode [12:10] rd [9:7] ra [6:4] rb [7:0] imm
+# r2 = 0x20; ST [r2] <- r2 (0x20); then a dependent ALU chain r1 -> r3 -> r5
+# followed by an INDEPENDENT load LD r6 <- [r2]: with the LD/ST queue the load
+# performs before the chain retires (a load ahead of older ALU ops). Then a
+# load behind a store to the same address must wait for the store to retire:
+# LI r4, 7; ST [r2] <- r4; LD r7 <- [r2]  -> r7 = 7.
+# Expected: r1 = 1, r3 = 2, r5 = 3, r6 = 0x20, r4 = 7, r7 = 7.
+6820        # 0: LI   r2, 0x20
+a120        # 1: ST   [r2], r2
+6401        # 2: LI   r1, 1
+2c90        # 3: ADD  r3, r1, r1        -> 2
+3590        # 4: ADD  r5, r3, r1        -> 3
+9900        # 5: LD   r6, [r2]          -> 0x20 (independent of the chain)
+7007        # 6: LI   r4, 7
+a940        # 7: ST   [r2], r4
+9d00        # 8: LD   r7, [r2]          -> 7 (waits for the store to retire)
+0000        # 9: NOP
+0000
+0000

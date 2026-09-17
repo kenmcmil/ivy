@@ -44,15 +44,17 @@ writing code. `dual_issue_cpu_ref.ivy` is a fifth, work-in-progress example
   simulates real dual issue. See "Isolating a component's proof", "Widening to
   superscalar (dual issue)", "Common hardware design issues", and "A safety proof
   is not a live design" below.
-- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 3a of
+- `ooo_cpu_ref.ivy` (in `doc/examples/hardware/`; **stage 3b of
   `doc/projects/ooo_cpu.md`**) — an out-of-order core: Tomasulo's algorithm with
   a 4-entry re-order buffer, single-wide dispatch, one ALU, the full ISA (ALU ops,
   BEQZ with a branch predictor and mispredicts resolved at retire, LD/ST/FLUSH
-  through the `idcache` module executing in order at the ROB head). Fully
-  verified (`ivy_check` OK in ~3.5 min); translates to RTL and simulates
-  (`sim_cpu.sh ooo_cpu_ref prog_mem.hex`). Frozen earlier stages:
-  `ooo_cpu_alu_ref.ivy` (stage 1, ALU only, OK in ~17 s) and
-  `ooo_cpu_beqz_ref.ivy` (stage 2, +BEQZ, OK in ~2.5 min). Golden models `ooo_alu_golden.sv` (stage 1) and
+  through the `idcache` module with a LD/ST queue: loads perform speculatively
+  ahead of older instructions, stores/FLUSHes at retire). Fully verified
+  (`ivy_check` OK in ~10 min); translates to RTL and simulates (`sim_cpu.sh
+  ooo_cpu_ref prog_lsq.hex`). Frozen earlier stages: `ooo_cpu_alu_ref.ivy`
+  (stage 1, ALU only, OK in ~17 s), `ooo_cpu_beqz_ref.ivy` (stage 2, +BEQZ,
+  ~2.5 min) and `ooo_cpu_mem_ref.ivy` (stage 3a, memory ops at the head,
+  ~3.5 min). Golden models `ooo_alu_golden.sv` (stage 1) and
   `ooo_beqz_golden.sv` (stage 2) are proven equivalent by `check_ooo_golden.sh
   [design] [golden]`. See "Out-of-order execution (Tomasulo + ROB)" below.
 - `reference_tagging.md` — the prose writeup of the method.
@@ -760,6 +762,36 @@ that also fired for NOPs whose operands are don't-cares).
   *register writer* — otherwise the prover imagines a consumer waiting on a
   store, which retires without broadcasting.
 
+- **A LD/ST queue needs the memory analogue of the rename table — as ghost
+  state (stage 3b).** Once a load may perform before it is the head, its value
+  comes from `idc.mem = st(commit).mem` but its reference value is
+  `st(tag).mem(addr)` at its *own* tag, and closing that gap by unrolling the
+  window `[commit, tag)` does not scale. State it inductively instead, exactly
+  as for registers: ghost `mrat_valid(A)/mrat_idx(A)` = the youngest in-flight
+  correct-path store to A (set in the monitor at a store's dispatch from the
+  *reference's* address `st(now).mem_addr` — the ghost need not wait for the
+  datapath to compute it; cleared when that store retires or on squash), with
+  `~mrat_valid(A) -> st(now).mem(A) = st(commit).mem(A)` and `mrat_valid(A) ->
+  st(now).mem(A) = st(tag(mrat_idx(A))).b_val` plus `mrat_youngest`. Then per
+  load a ghost binding `ld_src_valid(I)/ld_src(I)` := mrat at the load's
+  dispatch (the youngest OLDER store to its address), released by a ghost
+  broadcast when that store retires, with `~ld_src_valid(I) ->
+  st(tag(I)).mem(a) = st(commit).mem(a)`, `ld_src_valid(I) -> st(tag(I)).mem(a)
+  = st(tag(ld_src(I))).b_val`, and the two side conditions that make them
+  inductive under retire: `ld_src` is the youngest older store to `a`
+  (`ld_src_youngest`), and an unbound load has *no* older in-flight store to
+  `a` (`ld_nosrc_nostore`). The datapath fact that ties it together is
+  `mem_sel_oldest`: every busy entry older than the selected memory op is done
+  or not a memory op — a pure statement about the priority scan, stated as an
+  invariant so the prover need not re-derive it. With stores never `done`
+  (they perform as they retire), a bound load's source is an older unperformed
+  memory op, so a performing load is unbound and `load_coh` gives its reference
+  value. The whole stage closed after one CTI round (`rob_done_issued` must
+  exempt loads, which the memory port completes without an ALU issue). The
+  design also frees stage 3a's "in-order at the head" restriction for free: the
+  LD/ST queue *is* the ROB order plus a "oldest unperformed memory op" scan — no
+  separate queue storage.
+
 - **Stage-restricted ISA.** Stage 1 disables LD/ST/BEQZ/FLUSH by making them
   NOPs *in the ISA model* (and dropping `ddirty`/`error`/`mem_addr`/
   `take_branch`), so the proof is over all programs and needs no `~error`
@@ -1037,13 +1069,16 @@ The datapath must be free of ghost/abstract constructs:
 - **Worked, passing goldens: `ooo_alu_golden.sv` ↔ `ooo_cpu_alu_ref.ivy` (524
   cones), `ooo_beqz_golden.sv` ↔ `ooo_cpu_beqz_ref.ivy` (605 cones, the predictor
   as a `bp` submodule whose `bht` pairs by name after flattening) and
-  `ooo_mem_golden.sv` ↔ `ooo_cpu_ref.ivy` (stage 3a; 5947 cones incl. the
-  idcache's `real_mem`/`icache`/`dcache` and fill registers, ~2 min)** — run
-  `check_ooo_golden.sh [design] [golden]`; mutation-tested (an ALU, bypass,
-  squash-condition, redirect, predictor-saturation, memory-stall, load-bypass,
-  FLUSH-fetch-stall or reset-list bug in the golden is reported on the registers
-  it feeds). Once the stage-1 golden passed, stages 2 and 3a passed on the first
-  run — the boundary rules below are the whole story. The idcache golden modules
+  `ooo_mem_golden.sv` ↔ `ooo_cpu_mem_ref.ivy` (stage 3a; 5947 cones incl. the
+  idcache's `real_mem`/`icache`/`dcache` and fill registers, ~2 min) and
+  `ooo_lsq_golden.sv` ↔ `ooo_cpu_ref.ivy` (stage 3b, the LD/ST queue; same
+  boundary, ~80 s)** — run `check_ooo_golden.sh [design] [golden]`;
+  mutation-tested (an ALU, bypass, squash-condition, redirect,
+  predictor-saturation, memory-stall, load-bypass, FLUSH-fetch-stall, reset-list,
+  speculative-store, memory-op-selection-order or load-completion bug in the
+  golden is reported on the registers it feeds). Once the stage-1 golden passed,
+  stages 2, 3a and 3b each passed on the first run — the boundary rules below are
+  the whole story. The idcache golden modules
   (`idcache`/`main_mem`/`ic`/`dc`) are reused verbatim from `dual_issue_golden.sv`
   except that their `if (rst)` lists had to be *completed*: the address latches
   `mfa`, `ifill_miss`, `dfill_miss` reset to 0 too (ivy_to_rtl resets every

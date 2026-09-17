@@ -131,7 +131,33 @@ imaginable, and a store retires without broadcasting). The stage-3a golden
 dual_issue_golden.sv with completed reset lists) is proven equivalent by
 `check_ooo_golden.sh ooo_cpu_ref ooo_mem_golden.sv` (5947 cones, ~2 min).
 
-Next: stage 3b (a LD/ST queue so loads/stores execute before reaching the
-head: needs store-to-load forwarding or ordering, and the memory analogue of
-the rename table). Later: resolve mispredicts at execution, dual-wide
-dispatch, more ALUs.
+Stage 3a is frozen as `ooo_cpu_mem_ref.ivy` (its golden retargeted to it).
+
+Stage 3b (2026-09-17): `ooo_cpu_ref.ivy` adds the LD/ST queue. The queue is
+the ROB order itself: the memory port serves the oldest unperformed memory op
+(a priority scan from the head, like issue selection). A LOAD performs as soon
+as it is that op and its address is ready -- speculatively, ahead of older ALU
+ops and branches -- writing its value into the entry (rob_val/rob_done),
+broadcasting it and bypassing it to a dispatching consumer; it then retires
+like an ALU op. ST/FLUSH still perform at retire (memory is never written
+speculatively), so a load behind an unretired store waits for it (no
+store-to-load forwarding). Proof: the MEMORY ANALOGUE OF THE RENAME TABLE as
+ghost state -- mrat_valid/mrat_idx(A) (youngest in-flight store to A) with
+`~mrat_valid(A) -> st(now).mem(A) = st(commit).mem(A)` and `mrat_valid(A) ->
+st(now).mem(A) = st(tag(mrat_idx(A))).b_val`, plus per load ld_src_valid/
+ld_src(I) (the youngest OLDER store to its address, captured from mrat at
+dispatch, released when it retires) with `~ld_src_valid(I) -> st(tag(I)).mem(a)
+= st(commit).mem(a)` and `ld_src_valid(I) -> st(tag(I)).mem(a) =
+st(tag(ld_src(I))).b_val`, and the "youngest"/"no older store" side conditions.
+A performing load is the oldest unperformed memory op, an unretired older
+store is unperformed, so the load is unbound and idc's value is its reference
+value. `ivy_check` OK (~10 min). RTL translates; `sim_cpu.sh ooo_cpu_ref
+prog_lsq.hex` shows an independent load performing before an older ALU chain
+retires and a load behind a store to the same address waiting for it. One CTI
+round: `rob_done_issued` needs a load exclusion. The stage-3b golden
+`ooo_lsq_golden.sv` is proven equivalent by `check_ooo_golden.sh ooo_cpu_ref
+ooo_lsq_golden.sv` (5947 cones, ~80 s).
+
+Next: store-to-load forwarding (a bound load could take its value from the
+source store's rob_b when ready -- the ld_src ghost already names it), then
+resolve mispredicts at execution, dual-wide dispatch, more ALUs.

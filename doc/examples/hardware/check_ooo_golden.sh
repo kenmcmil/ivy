@@ -6,6 +6,8 @@
 #
 #     default: ooo_cpu_alu_ref.ivy vs ooo_alu_golden.sv   (stage 1, ALU only)
 #     stage 2: ./check_ooo_golden.sh ooo_cpu_beqz_ref ooo_beqz_golden.sv
+#     stage 3a: ./check_ooo_golden.sh ooo_cpu_mem_ref ooo_mem_golden.sv
+#     stage 3b: ./check_ooo_golden.sh ooo_cpu_ref ooo_lsq_golden.sv
 #
 # The design has no outputs, so "equivalent" means: from any equal register
 # state, every register's next-state function agrees (registers are the cut

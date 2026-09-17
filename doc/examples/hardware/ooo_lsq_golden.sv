@@ -1,14 +1,16 @@
-// Hand-written "golden" SystemVerilog model of ooo_cpu_mem_ref.ivy (the frozen stage-3a snapshot): the
+// Hand-written "golden" SystemVerilog model of ooo_cpu_ref.ivy at stage 3b: the
 // out-of-order core with the full ISA -- ALU ops, BEQZ with a bimodal branch
 // predictor (mispredicts resolved at retire), and LD/ST/FLUSH through the
-// reusable idcache module, executing IN ORDER AT THE HEAD of the ROB (no LD/ST
-// queue). Tomasulo with a 4-entry re-order buffer, single dispatch, one ALU.
-// For combinational equivalence checking against the Ivy-generated RTL
-// (ooo_cpu_mem_ref.il) with rtlil_eqv:
+// reusable idcache module with a LD/ST QUEUE: the memory port serves the oldest
+// unperformed memory op in the ROB; a LOAD performs as soon as it is that op and
+// its address is ready (speculatively, ahead of older instructions), writing its
+// value into its ROB entry; a ST/FLUSH performs only at the head. Tomasulo with a
+// 4-entry re-order buffer, single dispatch, one ALU. For combinational
+// equivalence checking against the Ivy-generated RTL (ooo_cpu_ref.il):
 //
-//     ./check_ooo_golden.sh ooo_cpu_mem_ref ooo_mem_golden.sv
+//     ./check_ooo_golden.sh ooo_cpu_ref ooo_lsq_golden.sv
 //
-// It extends ooo_beqz_golden.sv (stage 2); the idcache/main_mem/ic/dc modules
+// It extends ooo_mem_golden.sv (stage 3a); the idcache/main_mem/ic/dc modules
 // are those of dual_issue_golden.sv / cpu_gen_golden.sv (the same `idcache`
 // module instance), with their reset lists completed (every scalar register
 // resets under rst, address latches included, as ivy_to_rtl emits them).
@@ -30,9 +32,9 @@
 //               power-on $meminit, NOT reset by rst; `initial` blocks here.
 //
 // The cpu always-block is a line-by-line transcription of the Ivy clock action
-// (complete, broadcast, retire [+ memory op at head, squash], issue, dispatch,
-// fetch), which reads only pre-state values, so it transcribes to nonblocking
-// assignments directly.
+// (ALU complete, load perform, broadcast, retire [+ ST/FLUSH at head, squash],
+// issue, dispatch, fetch), which reads only pre-state values, so it transcribes
+// to nonblocking assignments directly.
 //
 // Instruction encoding: [15:13] opcode [12:10] rd [9:7] ra [6:4] rb [7:0] imm.
 // Opcodes: 0 NOP, 1 ADD, 2 SUB, 3 LI, 4 LD rd,[ra], 5 ST [ra],rb,
@@ -135,7 +137,7 @@ module cpu ( \posedge , rst );
     wire d_needs_a = (d_opcode == 3'd1) | (d_opcode == 3'd2) | (d_opcode == 3'd4) | (d_opcode == 3'd5) | (d_opcode == 3'd6) | (d_opcode == 3'd7);
     wire d_needs_b = (d_opcode == 3'd1) | (d_opcode == 3'd2) | (d_opcode == 3'd5);
 
-    // ---- retire / memory-at-head decode ----
+    // ---- retire decode ----
     wire [15:0] r_ir     = rob_ir[rob_head];
     wire [2:0]  r_opcode = r_ir[15:13];
     wire [2:0]  r_rd     = r_ir[12:10];
@@ -148,17 +150,35 @@ module cpu ( \posedge , rst );
     wire [7:0]  r_pc     = rob_pc[rob_head];
     wire        r_take   = rob_take[rob_head];
     wire        r_pred   = rob_pred[rob_head];
-    wire [15:0] r_a      = sel_a(rob_head);              // the head's operands (address / store data)
-    wire [15:0] r_b      = sel_b(rob_head);
-    wire [7:0]  r_addr   = r_a[7:0];
-    // a memory op at the head with its operands ready presents its request to idc
-    wire        mem_ready  = sel_busy(rob_head) & r_mem & sel_a_rdy(rob_head) & sel_b_rdy(rob_head);
+
+    // ---- head-relative entry indices ----
+    wire [1:0] h0 = rob_head;
+    wire [1:0] h1 = rob_head + 2'd1;
+    wire [1:0] h2 = rob_head + 2'd2;
+    wire [1:0] h3 = rob_head + 2'd3;
+
+    // ---- the LD/ST queue: the oldest unperformed memory op in the ROB ----
+    wire m0 = sel_busy(h0) & ~rob_done[h0] & is_mem(rob_ir[h0][15:13]);
+    wire m1 = sel_busy(h1) & ~rob_done[h1] & is_mem(rob_ir[h1][15:13]);
+    wire m2 = sel_busy(h2) & ~rob_done[h2] & is_mem(rob_ir[h2][15:13]);
+    wire m3 = sel_busy(h3) & ~rob_done[h3] & is_mem(rob_ir[h3][15:13]);
+    wire mem_valid = m0 | m1 | m2 | m3;
+    wire [1:0]  mem_sel    = m0 ? h0 : m1 ? h1 : m2 ? h2 : h3;
+    wire [15:0] mem_ir     = rob_ir[mem_sel];
+    wire [2:0]  mem_opcode = mem_ir[15:13];
+    wire        mem_is_load = (mem_opcode == 3'd4);
+    wire [15:0] mem_a      = sel_a(mem_sel);                 // its operands (address / store data)
+    wire [15:0] mem_b      = sel_b(mem_sel);
+    wire [7:0]  mem_addr   = mem_a[7:0];
+    // it presents its request to idc when its operands are ready; a ST/FLUSH
+    // additionally only when it is the head (memory is never written speculatively)
+    wire        mem_ready  = mem_valid & sel_a_rdy(mem_sel) & sel_b_rdy(mem_sel) & (mem_is_load | (mem_sel == rob_head));
     wire        idc_data_stall;
     wire [15:0] idc_read_data;
-    wire        mem_retire = mem_ready & ~idc_data_stall;        // ... and completes (and retires) if idc does not stall
-    wire        ld_bcast   = mem_retire & (r_opcode == 3'd4);   // a retiring load broadcasts its data
-    wire        retire     = (sel_busy(rob_head) & rob_done[rob_head]) | mem_retire;
-    wire [15:0] r_wval     = (r_opcode == 3'd4) ? idc_read_data : r_val;
+    wire        mem_perform = mem_ready & ~idc_data_stall;      // ... and performs if idc does not stall
+    wire        ld_perform  = mem_perform & mem_is_load;        // a load performs: its data lands in the entry and is broadcast
+    wire        mem_retire  = mem_perform & ~mem_is_load;       // a ST/FLUSH performs at the head: it retires now
+    wire        retire      = (sel_busy(rob_head) & rob_done[rob_head]) | mem_retire;
     // a retiring BEQZ whose outcome differs from its prediction: squash
     wire        squash   = retire & r_branch & (r_take != r_pred);
     wire [7:0]  redirect_pc = r_take ? r_target : (r_pc + 8'd1);
@@ -177,12 +197,6 @@ module cpu ( \posedge , rst );
     wire [15:0] idc_fetch_data0;
     wire fetch_en     = fetch_active & idc_fetch_valid0;         // ... and latches the word if idc returns it
 
-    // ---- head-relative entry indices ----
-    wire [1:0] h0 = rob_head;
-    wire [1:0] h1 = rob_head + 2'd1;
-    wire [1:0] h2 = rob_head + 2'd2;
-    wire [1:0] h3 = rob_head + 2'd3;
-
     // ---- ALU ----
     wire [2:0] ex_opcode = ex_ir[15:13];
     wire [7:0] ex_target = ex_ir[7:0];
@@ -191,17 +205,17 @@ module cpu ( \posedge , rst );
                          (ex_opcode == 3'd3) ? {8'd0, ex_target} : 16'd0;
     wire ex_take = (ex_opcode == 3'd6) & (ex_a == 16'd0);       // the true BEQZ outcome
 
-    // ---- operand capture at dispatch (rf / ROB / ALU bus / retiring load) ----
+    // ---- operand capture at dispatch (rf / ROB / ALU bus / performing load) ----
     wire [1:0]  d_a_idx = rat_idx[d_ra];
     wire        d_a_bus = ex_valid & (ex_idx == d_a_idx);
-    wire        d_a_ld  = ld_bcast & (d_a_idx == rob_head);
+    wire        d_a_ld  = ld_perform & (d_a_idx == mem_sel);
     wire        d_a_rdy = ~d_needs_a | ~sel_rat_valid(d_ra) | rob_done[d_a_idx] | d_a_bus | d_a_ld;
     wire [15:0] d_a_val = ~sel_rat_valid(d_ra) ? rf[d_ra] :
                           d_a_bus ? ex_res : d_a_ld ? idc_read_data : rob_val[d_a_idx];
 
     wire [1:0]  d_b_idx = rat_idx[d_rb];
     wire        d_b_bus = ex_valid & (ex_idx == d_b_idx);
-    wire        d_b_ld  = ld_bcast & (d_b_idx == rob_head);
+    wire        d_b_ld  = ld_perform & (d_b_idx == mem_sel);
     wire        d_b_rdy = ~d_needs_b | ~sel_rat_valid(d_rb) | rob_done[d_b_idx] | d_b_bus | d_b_ld;
     wire [15:0] d_b_val = ~sel_rat_valid(d_rb) ? rf[d_rb] :
                           d_b_bus ? ex_res : d_b_ld ? idc_read_data : rob_val[d_b_idx];
@@ -227,17 +241,17 @@ module cpu ( \posedge , rst );
     );
 
     // ---- the memory subsystem: the idcache module ----
-    // Fetch port: the pc whenever IF is really fetching. Data port: the memory
-    // op at the head once its operands are ready (one request kind at a time).
+    // Fetch port: the pc whenever IF is really fetching. Data port: the oldest
+    // unperformed memory op once its operands are ready (one request kind at a time).
     wire [15:0] idc_fetch_data1_unused;
     wire        idc_fetch_valid1_unused;
     idcache idc (
         .\posedge (\posedge ), .rst(rst),
         .fetch_req(fetch_active), .fetch_addr(pc),
-        .read_req(mem_ready & (r_opcode == 3'd4)),
-        .write_req(mem_ready & (r_opcode == 3'd5)),
-        .flush_req(mem_ready & (r_opcode == 3'd7)),
-        .data_addr(r_addr), .write_data(r_b),
+        .read_req(mem_ready & (mem_opcode == 3'd4)),
+        .write_req(mem_ready & (mem_opcode == 3'd5)),
+        .flush_req(mem_ready & (mem_opcode == 3'd7)),
+        .data_addr(mem_addr), .write_data(mem_b),
         .fetch_data0(idc_fetch_data0), .fetch_valid0(idc_fetch_valid0),
         .fetch_data1(idc_fetch_data1_unused), .fetch_valid1(idc_fetch_valid1_unused),
         .read_data(idc_read_data), .data_stall(idc_data_stall)
@@ -251,15 +265,15 @@ module cpu ( \posedge , rst );
     wire [7:0]  pred_next_pc = f_ptaken ? f_target : (pc + 8'd1);
 
     // ---- broadcast hits, per bank element: the ALU result (ex_idx) and the
-    //      retiring load's data (rob_head) ----
-    wire hx_a0 = ex_valid & rob_busy_0 & (rob_a_src[0] == ex_idx);   wire hl_a0 = ld_bcast & rob_busy_0 & (rob_a_src[0] == rob_head);
-    wire hx_a1 = ex_valid & rob_busy_1 & (rob_a_src[1] == ex_idx);   wire hl_a1 = ld_bcast & rob_busy_1 & (rob_a_src[1] == rob_head);
-    wire hx_a2 = ex_valid & rob_busy_2 & (rob_a_src[2] == ex_idx);   wire hl_a2 = ld_bcast & rob_busy_2 & (rob_a_src[2] == rob_head);
-    wire hx_a3 = ex_valid & rob_busy_3 & (rob_a_src[3] == ex_idx);   wire hl_a3 = ld_bcast & rob_busy_3 & (rob_a_src[3] == rob_head);
-    wire hx_b0 = ex_valid & rob_busy_0 & (rob_b_src[0] == ex_idx);   wire hl_b0 = ld_bcast & rob_busy_0 & (rob_b_src[0] == rob_head);
-    wire hx_b1 = ex_valid & rob_busy_1 & (rob_b_src[1] == ex_idx);   wire hl_b1 = ld_bcast & rob_busy_1 & (rob_b_src[1] == rob_head);
-    wire hx_b2 = ex_valid & rob_busy_2 & (rob_b_src[2] == ex_idx);   wire hl_b2 = ld_bcast & rob_busy_2 & (rob_b_src[2] == rob_head);
-    wire hx_b3 = ex_valid & rob_busy_3 & (rob_b_src[3] == ex_idx);   wire hl_b3 = ld_bcast & rob_busy_3 & (rob_b_src[3] == rob_head);
+    //      performing load's data (mem_sel) ----
+    wire hx_a0 = ex_valid & rob_busy_0 & (rob_a_src[0] == ex_idx);   wire hl_a0 = ld_perform & rob_busy_0 & (rob_a_src[0] == mem_sel);
+    wire hx_a1 = ex_valid & rob_busy_1 & (rob_a_src[1] == ex_idx);   wire hl_a1 = ld_perform & rob_busy_1 & (rob_a_src[1] == mem_sel);
+    wire hx_a2 = ex_valid & rob_busy_2 & (rob_a_src[2] == ex_idx);   wire hl_a2 = ld_perform & rob_busy_2 & (rob_a_src[2] == mem_sel);
+    wire hx_a3 = ex_valid & rob_busy_3 & (rob_a_src[3] == ex_idx);   wire hl_a3 = ld_perform & rob_busy_3 & (rob_a_src[3] == mem_sel);
+    wire hx_b0 = ex_valid & rob_busy_0 & (rob_b_src[0] == ex_idx);   wire hl_b0 = ld_perform & rob_busy_0 & (rob_b_src[0] == mem_sel);
+    wire hx_b1 = ex_valid & rob_busy_1 & (rob_b_src[1] == ex_idx);   wire hl_b1 = ld_perform & rob_busy_1 & (rob_b_src[1] == mem_sel);
+    wire hx_b2 = ex_valid & rob_busy_2 & (rob_b_src[2] == ex_idx);   wire hl_b2 = ld_perform & rob_busy_2 & (rob_b_src[2] == mem_sel);
+    wire hx_b3 = ex_valid & rob_busy_3 & (rob_b_src[3] == ex_idx);   wire hl_b3 = ld_perform & rob_busy_3 & (rob_b_src[3] == mem_sel);
 
     always @(posedge \posedge ) begin
         // ---- complete: write the ALU result (and branch outcome) ----
@@ -268,9 +282,14 @@ module cpu ( \posedge , rst );
             rob_done[ex_idx] <= 1'b1;
             rob_take[ex_idx] <= ex_take;
         end
+        // ---- perform a load: its data lands in its entry ----
+        if (ld_perform) begin
+            rob_val[mem_sel]  <= idc_read_data;
+            rob_done[mem_sel] <= 1'b1;
+        end
 
-        // ---- broadcast: ALU result to entries waiting on ex_idx, retiring load's
-        //      data to entries waiting on the head (a waiting operand is not ready) ----
+        // ---- broadcast: ALU result to entries waiting on ex_idx, performing load's
+        //      data to entries waiting on mem_sel (a waiting operand is not ready) ----
         if (hx_a0 & ~rob_a_rdy_0) rob_a_0 <= ex_res; else if (hl_a0 & ~rob_a_rdy_0) rob_a_0 <= idc_read_data;
         if (hx_a1 & ~rob_a_rdy_1) rob_a_1 <= ex_res; else if (hl_a1 & ~rob_a_rdy_1) rob_a_1 <= idc_read_data;
         if (hx_a2 & ~rob_a_rdy_2) rob_a_2 <= ex_res; else if (hl_a2 & ~rob_a_rdy_2) rob_a_2 <= idc_read_data;
@@ -284,10 +303,10 @@ module cpu ( \posedge , rst );
         if (hx_a2 | hl_a2) rob_a_rdy_2 <= 1'b1;   if (hx_b2 | hl_b2) rob_b_rdy_2 <= 1'b1;
         if (hx_a3 | hl_a3) rob_a_rdy_3 <= 1'b1;   if (hx_b3 | hl_b3) rob_b_rdy_3 <= 1'b1;
 
-        // ---- retire the head: a done ALU/BEQZ/NOP entry, or a memory op idc serves
+        // ---- retire the head: a done ALU/BEQZ/NOP/LD entry, or a ST/FLUSH idc serves
         //      this cycle; a mispredicted BEQZ squashes everything behind it ----
         if (retire) begin
-            if (r_wr) rf[r_rd] <= r_wval;
+            if (r_wr) rf[r_rd] <= r_val;
             if (r_rat_clear) begin
                 case (r_rd)
                     3'd0: rat_valid_0 <= 1'b0; 3'd1: rat_valid_1 <= 1'b0;
@@ -337,7 +356,7 @@ module cpu ( \posedge , rst );
             rob_pc[rob_tail]     <= d_pc;
             rob_pred[rob_tail]   <= d_pred;
             rob_issued[rob_tail] <= ~d_exec & ~d_mem;   // NOP: issued+done at once; ALU/BEQZ: issues
-            rob_done[rob_tail]   <= ~d_exec & ~d_mem;   // later; memory op: neither until the head
+            rob_done[rob_tail]   <= ~d_exec & ~d_mem;   // later; memory op: neither until it performs
             rob_val[rob_tail]    <= 16'd0;
             rob_a_src[rob_tail]  <= d_a_idx;
             rob_b_src[rob_tail]  <= d_b_idx;
