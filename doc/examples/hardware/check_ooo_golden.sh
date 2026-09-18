@@ -9,6 +9,7 @@
 #     stage 3a: ./check_ooo_golden.sh ooo_cpu_mem_ref ooo_mem_golden.sv
 #     stage 3b: ./check_ooo_golden.sh ooo_cpu_lsq_ref ooo_lsq_golden.sv
 #     stage 3c: ./check_ooo_golden.sh ooo_cpu_ref ooo_fwd_golden.sv
+#     3a + dual dispatch/retire: ./check_ooo_golden.sh ooo_cpu_mem_dd_ref ooo_mem_dd_golden.sv
 #
 # The design has no outputs, so "equivalent" means: from any equal register
 # state, every register's next-state function agrees (registers are the cut

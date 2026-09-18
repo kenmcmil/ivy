@@ -216,7 +216,73 @@ even plain mode pass (3.5 min) and is kept. Simulation: pairs retire
 together, so dual dispatch recurs throughout prog_alu.hex instead of only at
 the start. No golden yet.
 
-Next: dual dispatch/retire on the full design (needs idc's two fetch lanes
-and the shadow/mispredict bookkeeping per lane, plus at most one memory op
-per retire pair or a second data port), resolve mispredicts at execution,
-more ALUs.
+Dual dispatch, step 3 (2026-09-17): `ooo_cpu_mem_dd_ref.ivy` adds dual
+dispatch and dual retire to the stage-3a design (full ISA, memory ops at the
+head). Fetch uses idc's two lanes: lane 1 (pc+1) is taken when idc offers it,
+lane 0 is not predicted taken and lane 0 is not a FLUSH (a FLUSH stays the
+youngest instruction); a lane-1 BEQZ is implicitly predicted not taken. The
+second retiree must be done (so never a memory op, which performs only at
+the head), not a BEQZ, and the head must not squash. Speculation per lane:
+lane 1's shadow is taken after lane 0's mispredict check, and lane 1's own
+check runs after the first trace step against the newly recorded state.
+New invariants: the two-lane latch facts (d_valid1 -> d_valid0 & ~d_pred, a
+FLUSH in lane 0 has no lane 1), pc_trk with a pc+2 case, d_ir1_trk as
+st(now).mem(st(now).pc + 1) with its own dirty guard, fetch1_coh (zero-delay
+from idc.fetch_output1), and the retire-value tracking of the ALU-only
+experiment guarded by ~error. `ivy_check isolate=this trace=true
+shrink=false` OK on the first run (~20 min); RTL translates; prog_mem/
+prog_br/prog_lsq simulate correctly, with pairs dispatching and retiring in
+the warm branch loop (a cold I-cache line yields its two words one at a
+time, so straight-line cold code never sees a pair). Golden:
+`ooo_mem_dd_golden.sv`, proven equivalent by `check_ooo_golden.sh
+ooo_cpu_mem_dd_ref ooo_mem_dd_golden.sv` (5964 cones, ~2 min; mutation-tested:
+intra-bundle binding, a BEQZ as second retiree, lane-1 fetch behind a
+predicted-taken lane 0).
+
+Alternate proof (2026-09-18): `ooo_cpu_mem_alt_ref.ivy` -- the stage-3a
+datapath verified WITHOUT a trace history. Idea: the ROB already holds most
+of what the trace recorded, so instead of a ghost tag per entry pointing into
+recorded states, each entry carries ghost copies of the correct values
+(g_ir, g_pc, g_a, g_b, g_res, g_take) taken from `arch`'s prepared
+intermediates at dispatch, and the reference is the single ISA state `arch`
+after all dispatched correct-path instructions (no `st` history, no `tag`
+sequence, no `commit`). Invariants: datapath fields equal the ghost values;
+a pending operand's source has g_res(src) = g_a(I); g_res/g_take are
+consistent functions of g_ir/g_a/g_b. Architectural state is characterized
+through GHOST rename tables (the real ones get polluted by wrong-path
+dispatches): grat for registers (`~grat_valid(R) -> rf(R) = arch.rf(R)`,
+`grat_valid(R) -> arch.rf(R) = g_res(grat_idx(R))`, real = ghost while
+~spec_wrong), mrat + per-load ld_src for memory (bound -> g_res = g_b(src);
+unbound -> g_res = idc.mem(addr); a retiring store releases its loads), and
+`fl` (the single in-flight FLUSH) to relate idc.ddirty to arch.ddirty. While
+spec_wrong, arch.pc is the mispredicted branch's true successor (the
+redirect). Result: OK on the first run in **20 s** with the standard command
+line, vs ~3.5 min for the tag-based proof of the identical datapath (~10x);
+96 cpu consecution checks; mutation-tested (ALU function, ROB free). This is
+now the preferred proof style for the OoO designs; the stage-3b/3c ld_src
+scheme carries over unchanged.
+
+`ooo_cpu_fwd_alt_ref.ivy` (2026-09-18) is the same treatment of the stage-3c
+datapath (LD/ST queue, store-to-load forwarding, two memory slots): the
+mrat/ld_src ghosts were already there, the selection/forwarding derived facts
+carry over verbatim with `st(tag(.)).x` read as the ghost value, and grat/fl
+are added as in the 3a alternate. OK on the first run in **32 s** (104 cpu
+checks), vs 17.5-39 min for the tag-based proof of the identical datapath;
+mutation-tested (forwarding-source priority, forward before data ready).
+
+`ooo_cpu_mem_dd_alt_ref.ivy` (2026-09-18): the dual dispatch/retire datapath
+(ooo_cpu_mem_dd_ref.ivy) under the alternate proof. Lane 0's ghost values are
+copied before the first arch step and lane 1's after it (arch is then lane
+1's state; a lane-1 BEQZ's implicit not-taken prediction is checked against
+arch.take_branch there); dual retire releases both retirees from the ghost
+rename tables. OK on the first run in **33 s** (105 cpu checks) vs ~20 min
+tag-based; the retire-value derived facts the tag proof needed were simply
+dropped. Mutation-tested (retire1 past a squash; older retiree's write
+winning).
+
+Summary of the alternate proof so far (identical datapaths, standard command
+line): 3a 3.5 min -> 20 s; 3c (forwarding) 17.5-39 min -> 32 s; 3a dual
+dispatch/retire 20 min -> 33 s.
+
+Next: resolve mispredicts at execution; more ALUs; dual dispatch on the
+forwarding design (alternate proof).

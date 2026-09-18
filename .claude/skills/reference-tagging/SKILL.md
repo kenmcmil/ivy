@@ -843,13 +843,83 @@ that also fired for NOPs whose operands are don't-cares).
   st(commit).res`, `retire1 -> succ(commit, rob_tag(head1)) & r1_val =
   st(rob_tag(head1)).res`, and the `r_ir`/`r1_ir` counterparts) make even the
   plain mode pass — the array-read rule from the "Gotchas" section, applied to
-  the retire side.
+  the retire side. **On the full design** (`ooo_cpu_mem_dd_ref.ivy`: caches,
+  branches, memory ops at the head) the same recipe passed first run (~20 min)
+  with these additions: dual fetch through `idc`'s two lanes gated by "lane 0
+  not predicted taken and not a FLUSH" (so `flush_youngest` survives and pc+1
+  is really the successor); a lane-1 BEQZ predicted *not taken* implicitly,
+  its ghost check `d1_branch & st(now).take_branch` placed *after* the first
+  `trace.step` so `now` is the lane-1 state; lane 1's `rob_shadow` taken after
+  lane 0's check (a mispredicting lane-0 BEQZ shadows its own lane 1) and
+  `d_shadow := spec_wrong` on shift as well as on fetch; `d_ir1_trk` stated as
+  `st(now).mem(st(now).pc + 1)` guarded by `~ddirty(pc + 1)` with a
+  zero-delay `fetch1_coh` from `idc.fetch_output1`; and the second retiree
+  restricted to done non-branches with no squash under way (a memory op is
+  never done off the head, so it never retires second — no second data port
+  needed).
 
 - **Stage-restricted ISA.** Stage 1 disables LD/ST/BEQZ/FLUSH by making them
   NOPs *in the ISA model* (and dropping `ddirty`/`error`/`mem_addr`/
   `take_branch`), so the proof is over all programs and needs no `~error`
   guards. Later stages restore the full ISA; the cpu-side invariants are then
   re-guarded as in the cache designs.
+
+## Ghost values instead of tags: a ROB needs no trace history
+
+`ooo_cpu_mem_alt_ref.ivy` proves the stage-3a datapath **10x faster** (20 s vs
+~3.5 min) with no counterexample rounds, by dropping the recorded trace
+altogether (idea from the user; compare `doc/examples/cav2020/cav-18/
+tomasulo_inv.ivy`). Reference tagging with a history is what an *in-order
+pipeline* needs, because a stage register holds only a fragment of an
+instruction and the recorded state at its tag supplies the rest. A ROB entry
+already holds the whole instruction, so:
+
+- **The reference is one state, `arch`, after every dispatched correct-path
+  instruction**; `trace.step` = `arch.step; arch.prepare`. Before the step,
+  arch's prepared intermediates are the correct values *of the instruction
+  being dispatched*, and the ghost copies them into the new entry: `g_ir`,
+  `g_pc`, `g_a`, `g_b`, `g_res`, `g_take`. No `tag` sequence, no `st(T)`, no
+  `commit`, none of the trace's consistency/step-relation boilerplate — only
+  arch's own decode facts (`arch.a_val = arch.rf(arch.ra)`, …) remain.
+- **Per-entry invariants compare datapath to ghost**: `rob_a = g_a` when ready,
+  `rob_val = g_res` when done, `rob_take = g_take`, pending operand ⇒
+  `g_res(src) = g_a(I)`; plus *consistency* of the ghost values (`g_res` is the
+  ALU function of `g_ir/g_a/g_b`; `g_take = (BEQZ & g_a = 0)`), which is what
+  lets the ALU's computation from tracked operands land on `g_res`.
+- **Architectural state goes through ghost rename tables.** `grat` for
+  registers — `~grat_valid(R) -> rf(R) = arch.rf(R)` and `grat_valid(R) ->
+  arch.rf(R) = g_res(grat_idx(R))` — replaces both `rf_trk` (the value at
+  commit) and `rat_trk`; the *real* table equals it while `~spec_wrong` and is
+  otherwise polluted by wrong-path dispatches, which is why the ghost is needed
+  at all (the real one loses the youngest correct-path writer once a shadowed
+  writer overwrites the entry). `mrat` + per-load `ld_src` for memory exactly
+  as in stage 3b (`unbound -> g_res = idc.mem(addr)`, `bound -> g_res =
+  g_b(src)`; a retiring store releases its loads). A ghost `fl` for the single
+  in-flight FLUSH relates `idc.ddirty` to `arch.ddirty` (`~mrat_valid(A) & ~(fl
+  to A) -> idc.ddirty(A) = arch.ddirty(A)`; `mrat_valid(A) & ~(fl to A) ->
+  arch.ddirty(A)`), which is what fetch coherence and the `~error` guard need.
+- **Speculation is unchanged** (`rob_shadow`, `d_shadow`, `spec_wrong`,
+  `mp_idx`) plus one fact: while `spec_wrong`, `arch` is exactly the state after
+  the mispredicted branch, so `arch.pc` is its true successor — the redirect.
+- Same `~arch.error` guard on every implementation-vs-reference invariant.
+
+- **It scales.** `ooo_cpu_fwd_alt_ref.ivy` (the stage-3c datapath: LD/ST queue,
+  forwarding, two memory slots) proves in **32 s** vs 17.5-39 min tag-based —
+  a 30-70x speedup — with the forwarding facts carried over verbatim: every
+  `trace.st(rob_tag(X)).field` simply becomes the ghost field `g_field(X)`,
+  `trace.st(trace.now).field` becomes `trace.arch.field`, and the tag-run
+  invariants (`rob_head_tag`, `rob_chain`, `rob_youngest`, `rob_tag_range`,
+  `rf_trk`, `idc_mem_rel`) are deleted rather than translated. The
+  transformation is mechanical enough to script. Dual dispatch/retire
+  (`ooo_cpu_mem_dd_alt_ref.ivy`): 20 min -> 33 s, and the retire-value
+  `derived` facts the tag proof needed to keep `rf_now_trk` tractable are simply
+  gone — there is no history for the query to see through. Lane 1's ghost values
+  are copied *after* the first `trace.step` (arch is then exactly lane 1's
+  state), which is also where a lane-1 branch's implicit not-taken prediction is
+  checked.
+
+Use this style for anything ROB-based; keep the trace history for in-order
+pipelines, where it is the natural fit.
 
 ## Common hardware design issues
 
@@ -1126,7 +1196,9 @@ The datapath must be free of ghost/abstract constructs:
   idcache's `real_mem`/`icache`/`dcache` and fill registers, ~2 min) and
   `ooo_lsq_golden.sv` ↔ `ooo_cpu_lsq_ref.ivy` (stage 3b, the LD/ST queue; same
   boundary, ~80 s) and `ooo_fwd_golden.sv` ↔ `ooo_cpu_ref.ivy` (stage 3c,
-  store-to-load forwarding with two memory slots; same boundary, ~2.5 min)** —
+  store-to-load forwarding with two memory slots; same boundary, ~2.5 min) and
+  `ooo_mem_dd_golden.sv` ↔ `ooo_cpu_mem_dd_ref.ivy` (3a + dual dispatch/retire;
+  the boundary grows only by the second fetch lane `d_ir1`/`d_valid1`, ~2 min)** —
   run `check_ooo_golden.sh [design] [golden]`; mutation-tested (an ALU, bypass,
   squash-condition, redirect, predictor-saturation, memory-stall, load-bypass,
   FLUSH-fetch-stall, reset-list, speculative-store, memory-op-selection-order,
