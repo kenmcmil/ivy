@@ -815,6 +815,36 @@ that also fired for NOPs whose operands are don't-cares).
   work while its data is ready — here an ADD waiting on a cold-missing load),
   and reading `fwd_perform` in the simulation is the only way to know it did.
 
+- **Dual dispatch into a ROB is cheap for the proof (`ooo_cpu_alu_dd_ref.ivy`,
+  ALU-only, OK first run, ~2 min).** Unlike the in-order dual-issue design, no
+  lane-1 "middle tag" or per-lane invariants are needed: the ROB entries already
+  carry their own tags, so a dual dispatch is just two allocations with `rob_tag
+  := now; trace.step` twice, and the existing per-entry invariants cover both.
+  Intra-bundle RAW needs no bypass: a lane-1 source written by lane 0 binds to
+  lane 0's new entry (`d1_a_idx = rob_tail`, pending), and `rob_a_pend` closes
+  from the step relation between the two new tags. Lane 1's rename write comes
+  second and wins a shared destination (`rat_youngest` holds). The only new
+  invariants are on the fetch latch: `d_valid1 -> d_valid0`, `pc_trk` with a
+  0/1/2 offset, and the lane-1 word stated as `st(now).mem(st(now).pc + 1)`
+  (the trace has not recorded the lane-1 state yet; it becomes
+  `st(now.next).fetched` by the step relation at dispatch). Dispatch is
+  all-or-one: both lanes when two entries are free, else lane 0 alone with lane
+  1 shifted down and no refetch — the same split-on-hazard fallback as the
+  in-order design. **Dual retire** is as cheap: retire head and head+1 when
+  both are done (the younger's rf write comes second and wins; each clears its
+  own rename entry; `commit` steps twice), with no new invariant. What it DID
+  do is make one consecution query heavy — `rf_now_trk` now sees two rf writes
+  and two trace steps in one transition — heavy enough that a plain `ivy_check`
+  sat on it for 6+ minutes while `ivy_check isolate=this trace=true
+  shrink=false` (the standard command line for these designs) finished the
+  whole file in 1-4 min (solver variance on this file is ~2x run to run, so
+  compare timings only under identical options). Zero-delay `derived invariant`s
+  naming the retiring entries' array reads against the trace (`retire -> r_val =
+  st(commit).res`, `retire1 -> succ(commit, rob_tag(head1)) & r1_val =
+  st(rob_tag(head1)).res`, and the `r_ir`/`r1_ir` counterparts) make even the
+  plain mode pass — the array-read rule from the "Gotchas" section, applied to
+  the retire side.
+
 - **Stage-restricted ISA.** Stage 1 disables LD/ST/BEQZ/FLUSH by making them
   NOPs *in the ISA model* (and dropping `ddirty`/`error`/`mem_addr`/
   `take_branch`), so the proof is over all programs and needs no `~error`

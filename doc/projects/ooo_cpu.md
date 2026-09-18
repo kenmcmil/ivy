@@ -186,5 +186,37 @@ store is the head stalled on a D-cache miss. The stage-3c golden
 `ooo_fwd_golden.sv` is proven equivalent by `check_ooo_golden.sh ooo_cpu_ref
 ooo_fwd_golden.sv` (5947 cones, ~2.5 min).
 
-Next: resolve mispredicts at execution (rename-table recovery), dual-wide
-dispatch, more ALUs.
+Dual dispatch, step 1 (2026-09-17): `ooo_cpu_alu_dd_ref.ivy` adds TWO-WIDE
+dispatch to the ALU-only stage-1 core (a separate experiment file, to see how
+the proof scales before touching the full design). Fetch reads two words per
+cycle into a two-lane IF/ID latch (pc += 2); dispatch takes both lanes when
+two ROB entries are free (rob_tail, rob_tail+1), else lane 0 alone with lane 1
+shifted down (fetch refills only when the latch empties); retire stays one per
+cycle. Intra-bundle dependence: a lane-1 source written by lane 0 binds to
+lane 0's new entry as a pending operand -- no bypass network; lane 1's rename
+write wins a shared destination. Ghost: two tags and two trace steps on a
+dual dispatch; the lane-1 word is stated as st(now).mem(st(now).pc + 1) since
+the trace has not recorded that state. `ivy_check` OK on the first run
+(~1 min 51 s, vs ~17 s single-dispatch); RTL translates and prog_alu.hex
+simulates correctly (two dual dispatches fill the ROB, then one per cycle,
+retire-bound). No new invariants were needed beyond the fetch-latch ones
+(d_lanes, pc_trk with 0/1/2, d_ir0_trk/d_ir1_trk).
+
+Dual dispatch, step 2 (2026-09-17): `ooo_cpu_alu_dd_ref.ivy` also retires
+TWO entries per cycle (the head and, if both are done, the entry after it;
+the younger's rf write wins a shared destination; each clears its own rename
+entry; commit steps twice). Passes with the standard command line
+`ivy_check isolate=this trace=true shrink=false` (54 s on the user's
+machine; 1 min 54 s to 4 min 26 s here -- solver variance on this file is
+about 2x). A plain `ivy_check` without `isolate=this` sat for 6+ min on
+`rf_now_trk` (four rf updates through the ROB value array in one step) on two
+runs; adding zero-delay derived invariants naming the two retiring entries'
+words and values against the trace (`r_val_trk`, `r1_val_trk`, ...) makes
+even plain mode pass (3.5 min) and is kept. Simulation: pairs retire
+together, so dual dispatch recurs throughout prog_alu.hex instead of only at
+the start. No golden yet.
+
+Next: dual dispatch/retire on the full design (needs idc's two fetch lanes
+and the shadow/mispredict bookkeeping per lane, plus at most one memory op
+per retire pair or a second data port), resolve mispredicts at execution,
+more ALUs.

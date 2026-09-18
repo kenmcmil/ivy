@@ -1,0 +1,708 @@
+#lang ivy1.8
+
+# An out-of-order CPU (Tomasulo's algorithm with a re-order buffer), verified
+# against the ISA reference by reference tagging.
+#
+# STAGE 1 + DUAL DISPATCH + DUAL RETIRE (this file): ALU instructions only,
+# TWO-WIDE dispatch and retire, one ALU, a 4-entry ROB -- the superscalar
+# experiment on the smallest core (ooo_cpu_alu_ref.ivy is the single-wide
+# base). There is no
+# memory unit and no branch predictor. The ISA
+# below is the stage-1 restriction of the shared ISA (see
+# dual_issue_cpu_ref.ivy): opcodes 4..7 (LD/ST/BEQZ/FLUSH) execute as NOPs,
+# so memory is never written, there is no cache-coherence `ddirty`/`error`
+# state, and the PC always advances by one. Stages 2 and 3 restore branches
+# and memory instructions.
+#
+# Instruction encoding (16 bits):
+#
+#     [15:13] opcode   [12:10] rd   [9:7] ra   [6:4] rb   [7:0] imm/target
+#
+#   opcode 0  NOP
+#          1  ADD  rd, ra, rb     rf[rd] := rf[ra] + rf[rb]
+#          2  SUB  rd, ra, rb     rf[rd] := rf[ra] - rf[rb]
+#          3  LI   rd, imm        rf[rd] := zero_extend(imm8)
+#          4..7                    (stage 1: NOP)
+#
+# ---------------------------------------------------------------------------
+# Microarchitecture
+#
+#   Fetch (IF)        : two words per cycle, d_ir0 := mem(pc), d_ir1 :=
+#                       mem(pc+1), pc := pc + 2, into a two-lane IF/ID latch;
+#                       refills only when the latch empties.
+#   Dispatch (ID)     : dispatches BOTH lanes when two ROB entries are free
+#                       (lane 0 to rob_tail, lane 1 to rob_tail+1); if only one
+#                       is free, or lane 1 is empty, dispatches lane 0 alone and
+#                       shifts lane 1 down into lane 0 (no refetch). Each lane
+#                       renames its rd (lane 1 wins a shared destination) and
+#                       captures its operands: from the register file if no
+#                       in-flight writer, from the ROB if the writer is done,
+#                       from the ALU result bus if the writer completes this
+#                       very cycle, else it records the writer's ROB index and
+#                       waits. INTRA-BUNDLE dependence: if lane 0 writes lane
+#                       1's source register, lane 1 binds to lane 0's new entry
+#                       (rob_tail) as a pending operand, like any other
+#                       in-flight producer -- no bypass network is needed.
+#   Issue             : the oldest ROB entry whose operands are ready and that
+#                       has not issued goes to the ALU latch (ex_*).
+#   Execute           : one ALU, one cycle. On completion the result is
+#                       written to the entry (rob_val/rob_done) and BROADCAST
+#                       to every entry waiting on this ROB index.
+#   Retire            : up to TWO entries per cycle: the head and, if both are
+#                       done, the entry after it. Each writes the register file
+#                       (the younger wins a shared destination), frees its slot,
+#                       and clears the rename entry if it is still the youngest
+#                       writer of its destination.
+#
+# The reservation stations are "keyed to the ROB": entry I of the ROB carries
+# its own operand fields (rob_a/rob_a_rdy/rob_a_src, rob_b/...), so there is
+# one reservation station per ROB entry and the ROB index doubles as the
+# rename tag.
+#
+# ---------------------------------------------------------------------------
+# Proof approach (reference tagging)
+#
+# Each ROB entry I has a ghost tag rob_tag(I) naming its instruction in the
+# trace. The busy entries form a contiguous run of tags from `commit` (the
+# head's tag; rf = st(commit).rf) to `trace.now` (the next tag to dispatch).
+# The per-entry invariants say: the entry's instruction word is
+# st(rob_tag(I)).fetched, its ready operands are st(rob_tag(I)).a_val/b_val,
+# its result (when done) is st(rob_tag(I)).res, and a pending operand is
+# waiting on a busy, not-yet-done entry whose result is that operand.
+#
+# The rename table is characterized WITHOUT reasoning about the window of
+# in-flight writers (which would need an unbounded/unrolled induction over
+# the trace step relation):
+#
+#   ~rat_valid(R) -> rf(R) = st(now).rf(R)                  (no in-flight writer:
+#                                                            rf already current)
+#    rat_valid(R) -> st(now).rf(R) = st(rob_tag(rat_idx(R))).res
+#                                                           (the youngest in-flight
+#                                                            writer's result IS the
+#                                                            current value)
+#
+# Both are preserved by one trace step at dispatch, and together they make
+# every operand-capture case at dispatch correct in one step. A dual dispatch
+# steps the trace TWICE (lane 0 gets tag now, lane 1 tag now.next); lane 1's
+# operand facts then follow from the step relation between the two new
+# entries -- an intra-bundle producer is lane 0's entry, whose recorded result
+# is exactly st(now.next).rf(source). The lane-1 instruction word is stated as
+# the reference's memory at st(now).pc + 1 (the trace has not recorded that
+# state yet); at dispatch it becomes st(now.next).fetched by the step relation.
+
+include order
+
+type word
+interpret word -> bv[16]
+type addr
+interpret addr -> bv[8]
+type reg
+interpret reg -> bv[3]
+type opc
+interpret opc -> bv[3]
+type robidx                      # re-order buffer index (4 entries)
+interpret robidx -> bv[2]
+
+export action posedge
+
+# Initial memory contents: an arbitrary fixed program image, shared by the
+# implementation and the reference (see dual_issue_cpu_ref.ivy for why).
+function init_mem(A:addr) : word
+
+# ===========================================================================
+# The ISA model (stage-1 restriction: ALU ops only).
+# ===========================================================================
+
+module isa_model(init_mem) = {
+
+    var pc : addr                 # program counter
+    var rf(R:reg) : word          # register file
+    var mem(A:addr) : word        # unified memory (constant in stage 1)
+
+    # Temporary variables computed by `prepare`, not holding state
+
+    var fetched : word
+    var opcode : opc
+    var rd : reg
+    var ra : reg
+    var rb : reg
+    var target : addr             # low 8 bits: immediate
+    var a_val : word
+    var b_val : word
+    var res : word                # ALU result (ADD/SUB/LI; 0 otherwise)
+
+    after init {
+        pc := 0;
+        rf(R) := 0;
+        mem(A) := init_mem(A);
+    }
+
+    action prepare = {
+        fetched := mem(pc);
+        opcode := fetched<<15:13>>;
+        rd := fetched<<12:10>>;
+        ra := fetched<<9:7>>;
+        rb := fetched<<6:4>>;
+        target := fetched<<7:0>>;
+        a_val := rf(ra);
+        b_val := rf(rb);
+        res := (a_val + b_val if opcode = 1 else
+               (a_val - b_val if opcode = 2 else
+               ((0:addr) :: target if opcode = 3 else 0)));
+    }
+
+    action step = {
+        if opcode = 1 | opcode = 2 | opcode = 3 {
+            rf(rd) := res
+        };
+        pc := pc + 1;
+    }
+}
+
+# ===========================================================================
+# The trace: the recorded sequence of ISA states.
+# ===========================================================================
+
+instance tag : unbounded_sequence
+
+isolate trace = {
+
+    specification {
+
+        instance arch : isa_model(init_mem)
+
+        type state_t = struct {
+            pc : addr,
+            rf(R:reg) : word,
+            mem(A:addr) : word,
+            fetched : word,
+            opcode : opc,
+            rd : reg,
+            ra : reg,
+            rb : reg,
+            target : addr,
+            a_val : word,
+            b_val : word,
+            res : word
+        }
+
+        var now : tag
+        var st(T:tag) : state_t
+
+        action current returns(res:state_t) = {
+            res.pc := arch.pc;
+            res.rf(R:reg) := arch.rf(R:reg);
+            res.mem(A:addr) := arch.mem(A:addr);
+            res.fetched := arch.fetched;
+            res.opcode := arch.opcode;
+            res.rd := arch.rd;
+            res.ra := arch.ra;
+            res.rb := arch.rb;
+            res.target := arch.target;
+            res.a_val := arch.a_val;
+            res.b_val := arch.b_val;
+            res.res := arch.res;
+        }
+
+        after init {
+            now := 0;
+            arch.prepare;
+            st(now) := current;
+        }
+
+        action step = {
+            arch.step;
+            arch.prepare;
+            now := now.next;
+            st(now) := current;
+        }
+
+        invariant st(now).pc = arch.pc
+        invariant st(now).rf(R:reg) = arch.rf(R:reg)
+        invariant st(now).mem(A:addr) = arch.mem(A:addr)
+        invariant st(now).fetched = arch.fetched
+        invariant st(now).opcode = arch.opcode
+        invariant st(now).rd = arch.rd
+        invariant st(now).ra = arch.ra
+        invariant st(now).rb = arch.rb
+        invariant st(now).target = arch.target
+        invariant st(now).a_val = arch.a_val
+        invariant st(now).b_val = arch.b_val
+        invariant st(now).res = arch.res
+
+        # (a) every recorded entry's intermediate values decode its own state
+        invariant T <= now -> st(T).fetched = st(T).mem(st(T).pc)
+        invariant T <= now -> st(T).opcode = (st(T).fetched)<<15:13>>
+        invariant T <= now -> st(T).rd = (st(T).fetched)<<12:10>>
+        invariant T <= now -> st(T).ra = (st(T).fetched)<<9:7>>
+        invariant T <= now -> st(T).rb = (st(T).fetched)<<6:4>>
+        invariant T <= now -> st(T).target = (st(T).fetched)<<7:0>>
+        invariant T <= now -> st(T).a_val = st(T).rf(st(T).ra)
+        invariant T <= now -> st(T).b_val = st(T).rf(st(T).rb)
+        invariant T <= now -> st(T).res = (st(T).a_val + st(T).b_val if st(T).opcode = 1 else (st(T).a_val - st(T).b_val if st(T).opcode = 2 else ((0:addr) :: st(T).target if st(T).opcode = 3 else 0)))
+
+        # (b) consecutive recorded entries are related by one ISA step
+        invariant (tag.succ(T,U) & U <= now) -> st(U).pc = st(T).pc + 1
+        invariant (tag.succ(T,U) & U <= now) -> st(U).mem(A) = st(T).mem(A)
+        invariant (tag.succ(T,U) & U <= now) ->
+                      st(U).rf(R) = (st(T).res
+                                     if ((st(T).opcode = 1 | st(T).opcode = 2 | st(T).opcode = 3) & R = st(T).rd)
+                                     else st(T).rf(R))
+    }
+} with addr, opc, tag
+
+# ===========================================================================
+# The out-of-order CPU.
+# ===========================================================================
+
+object cpu = {
+
+    # ---- ghost reference tags ---------------------------------------------
+    specification {
+        var commit : tag                  # tag of the oldest un-retired instruction
+                                          # (= trace.now when the ROB is empty)
+        var rob_tag(I:robidx) : tag       # the trace tag of the instruction in entry I
+
+        after init {
+            commit := 0;
+        }
+    }
+
+    # ---- architectural state ----
+    var pc : addr
+    var rf(R:reg) : word
+    var mem(A:addr) : word            # instruction memory (never written in stage 1)
+
+    # ---- IF/ID latch (two lanes; lane 1 is empty or holds the word after lane 0's) ----
+    var d_ir0 : word
+    var d_valid0 : bool
+    var d_ir1 : word
+    var d_valid1 : bool
+
+    # ---- rename table ----
+    var rat_valid(R:reg) : bool       # R has an in-flight writer
+    var rat_idx(R:reg) : robidx       # ... namely ROB entry rat_idx(R) (the youngest)
+
+    # ---- re-order buffer (with the reservation-station fields per entry) ----
+    var rob_head : robidx             # oldest entry
+    var rob_tail : robidx             # next free entry
+    var rob_busy(I:robidx) : bool     # entry holds an instruction
+    var rob_ir(I:robidx) : word       # its instruction word
+    var rob_issued(I:robidx) : bool   # it has been sent to the ALU (or needs no ALU)
+    var rob_done(I:robidx) : bool     # its result is in rob_val
+    var rob_val(I:robidx) : word
+    var rob_a(I:robidx) : word        # operand a (valid when rob_a_rdy)
+    var rob_a_rdy(I:robidx) : bool
+    var rob_a_src(I:robidx) : robidx  # else: the ROB entry producing it
+    var rob_b(I:robidx) : word
+    var rob_b_rdy(I:robidx) : bool
+    var rob_b_src(I:robidx) : robidx
+
+    # ---- ALU latch ----
+    var ex_valid : bool
+    var ex_idx : robidx
+    var ex_ir : word
+    var ex_a : word
+    var ex_b : word
+
+    implementation {
+
+    # ---- ROB occupancy ----
+    # The busy entries are the circular range [rob_head, rob_tail); the head
+    # bit disambiguates full from empty when the pointers coincide.
+    wire rob_full : bool
+    definition rob_full = rob_busy(rob_tail)
+    wire head1 : robidx
+    definition head1 = rob_head + 1
+    wire retire : bool                # the head retires
+    definition retire = rob_busy(rob_head) & rob_done(rob_head)
+    wire retire1 : bool               # ... and so does the entry after it
+    definition retire1 = retire & rob_busy(head1) & rob_done(head1)
+
+    # ---- dispatch decode, lane 0 ----
+    wire d_opcode : opc
+    definition d_opcode = d_ir0<<15:13>>
+    wire d_rd : reg
+    definition d_rd = d_ir0<<12:10>>
+    wire d_ra : reg
+    definition d_ra = d_ir0<<9:7>>
+    wire d_rb : reg
+    definition d_rb = d_ir0<<6:4>>
+    wire d_alu : bool                 # goes through the ALU and writes rd
+    definition d_alu = (d_opcode = 1 | d_opcode = 2 | d_opcode = 3)
+    wire d_needs_ab : bool            # reads ra and rb
+    definition d_needs_ab = (d_opcode = 1 | d_opcode = 2)
+    # ---- dispatch decode, lane 1 ----
+    wire d1_opcode : opc
+    definition d1_opcode = d_ir1<<15:13>>
+    wire d1_rd : reg
+    definition d1_rd = d_ir1<<12:10>>
+    wire d1_ra : reg
+    definition d1_ra = d_ir1<<9:7>>
+    wire d1_rb : reg
+    definition d1_rb = d_ir1<<6:4>>
+    wire d1_alu : bool
+    definition d1_alu = (d1_opcode = 1 | d1_opcode = 2 | d1_opcode = 3)
+    wire d1_needs_ab : bool
+    definition d1_needs_ab = (d1_opcode = 1 | d1_opcode = 2)
+
+    # ---- dispatch width: both lanes if two entries are free, else lane 0 alone ----
+    wire tail1 : robidx
+    definition tail1 = rob_tail + 1
+    wire free1 : bool
+    definition free1 = ~rob_busy(rob_tail)
+    wire free2 : bool
+    definition free2 = ~rob_busy(rob_tail) & ~rob_busy(tail1)
+    wire dispatch2 : bool
+    definition dispatch2 = d_valid0 & d_valid1 & free2
+    wire dispatch1 : bool             # lane 0 alone
+    definition dispatch1 = d_valid0 & ~dispatch2 & free1
+    wire dispatch : bool
+    definition dispatch = dispatch1 | dispatch2
+    wire d_shift : bool               # lane 0 leaves, lane 1 stays: shift it down
+    definition d_shift = dispatch1 & d_valid1
+    wire fetch_en : bool              # the latch is (or becomes) empty: refill it
+    definition fetch_en = ~d_valid0 | dispatch2 | (dispatch1 & ~d_valid1)
+
+    # ---- head-relative entry indices, for oldest-first issue ----
+    wire h0 : robidx
+    definition h0 = rob_head
+    wire h1 : robidx
+    definition h1 = rob_head + 1
+    wire h2 : robidx
+    definition h2 = rob_head + 2
+    wire h3 : robidx
+    definition h3 = rob_head + 3
+
+    # ---- ALU ----
+    wire ex_opcode : opc
+    definition ex_opcode = ex_ir<<15:13>>
+    wire ex_target : addr
+    definition ex_target = ex_ir<<7:0>>
+    wire ex_res : word
+    definition ex_res = (ex_a + ex_b if ex_opcode = 1 else
+                        (ex_a - ex_b if ex_opcode = 2 else
+                        ((0:addr) :: ex_target if ex_opcode = 3 else 0)))
+
+    # ---- operand capture at dispatch, lane 0 ----
+    # An operand is ready if its register has no in-flight writer, or the
+    # writer is done, or the writer is completing on the result bus right now
+    # (the dispatching entry is not yet in the ROB, so it would otherwise miss
+    # this broadcast and wait forever).
+    wire d_a_idx : robidx
+    definition d_a_idx = rat_idx(d_ra)
+    wire d_a_bus : bool
+    definition d_a_bus = ex_valid & ex_idx = d_a_idx
+    wire d_a_rdy : bool
+    definition d_a_rdy = ~d_needs_ab | ~rat_valid(d_ra) | rob_done(d_a_idx) | d_a_bus
+    wire d_a_val : word
+    definition d_a_val = (rf(d_ra) if ~rat_valid(d_ra) else
+                         (ex_res if d_a_bus else rob_val(d_a_idx)))
+
+    wire d_b_idx : robidx
+    definition d_b_idx = rat_idx(d_rb)
+    wire d_b_bus : bool
+    definition d_b_bus = ex_valid & ex_idx = d_b_idx
+    wire d_b_rdy : bool
+    definition d_b_rdy = ~d_needs_ab | ~rat_valid(d_rb) | rob_done(d_b_idx) | d_b_bus
+    wire d_b_val : word
+    definition d_b_val = (rf(d_rb) if ~rat_valid(d_rb) else
+                         (ex_res if d_b_bus else rob_val(d_b_idx)))
+
+    # ---- operand capture at dispatch, lane 1 ----
+    # As lane 0, except that a source written by lane 0 (an intra-bundle RAW
+    # dependence) binds to lane 0's new entry rob_tail and is pending.
+    wire d1_a_from0 : bool
+    definition d1_a_from0 = d_alu & d_rd = d1_ra
+    wire d1_a_idx : robidx
+    definition d1_a_idx = (rob_tail if d1_a_from0 else rat_idx(d1_ra))
+    wire d1_a_bus : bool
+    definition d1_a_bus = ~d1_a_from0 & ex_valid & ex_idx = d1_a_idx
+    wire d1_a_rdy : bool
+    definition d1_a_rdy = ~d1_needs_ab | (~d1_a_from0 & (~rat_valid(d1_ra) | rob_done(d1_a_idx) | d1_a_bus))
+    wire d1_a_val : word
+    definition d1_a_val = (rf(d1_ra) if ~rat_valid(d1_ra) else
+                          (ex_res if d1_a_bus else rob_val(d1_a_idx)))
+
+    wire d1_b_from0 : bool
+    definition d1_b_from0 = d_alu & d_rd = d1_rb
+    wire d1_b_idx : robidx
+    definition d1_b_idx = (rob_tail if d1_b_from0 else rat_idx(d1_rb))
+    wire d1_b_bus : bool
+    definition d1_b_bus = ~d1_b_from0 & ex_valid & ex_idx = d1_b_idx
+    wire d1_b_rdy : bool
+    definition d1_b_rdy = ~d1_needs_ab | (~d1_b_from0 & (~rat_valid(d1_rb) | rob_done(d1_b_idx) | d1_b_bus))
+    wire d1_b_val : word
+    definition d1_b_val = (rf(d1_rb) if ~rat_valid(d1_rb) else
+                          (ex_res if d1_b_bus else rob_val(d1_b_idx)))
+
+    # ---- issue selection: the oldest ready, un-issued entry ----
+    wire rdy0 : bool
+    definition rdy0 = rob_busy(h0) & ~rob_issued(h0) & rob_a_rdy(h0) & rob_b_rdy(h0)
+    wire rdy1 : bool
+    definition rdy1 = rob_busy(h1) & ~rob_issued(h1) & rob_a_rdy(h1) & rob_b_rdy(h1)
+    wire rdy2 : bool
+    definition rdy2 = rob_busy(h2) & ~rob_issued(h2) & rob_a_rdy(h2) & rob_b_rdy(h2)
+    wire rdy3 : bool
+    definition rdy3 = rob_busy(h3) & ~rob_issued(h3) & rob_a_rdy(h3) & rob_b_rdy(h3)
+    wire issue : bool
+    definition issue = rdy0 | rdy1 | rdy2 | rdy3
+    wire issue_idx : robidx
+    definition issue_idx = (h0 if rdy0 else (h1 if rdy1 else (h2 if rdy2 else h3)))
+
+    # ---- retire decode ----
+    wire r_ir : word
+    definition r_ir = rob_ir(rob_head)
+    wire r_opcode : opc
+    definition r_opcode = r_ir<<15:13>>
+    wire r_rd : reg
+    definition r_rd = r_ir<<12:10>>
+    wire r_alu : bool
+    definition r_alu = (r_opcode = 1 | r_opcode = 2 | r_opcode = 3)
+    wire r_val : word                 # the retiring result (pre-state read)
+    definition r_val = rob_val(rob_head)
+    wire r_rat_clear : bool           # the retiring entry is still rd's youngest writer
+    definition r_rat_clear = rat_valid(r_rd) & rat_idx(r_rd) = rob_head
+    # ---- the second retiring entry (head+1) ----
+    wire r1_ir : word
+    definition r1_ir = rob_ir(head1)
+    wire r1_opcode : opc
+    definition r1_opcode = r1_ir<<15:13>>
+    wire r1_rd : reg
+    definition r1_rd = r1_ir<<12:10>>
+    wire r1_alu : bool
+    definition r1_alu = (r1_opcode = 1 | r1_opcode = 2 | r1_opcode = 3)
+    wire r1_val : word
+    definition r1_val = rob_val(head1)
+    wire r1_rat_clear : bool
+    definition r1_rat_clear = rat_valid(r1_rd) & rat_idx(r1_rd) = head1
+
+    # ---- reset ----
+    after init {
+        pc := 0;
+        rf(R) := 0;
+        mem(A) := init_mem(A);
+        d_valid0 := false;
+        d_valid1 := false;
+        rat_valid(R) := false;
+        rob_head := 0;
+        rob_tail := 0;
+        rob_busy(I) := false;
+        rob_issued(I) := false;
+        rob_done(I) := false;
+        ex_valid := false;
+    }
+
+    # ---- clock edge ----
+    # Every value read below is a pre-state value: the blocks are ordered so
+    # that no block reads an array element an earlier block wrote, and the
+    # retire block's reads go through wires (r_val, r_rat_clear). The action
+    # therefore has exactly the semantics of a nonblocking always-block, which
+    # is what lets a hand-written RTL golden model be checked combinationally
+    # equivalent to the emitted RTL from *arbitrary* (not only reachable) states.
+    after posedge {
+
+        # Complete the ALU operation: write the result to its ROB entry and
+        # broadcast it to every entry waiting on that ROB index.
+        if ex_valid {
+            rob_val(ex_idx) := ex_res;
+            rob_done(ex_idx) := true;
+            rob_a(I) := (ex_res if (rob_busy(I) & ~rob_a_rdy(I) & rob_a_src(I) = ex_idx) else rob_a(I));
+            rob_a_rdy(I) := rob_a_rdy(I) | (rob_busy(I) & rob_a_src(I) = ex_idx);
+            rob_b(I) := (ex_res if (rob_busy(I) & ~rob_b_rdy(I) & rob_b_src(I) = ex_idx) else rob_b(I));
+            rob_b_rdy(I) := rob_b_rdy(I) | (rob_busy(I) & rob_b_src(I) = ex_idx)
+        };
+
+        # Retire the head entry once its result is available, and the entry
+        # after it if that is done too (its register write comes second, so it
+        # wins a shared destination).
+        if retire {
+            if r_alu {
+                rf(r_rd) := r_val
+            };
+            if r_rat_clear {
+                rat_valid(r_rd) := false
+            };
+            rob_busy(rob_head) := false
+        };
+        if retire1 {
+            if r1_alu {
+                rf(r1_rd) := r1_val
+            };
+            if r1_rat_clear {
+                rat_valid(r1_rd) := false
+            };
+            rob_busy(head1) := false;
+            rob_head := rob_head + 2
+        } else if retire {
+            rob_head := rob_head + 1
+        };
+
+        # Issue the oldest ready entry to the ALU. (rob_a/rob_b(issue_idx) are
+        # read after the broadcast above, but the broadcast only writes entries
+        # whose operand is NOT ready, and issue_idx is ready, so these are still
+        # the pre-state values.)
+        if issue {
+            ex_valid := true;
+            ex_idx := issue_idx;
+            ex_ir := rob_ir(issue_idx);
+            ex_a := rob_a(issue_idx);
+            ex_b := rob_b(issue_idx);
+            rob_issued(issue_idx) := true
+        } else {
+            ex_valid := false
+        };
+
+        # Dispatch: allocate the tail entry (or two), rename, capture operands.
+        # This comes after retire so that a same-cycle retire of an older writer
+        # of a destination does not clobber the new rename entry. Lane 1's rename
+        # write comes after lane 0's, so it wins a shared destination.
+        if dispatch {
+            rob_busy(rob_tail) := true;
+            rob_ir(rob_tail) := d_ir0;
+            rob_issued(rob_tail) := ~d_alu;     # a NOP needs no ALU ...
+            rob_done(rob_tail) := ~d_alu;       # ... and is done at once
+            rob_val(rob_tail) := 0;
+            rob_a(rob_tail) := d_a_val;
+            rob_a_rdy(rob_tail) := d_a_rdy;
+            rob_a_src(rob_tail) := d_a_idx;
+            rob_b(rob_tail) := d_b_val;
+            rob_b_rdy(rob_tail) := d_b_rdy;
+            rob_b_src(rob_tail) := d_b_idx;
+            if d_alu {
+                rat_valid(d_rd) := true;
+                rat_idx(d_rd) := rob_tail
+            }
+        };
+        if dispatch2 {
+            rob_busy(tail1) := true;
+            rob_ir(tail1) := d_ir1;
+            rob_issued(tail1) := ~d1_alu;
+            rob_done(tail1) := ~d1_alu;
+            rob_val(tail1) := 0;
+            rob_a(tail1) := d1_a_val;
+            rob_a_rdy(tail1) := d1_a_rdy;
+            rob_a_src(tail1) := d1_a_idx;
+            rob_b(tail1) := d1_b_val;
+            rob_b_rdy(tail1) := d1_b_rdy;
+            rob_b_src(tail1) := d1_b_idx;
+            if d1_alu {
+                rat_valid(d1_rd) := true;
+                rat_idx(d1_rd) := tail1
+            };
+            rob_tail := rob_tail + 2
+        } else if dispatch1 {
+            rob_tail := rob_tail + 1
+        };
+
+        # The latch: shift lane 1 down when lane 0 leaves alone, or refill both
+        # lanes from memory when it empties.
+        if d_shift {
+            d_ir0 := d_ir1;
+            d_valid1 := false
+        } else if fetch_en {
+            d_ir0 := mem(pc);
+            d_ir1 := mem(pc + 1);
+            d_valid0 := true;
+            d_valid1 := true;
+            pc := pc + 2
+        }
+    }
+    }
+
+    # ---- ghost monitor: tags and the trace step ---------------------------
+    specification {
+        after posedge {
+            if retire {
+                commit := commit.next
+            };
+            if retire1 {
+                commit := commit.next
+            };
+            if dispatch {
+                rob_tag(old rob_tail) := trace.now;
+                trace.step
+            };
+            if dispatch2 {
+                rob_tag(old rob_tail + 1) := trace.now;
+                trace.step
+            }
+        }
+    }
+
+    # ---- invariants -------------------------------------------------------
+    private {
+
+        # ---- ROB occupancy structure ----
+        # busy(I) iff I is in the circular range [head, tail), or the ROB is full.
+        invariant [rob_shape] rob_busy(I) <-> (((I - rob_head) < (rob_tail - rob_head)) | (rob_busy(rob_head) & rob_head = rob_tail))
+
+        # ---- the busy entries carry a contiguous run of tags [commit, now) ----
+        invariant [rob_head_tag] rob_busy(rob_head) -> rob_tag(rob_head) = commit
+        invariant [rob_empty_tag] ~rob_busy(rob_head) -> commit = trace.now
+        invariant [rob_chain] (rob_busy(I) & rob_busy(I + 1) & I + 1 ~= rob_tail) -> tag.succ(rob_tag(I), rob_tag(I + 1))
+        invariant [rob_youngest] (rob_busy(I) & I + 1 = rob_tail) -> tag.succ(rob_tag(I), trace.now)
+        invariant [rob_tag_range] rob_busy(I) -> (commit <= rob_tag(I) & rob_tag(I) < trace.now)
+
+        # ---- the retiring entries' values, named (zero-delay tracking of the
+        #      rob_val/rob_ir reads, so the rf/rename invariants below match the
+        #      retire writes symbolically instead of unfolding the arrays through
+        #      two retires and two dispatches -- see the skill on array reads) ----
+        derived invariant [r_ir_trk] retire -> r_ir = trace.st(commit).fetched
+        derived invariant [r_val_trk] retire -> r_val = trace.st(commit).res
+        derived invariant [r1_tag_trk] retire1 -> tag.succ(commit, rob_tag(head1))
+        derived invariant [r1_ir_trk] retire1 -> r1_ir = trace.st(rob_tag(head1)).fetched
+        derived invariant [r1_val_trk] retire1 -> r1_val = trace.st(rob_tag(head1)).res
+
+        # ---- committed architectural state ----
+        invariant [rf_trk] rf(R) = trace.st(commit).rf(R)
+        invariant [mem_trk] mem(A) = trace.st(trace.now).mem(A)
+
+        # ---- fetch: the latch holds the next 0, 1 or 2 reference instructions ----
+        invariant [d_lanes] d_valid1 -> d_valid0
+        invariant [pc_trk] pc = (trace.st(trace.now).pc if ~d_valid0 else
+                                (trace.st(trace.now).pc + 1 if ~d_valid1 else trace.st(trace.now).pc + 2))
+        invariant [d_ir0_trk] d_valid0 -> d_ir0 = trace.st(trace.now).fetched
+        invariant [d_ir1_trk] d_valid1 -> d_ir1 = trace.st(trace.now).mem(trace.st(trace.now).pc + 1)
+
+        # ---- ROB entry contents ----
+        invariant [rob_ir_trk] rob_busy(I) -> rob_ir(I) = trace.st(rob_tag(I)).fetched
+        invariant [rob_done_issued] (rob_busy(I) & rob_done(I)) -> rob_issued(I)
+        invariant [rob_issued_rdy] (rob_busy(I) & rob_issued(I)) -> (rob_a_rdy(I) & rob_b_rdy(I))
+        invariant [rob_val_trk] (rob_busy(I) & rob_done(I)) -> rob_val(I) = trace.st(rob_tag(I)).res
+        invariant [rob_a_trk] (rob_busy(I) & rob_a_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2)) -> rob_a(I) = trace.st(rob_tag(I)).a_val
+        invariant [rob_b_trk] (rob_busy(I) & rob_b_rdy(I) & ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2)) -> rob_b(I) = trace.st(rob_tag(I)).b_val
+        # a pending operand waits on a busy, not-yet-done entry whose result it is
+        invariant [rob_a_pend] (rob_busy(I) & ~rob_a_rdy(I)) ->
+            (rob_busy(rob_a_src(I)) & ~rob_done(rob_a_src(I)) &
+             trace.st(rob_tag(rob_a_src(I))).res = trace.st(rob_tag(I)).a_val)
+        invariant [rob_b_pend] (rob_busy(I) & ~rob_b_rdy(I)) ->
+            (rob_busy(rob_b_src(I)) & ~rob_done(rob_b_src(I)) &
+             trace.st(rob_tag(rob_b_src(I))).res = trace.st(rob_tag(I)).b_val)
+        # a non-ALU entry is done at dispatch; an ALU entry is done only by the ALU
+        invariant [rob_nonalu_done] (rob_busy(I) & ~((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3)) -> rob_done(I)
+
+        # ---- ALU latch ----
+        invariant [ex_trk] ex_valid -> (rob_busy(ex_idx) & rob_issued(ex_idx) & ~rob_done(ex_idx) & ex_ir = rob_ir(ex_idx))
+        invariant [ex_a_trk] (ex_valid & (ex_opcode = 1 | ex_opcode = 2)) -> ex_a = trace.st(rob_tag(ex_idx)).a_val
+        invariant [ex_b_trk] (ex_valid & (ex_opcode = 1 | ex_opcode = 2)) -> ex_b = trace.st(rob_tag(ex_idx)).b_val
+        # an issued-but-not-done entry is exactly the one in the ALU latch
+        invariant [issued_in_ex] (rob_busy(I) & rob_issued(I) & ~rob_done(I)) -> (ex_valid & ex_idx = I)
+
+        # ---- rename table ----
+        # rat_idx(R) is a busy ALU entry writing R, and the current (trace-now)
+        # value of R is its result.
+        invariant [rat_trk] rat_valid(R) ->
+            (rob_busy(rat_idx(R)) &
+             ((rob_ir(rat_idx(R))<<15:13>>:opc) = 1 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 2 | (rob_ir(rat_idx(R))<<15:13>>:opc) = 3) &
+             (rob_ir(rat_idx(R))<<12:10>>:reg) = R &
+             trace.st(trace.now).rf(R) = trace.st(rob_tag(rat_idx(R))).res)
+        # with no in-flight writer, the register file already holds the current value
+        invariant [rf_now_trk] ~rat_valid(R) -> rf(R) = trace.st(trace.now).rf(R)
+        # every busy writer of R is recorded, and rat_idx(R) is the youngest of them
+        invariant [rat_youngest] (rob_busy(I) &
+             ((rob_ir(I)<<15:13>>:opc) = 1 | (rob_ir(I)<<15:13>>:opc) = 2 | (rob_ir(I)<<15:13>>:opc) = 3)) ->
+            (rat_valid(rob_ir(I)<<12:10>>) &
+             (I - rob_head) <= (rat_idx(rob_ir(I)<<12:10>>) - rob_head))
+    }
+}
