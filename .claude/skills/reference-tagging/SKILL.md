@@ -1210,7 +1210,8 @@ The datapath must be free of ghost/abstract constructs:
   the boundary grows only by the second fetch lane `d_ir1`/`d_valid1`, ~2 min) and
   `ooo_fwd_dd_golden.sv` ↔ `ooo_cpu_fwd_dd_alt_ref.ivy` (forwarding + dual
   dispatch/retire, ~3.5 min — the ghost-value proof style leaves the datapath and
-  hence the golden untouched)** —
+  hence the golden untouched) and `ooo_2alu_dd_golden.sv` ↔
+  `ooo_cpu_2alu_dd_alt_ref.ivy` (+ a second ALU: five more registers, ~3.5 min)** —
   run `check_ooo_golden.sh [design] [golden]`; mutation-tested (an ALU, bypass,
   squash-condition, redirect, predictor-saturation, memory-stall, load-bypass,
   FLUSH-fetch-stall, reset-list, speculative-store, memory-op-selection-order,

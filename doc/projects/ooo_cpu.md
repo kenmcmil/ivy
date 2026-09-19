@@ -329,6 +329,9 @@ the first alternate-proof file over a minute; the second broadcast source
 widens every operand query). RTL translates; all five test programs match;
 the second ALU fires in the warm branch loop, where dual dispatch supplies
 two ready ALU ops in a cycle. Mutation-tested (second port duplicating the
-first's entry; a missing ALU1 broadcast). No golden yet.
+first's entry; a missing ALU1 broadcast). Golden: `ooo_2alu_dd_golden.sv`
+(ooo_fwd_dd_golden.sv plus the second latch, issue port, broadcast source and
+bypass), proven equivalent by `check_ooo_golden.sh ooo_cpu_2alu_dd_alt_ref
+ooo_2alu_dd_golden.sv` (6015 cones, ~3.5 min; mutation-tested).
 
 Next: resolve mispredicts at execution.
