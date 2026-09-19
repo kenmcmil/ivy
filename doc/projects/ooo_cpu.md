@@ -284,5 +284,51 @@ Summary of the alternate proof so far (identical datapaths, standard command
 line): 3a 3.5 min -> 20 s; 3c (forwarding) 17.5-39 min -> 32 s; 3a dual
 dispatch/retire 20 min -> 33 s.
 
-Next: resolve mispredicts at execution; more ALUs; dual dispatch on the
-forwarding design (alternate proof).
+`ooo_cpu_fwd_dd_alt_ref.ivy` (2026-09-18): the forwarding datapath (stage 3c)
+made two-wide in dispatch and retire, under the alternate proof -- the most
+capable design so far: full ISA, branch prediction with squash at retire,
+LD/ST queue with store-to-load forwarding and two memory slots, dual fetch
+through idc, dual dispatch with intra-bundle binding, dual retire. Lane 1's
+operand capture has all three bypasses (ALU bus, cache-slot load,
+forwarding-slot load) plus the intra-bundle binding. OK on the first run in
+**1 min 17 s** (113 cpu checks); RTL translates; prog_fwd/prog_lsq/prog_mem/
+prog_br simulate correctly with forwards, dual dispatches and dual retires
+all exercised. Mutation-tested (lane 1 ignoring lane 0's write; a BEQZ as
+second retiree). Golden: `ooo_fwd_dd_golden.sv` (the forwarding golden with
+the dual dispatch/retire of ooo_mem_dd_golden.sv), proven equivalent by
+`check_ooo_golden.sh ooo_cpu_fwd_dd_alt_ref ooo_fwd_dd_golden.sv` (5964 cones,
+~3.5 min; mutation-tested: lane 1 missing the forwarding bypass, retire1
+ignoring a squash). Note the "alt" proof style changes only the ghost layer,
+so the golden is the same as it would be for a tag-based proof.
+
+Proof times, all designs (2026-09-18; `ivy_check isolate=this trace=true
+shrink=false`, sequential on an idle machine; idcache's internal isolates are
+the same black box in every row):
+
+| design                        | contents                                          | proof         | time | lines | invariants |
+|-------------------------------|---------------------------------------------------|---------------|-----:|------:|-----------:|
+| ooo_cpu_mem_alt_ref.ivy       | OoO, full ISA, memory ops at ROB head             | ghost values  | 16 s |   874 |         60 |
+| ooo_cpu_fwd_alt_ref.ivy       | + LD/ST queue, forwarding, two memory slots       | ghost values  | 29 s |  1023 |         67 |
+| ooo_cpu_mem_dd_alt_ref.ivy    | memory-at-head + dual dispatch/retire             | ghost values  | 24 s |  1061 |         65 |
+| ooo_cpu_fwd_dd_alt_ref.ivy    | forwarding + dual dispatch/retire                 | ghost values  | 31 s |  1234 |         72 |
+| ooo_cpu_2alu_dd_alt_ref.ivy   | forwarding + dual dispatch/retire + two ALUs      | ghost values  | 2.5-3.5 min | 1305 |    76 |
+| dual_issue_cpu_ref.ivy        | in-order 5-stage, 2-wide issue, caches, predictor | trace tagging | 30 s |  1327 |        109 |
+
+(Tag-based proofs of the first three OoO datapaths: 3.5 min, 17-39 min,
+20 min.)
+
+`ooo_cpu_2alu_dd_alt_ref.ivy` (2026-09-18): a SECOND ALU on the combined
+design. Two issue ports take the oldest and second-oldest ready ALU/BEQZ
+entries into two one-cycle execute latches (ex_*, ex1_*); each result is a
+broadcast source and a dispatch bypass (four of each now: two ALUs, the
+cache-slot load, the forwarded load). Proof additions: ex1_trk/ex1_a_trk/
+ex1_b_trk (copies), ex_distinct (the two latches never hold the same entry),
+and issued_in_ex now "in one of the two latches". `ivy_check isolate=this
+trace=true shrink=false` OK on the first run (3 min 25 s, 121 cpu checks --
+the first alternate-proof file over a minute; the second broadcast source
+widens every operand query). RTL translates; all five test programs match;
+the second ALU fires in the warm branch loop, where dual dispatch supplies
+two ready ALU ops in a cycle. Mutation-tested (second port duplicating the
+first's entry; a missing ALU1 broadcast). No golden yet.
+
+Next: resolve mispredicts at execution.

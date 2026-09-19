@@ -916,7 +916,16 @@ already holds the whole instruction, so:
   gone — there is no history for the query to see through. Lane 1's ghost values
   are copied *after* the first `trace.step` (arch is then exactly lane 1's
   state), which is also where a lane-1 branch's implicit not-taken prediction is
-  checked.
+  checked. The full combination — forwarding + two memory slots + dual
+  dispatch/retire (`ooo_cpu_fwd_dd_alt_ref.ivy`) — proves in **77 s**, first
+  run; lane 1's operand capture simply adds the intra-bundle binding in front of
+  the same three bypasses lane 0 has. A **second ALU**
+  (`ooo_cpu_2alu_dd_alt_ref.ivy`) is a copy of the latch invariants plus
+  `ex_distinct` (the two latches never hold the same entry) and `issued_in_ex`
+  reading "in one of the two latches"; its result is one more broadcast source
+  and dispatch bypass. First run, zero CTIs, 3.5 min — the first ghost-value
+  proof over a minute, since every operand-capture and broadcast query now has
+  four sources.
 
 Use this style for anything ROB-based; keep the trace history for in-order
 pipelines, where it is the natural fit.
@@ -1198,7 +1207,10 @@ The datapath must be free of ghost/abstract constructs:
   boundary, ~80 s) and `ooo_fwd_golden.sv` ↔ `ooo_cpu_ref.ivy` (stage 3c,
   store-to-load forwarding with two memory slots; same boundary, ~2.5 min) and
   `ooo_mem_dd_golden.sv` ↔ `ooo_cpu_mem_dd_ref.ivy` (3a + dual dispatch/retire;
-  the boundary grows only by the second fetch lane `d_ir1`/`d_valid1`, ~2 min)** —
+  the boundary grows only by the second fetch lane `d_ir1`/`d_valid1`, ~2 min) and
+  `ooo_fwd_dd_golden.sv` ↔ `ooo_cpu_fwd_dd_alt_ref.ivy` (forwarding + dual
+  dispatch/retire, ~3.5 min — the ghost-value proof style leaves the datapath and
+  hence the golden untouched)** —
   run `check_ooo_golden.sh [design] [golden]`; mutation-tested (an ALU, bypass,
   squash-condition, redirect, predictor-saturation, memory-stall, load-bypass,
   FLUSH-fetch-stall, reset-list, speculative-store, memory-op-selection-order,
