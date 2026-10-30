@@ -1,0 +1,775 @@
+#lang ivy1.8
+
+# Proof that the RTL-Level coherence system implements the abstract German's protocol.
+# homeExclusiveGranted is related directly to the packed directory's exclusive
+# mask, without a second maintained exclusivity relation. Grants and physical
+# acknowledgement retirement update the abstract permission on the same edge.
+# Each component owns small proof isolates. Simulation images are public;
+# supporting invariants stay private and are imported individually as needed.
+# Frame and FIFO contracts are checked directly by their owning component,
+# rather than restated in forwarding lemmas.
+# The 20 edge-step isolates discharge protocol-rule preconditions; component
+# isolates prove the public simulation images inductive. Cache data_proof and
+# data.store_commit.check then check load responses and store commits against
+# cache_image's img, with payload correctness carried by the channel/data proofs.
+
+include cachemem_directory_projection
+
+# One ghost edge uses only frozen event ports. It never reads a register
+# written by a different clock action to decide which abstract step to take.
+specification {
+private {
+object concrete_refinement = {
+    alias hw = memory_system.cachemem
+    alias c0 = memory_system.cachemem.cache0_body
+    alias c1 = memory_system.cachemem.cache1_body
+    alias d = memory_system.cachemem.dir_body
+
+
+    # Frozen component projections are shared; only proof isolates execute the edge.
+    object witness = {
+    implementation {
+    wire occupied(C : bit, S : cache_slot) : bool
+    definition occupied(C,S) = (c0.tag_occ(S) if C = 0 else c1.tag_occ(S))
+
+    # Physical per-slot tag permission; the abstract permission is indexed by line.
+    wire slot_exclusive(C : bit, S : cache_slot) : bool
+    definition slot_exclusive(C,S) = (c0.tag_exc(S) if C = 0 else c1.tag_exc(S))
+
+    wire tag(C : bit, S : cache_slot) : line
+    definition tag(C,S) = (c0.tag_ln(S) if C = 0 else c1.tag_ln(S))
+
+    wire resident_in_way(C : bit, A : line, W : way) : bool
+    definition resident_in_way(C,A,W) =
+        occupied(C,hw_cidx(hw_hash(A),W))
+        & tag(C,hw_cidx(hw_hash(A),W)) = A
+
+    
+    wire resident_shared(C : bit, A : line) : bool
+    definition resident_shared(C,A) =
+        (resident_in_way(C,A,0) & ~slot_exclusive(C,hw_cidx(hw_hash(A),0)))
+        | (resident_in_way(C,A,1) & ~slot_exclusive(C,hw_cidx(hw_hash(A),1)))
+    
+    wire resident_exclusive(C : bit, A : line) : bool
+    definition resident_exclusive(C,A) =
+        (resident_in_way(C,A,0) & slot_exclusive(C,hw_cidx(hw_hash(A),0)))
+        | (resident_in_way(C,A,1) & slot_exclusive(C,hw_cidx(hw_hash(A),1)))
+
+    }
+    wire request_shared(C : bit, A : line) : bool
+    definition request_shared(C,A) =
+        (c0.ch1_body.queued_shared(A) if C = 0 else c1.ch1_body.queued_shared(A))
+
+    wire request_exclusive(C : bit, A : line) : bool
+    definition request_exclusive(C,A) =
+        (c0.ch1_body.queued_excl(A) if C = 0 else c1.ch1_body.queued_excl(A))
+
+    wire grant_shared(C : bit, A : line) : bool
+    definition grant_shared(C,A) =
+        (c0.ch2_body.queued_grant_shared(A) if C = 0 else c1.ch2_body.queued_grant_shared(A))
+        
+    wire grant_exclusive(C : bit, A : line) : bool
+    definition grant_exclusive(C,A) =
+        (c0.ch2_body.queued_grant_exclusive(A) if C = 0 else c1.ch2_body.queued_grant_exclusive(A))
+    wire invalidate(C : bit, A : line) : bool
+    definition invalidate(C,A) =
+        (c0.ch2_body.queued_invalidate(A) if C = 0 else c1.ch2_body.queued_invalidate(A))
+    wire producer(C : bit, A : line) : bool
+    definition producer(C,A) =
+        ((c0.ack_pending_valid & c0.ack_pending_line = A) if C = 0
+         else (c1.ack_pending_valid & c1.ack_pending_line = A))
+    wire queued_ack(C : bit, A : line) : bool
+    definition queued_ack(C,A) =
+        (c0.ch3_body.queued_ack(A) if C = 0 else c1.ch3_body.queued_ack(A))
+    wire holder(C : bit, A : line) : bool
+    definition holder(C,A) = directory_projection.holders(C,A)
+
+    # The abstract rules own invalidate-list snapshots, requester identity,
+    # and exclusive-owner history. Do not maintain shadow copies here.
+    implementation {
+    object edge = {
+    wire grant_now : bool
+    wire grant_line : line
+    wire grant_is_exclusive : bool
+    wire retire_now : bool
+    wire retire_line : line
+    wire retire_client : bit
+    wire pick_now : bool
+    wire pick_line : line
+    wire pick_client : bit
+    wire pick_is_exclusive : bool
+    wire invalidate_now : bool
+    wire invalidate_line : line
+    wire invalidate_client : bit
+    definition grant_now = d.grant_now
+    definition grant_line = d.cr_line
+    definition grant_is_exclusive = d.cr_excl
+    definition retire_now = d.ack_done
+    definition retire_line = d.ack_done_line
+    definition retire_client = d.ack_done_cpu
+    definition pick_now = d.req_pick
+    definition pick_line = d.req_line
+    definition pick_client = d.req_cpu
+    definition pick_is_exclusive = d.req_excl
+    definition invalidate_now = hw.x_ch2_msg_taken & hw.x_ch2_msg_typ = hw.ch2_inv
+    definition invalidate_line = hw.x_ch2_msg_line
+    definition invalidate_client = hw.x_ch2_msg_cpu
+
+
+    # Every abstract rule call is a separate step with its own proof isolate,
+    # owned by the hardware component that issues it. ghost_clock fixes the
+    # order of the steps within one edge; each isolate checks exactly one
+    # rule precondition and assumes the others.
+    # Dependencies start minimal: the issuing hardware body plus the image
+    # component that names the rule's precondition. Widen only on failure.
+    module cache_witness(cache) = {
+        object receive_shared = {
+            action step = {
+                if cache.has_grant & ~cache.grant_excl {
+                    call abs_prot.receiveSharedGrantRule(cache.cpu_id,cache.q2h_line);
+                };
+            }
+            isolate iso = this, cache, cache.ch2_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.grants
+        }
+        object receive_exclusive = {
+            action step = {
+                if cache.has_grant & cache.grant_excl {
+                    call abs_prot.receiveExclusiveGrantRule(cache.cpu_id,cache.q2h_line);
+                };
+            }
+            isolate iso = this, cache, cache.ch2_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.grants
+        }
+        object sharer_invalidate = {
+            action step = {
+                if cache.process_ch2_inval & cache.inv_taken {
+                    call abs_prot.sharerInvalidatesCacheRule(cache.cpu_id,cache.q2h_line);
+                };
+            }
+            isolate iso = this, cache, cache.ch2_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.cache, concrete_refinement.grants,
+                    concrete_refinement.witness.occupied, concrete_refinement.witness.slot_exclusive,
+                    concrete_refinement.witness.tag, concrete_refinement.witness.resident_in_way,
+                    concrete_refinement.witness.resident_shared, concrete_refinement.witness.resident_exclusive,
+                    cache.ch2_body.control.ch2_second_inv
+        }
+        object discard = {
+            action step = {
+                if cache.process_ch2_inval & ~cache.inv_taken {
+                    call abs_prot.discardInvalidateRule(cache.cpu_id,cache.q2h_line);
+                };
+            }
+            isolate iso = this, cache, cache.ch2_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.cache, concrete_refinement.grants,
+                    concrete_refinement.witness.occupied, concrete_refinement.witness.slot_exclusive,
+                    concrete_refinement.witness.tag, concrete_refinement.witness.resident_in_way,
+                    concrete_refinement.witness.resident_shared, concrete_refinement.witness.resident_exclusive,
+                    cache.ch2_body.control.ch2_second_inv
+        }
+        object evict = {
+            action step = {
+                if ~cache.process_ch2_inval & cache.give_en {
+                    call abs_prot.evictCacheRule(cache.cpu_id,cache.give_line);
+                };
+            }
+            isolate iso = this, cache, cache.ch2_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.cache, concrete_refinement.grants,
+                    concrete_refinement.witness.occupied, concrete_refinement.witness.slot_exclusive,
+                    concrete_refinement.witness.tag, concrete_refinement.witness.resident_in_way,
+                    concrete_refinement.witness.resident_shared, concrete_refinement.witness.resident_exclusive,
+                    concrete_refinement.cache.shared_request_has_mshr,
+                    concrete_refinement.cache.exclusive_request_has_mshr
+        }
+        object request_shared = {
+            action step = {
+                if cache.req_en & cache.req_taken & ~cache.req_excl {
+                    call abs_prot.reqSharedRule(cache.cpu_id,cache.req_line);
+                };
+            }
+            isolate iso = this, cache, cache.ch1_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.cache, concrete_refinement.requests,
+                    concrete_refinement.witness.occupied, concrete_refinement.witness.slot_exclusive,
+                    concrete_refinement.witness.tag, concrete_refinement.witness.resident_in_way,
+                    concrete_refinement.witness.resident_shared, concrete_refinement.witness.resident_exclusive,
+                    concrete_refinement.cache.request_idle
+        }
+        object request_exclusive = {
+            action step = {
+                if cache.req_en & cache.req_taken & cache.req_excl {
+                    call abs_prot.reqExclusiveRule(cache.cpu_id,cache.req_line);
+                };
+            }
+            isolate iso = this, cache, cache.ch1_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.cache, concrete_refinement.requests,
+                    concrete_refinement.witness.occupied, concrete_refinement.witness.slot_exclusive,
+                    concrete_refinement.witness.tag, concrete_refinement.witness.resident_in_way,
+                    concrete_refinement.witness.resident_exclusive,
+                    concrete_refinement.cache.request_idle
+        }
+    }
+    instance cache0 : cache_witness(memory_system.cachemem.cache0_body)
+    instance cache1 : cache_witness(memory_system.cachemem.cache1_body)
+
+    # The crossbar's channel-2 acceptance sends the abstract invalidate.
+    object crossbar = {
+        object send_invalidate = {
+            action step = {
+                if invalidate_now {
+                    call abs_prot.sendInvalidateRule(invalidate_client,invalidate_line);
+                };
+            }
+            isolate iso = this, memory_system.cachemem.xbar_body, memory_system.cachemem.dir_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.grants, concrete_refinement.directory,
+                    directory_projection, directory_projection.interface,
+                    concrete_refinement.directory.invalidate_transaction,
+                    concrete_refinement.directory.invalidate_unsent,
+                    concrete_refinement.directory.replacement_invalidate_sent
+        }
+    }
+
+    # The directory grants, retires acknowledgements, and picks requests.
+    object directory = {
+        object grant_shared = {
+            action step = {
+                if grant_now & ~grant_is_exclusive {
+                    call abs_prot.grantSharedRule(grant_line);
+                };
+            }
+            isolate iso = this, memory_system.cachemem.dir_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.directory, home_permission,
+                    concrete_refinement.directory.valid_directory_state,
+                    concrete_refinement.directory.active_requester,
+                    concrete_refinement.directory.current_grant_disjoint,
+                    home_permission.read_ready, home_permission.blockers_pending,
+                    concrete_refinement.grants.invalidate_image,
+                    memory_system.cachemem.cache0_body.ch2_body.empty,
+                    memory_system.cachemem.cache1_body.ch2_body.empty,
+                    directory_projection, directory_projection.interface
+        }
+        object grant_exclusive = {
+            action step = {
+                if grant_now & grant_is_exclusive {
+                    call abs_prot.grantExclusiveRule(grant_line);
+                };
+            }
+            isolate iso = this, memory_system.cachemem.dir_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.directory,
+                    concrete_refinement.directory.active_requester,
+                    concrete_refinement.directory.current_grant_disjoint,
+                    home_permission.blockers_pending,
+                    concrete_refinement.grants.invalidate_image,
+                    memory_system.cachemem.cache0_body.ch2_body.empty,
+                    memory_system.cachemem.cache1_body.ch2_body.empty,
+                    directory_projection, directory_projection.interface
+        }
+        object retire = {
+            action step = {
+                if retire_now {
+                    call abs_prot.receiveInvalidateAckRule(retire_client,retire_line);
+                };
+            }
+            isolate iso = this, memory_system.cachemem.dir_body, cache_image
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.arbiter.ack_head_image,
+                    memory_system.cachemem.dir_body.wb_body.retire,
+                    memory_system.cachemem.dir_body.wb_body.data_ack_live
+        }
+        object pick_shared = {
+            action step = {
+                if pick_now & ~pick_is_exclusive {
+                    call abs_prot.pickNewSharedRequestRule(pick_client,pick_line);
+                };
+            }
+            isolate iso = this, memory_system.cachemem.dir_body, cache_image,
+                memory_system.cachemem.cache0_body.ch1_body, memory_system.cachemem.cache1_body.ch1_body
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.requests, concrete_refinement.directory,
+                    memory_system.cachemem.xbar_body.req_line,
+                    memory_system.cachemem.xbar_body.req_excl,
+                    memory_system.cachemem.xbar_body.port_safety_request,
+                    memory_system.cachemem.cache0_body.ch1_body.empty,
+                    memory_system.cachemem.cache0_body.ch1_body.out_line,
+                    memory_system.cachemem.cache0_body.ch1_body.out_excl,
+                    memory_system.cachemem.cache0_body.ch1_body.ch1_occupancy,
+                    memory_system.cachemem.cache1_body.ch1_body.empty,
+                    memory_system.cachemem.cache1_body.ch1_body.out_line,
+                    memory_system.cachemem.cache1_body.ch1_body.out_excl,
+                    memory_system.cachemem.cache1_body.ch1_body.ch1_occupancy
+        }
+        object pick_exclusive = {
+            action step = {
+                if pick_now & pick_is_exclusive {
+                    call abs_prot.pickNewExclusiveRequestRule(pick_client,pick_line);
+                };
+            }
+            isolate iso = this, memory_system.cachemem.dir_body, cache_image,
+                memory_system.cachemem.cache0_body.ch1_body, memory_system.cachemem.cache1_body.ch1_body
+                with abs_prot, basis, addr_thy, addr_thy.impl, memory_system.cachemem,
+                    concrete_refinement.witness, concrete_refinement.witness.edge,
+                    concrete_refinement.requests, concrete_refinement.directory,
+                    memory_system.cachemem.xbar_body.req_line,
+                    memory_system.cachemem.xbar_body.req_excl,
+                    memory_system.cachemem.xbar_body.port_safety_request,
+                    memory_system.cachemem.cache0_body.ch1_body.empty,
+                    memory_system.cachemem.cache0_body.ch1_body.out_line,
+                    memory_system.cachemem.cache0_body.ch1_body.out_excl,
+                    memory_system.cachemem.cache0_body.ch1_body.ch1_occupancy,
+                    memory_system.cachemem.cache1_body.ch1_body.empty,
+                    memory_system.cachemem.cache1_body.ch1_body.out_line,
+                    memory_system.cachemem.cache1_body.ch1_body.out_excl,
+                    memory_system.cachemem.cache1_body.ch1_body.ch1_occupancy
+        }
+    }
+
+    action ghost_clock = {
+        call cache0.receive_shared.step;
+        call cache0.receive_exclusive.step;
+        call cache1.receive_shared.step;
+        call cache1.receive_exclusive.step;
+        call cache0.sharer_invalidate.step;
+        call cache0.discard.step;
+        call cache0.evict.step;
+        call cache1.sharer_invalidate.step;
+        call cache1.discard.step;
+        call cache1.evict.step;
+        call crossbar.send_invalidate.step;
+        call cache0.request_shared.step;
+        call cache0.request_exclusive.step;
+        call cache1.request_shared.step;
+        call cache1.request_exclusive.step;
+        call directory.grant_shared.step;
+        call directory.grant_exclusive.step;
+        call directory.retire.step;
+        call directory.pick_shared.step;
+        call directory.pick_exclusive.step;
+    }
+    after posedge { call ghost_clock; }
+    }
+
+
+    }
+    }
+    alias resident_shared = witness.resident_shared
+    alias resident_exclusive = witness.resident_exclusive
+    alias request_shared = witness.request_shared
+    alias request_exclusive = witness.request_exclusive
+    alias grant_shared = witness.grant_shared
+    alias grant_exclusive = witness.grant_exclusive
+    alias invalidate = witness.invalidate
+    alias producer = witness.producer
+    alias queued_ack = witness.queued_ack
+    alias holder = witness.holder
+
+    # Private interfaces are visible only to explicitly named consumers,
+    # following the parent/child-interface pattern in doc/examples/hardware.
+    private {
+    # Cache permissions, outstanding misses, and local data-frame obligations.
+    module cache_component = {
+        # The simulation images are public; supporting invariants stay private.
+        invariant [shared_image] abs_prot.cacheShared(C,A) <-> resident_shared(C,A)
+        invariant [exclusive_image] abs_prot.cacheExclusive(C,A) <-> resident_exclusive(C,A)
+        # Vocabulary of the imported MSHR facts; private wires are invisible to consumers.
+        wire miss_state(C : bit, M : mshr_id) : mstate
+        definition miss_state(C,M) = (c0.m_state(M) if C = 0 else c1.m_state(M))
+        wire miss_line(C : bit, M : mshr_id) : line
+        definition miss_line(C,M) = (c0.m_base(M) if C = 0 else c1.m_base(M))
+        wire miss_exclusive(C : bit, M : mshr_id) : bool
+        definition miss_exclusive(C,M) = (c0.m_excl(M) if C = 0 else c1.m_excl(M))
+        wire waiting_in_mshr(C : bit, A : line, X : bool, M : mshr_id) : bool
+        definition waiting_in_mshr(C,A,X,M) =
+            miss_state(C,M) = c0.m_wait & miss_line(C,M) = A & miss_exclusive(C,M) = X
+        wire waiting(C : bit, A : line, X : bool) : bool
+        definition waiting(C,A,X) = waiting_in_mshr(C,A,X,0) | waiting_in_mshr(C,A,X,1)
+        implementation {
+            invariant [shared_request_has_mshr]
+                (abs_prot.channel1(C,abs_prot.shared,A) | abs_prot.channel2(C,abs_prot.gsh,A)
+                 | (abs_prot.homeCurrentReqShared(A) & abs_prot.homeCurrentclient(A) = C))
+                    -> waiting(C,A,false)
+            invariant [exclusive_request_has_mshr]
+                (abs_prot.channel1(C,abs_prot.excl,A) | abs_prot.channel2(C,abs_prot.gex,A)
+                 | (abs_prot.homeCurrentReqExclusive(A) & abs_prot.homeCurrentclient(A) = C))
+                    -> waiting(C,A,true)
+
+            # A producer cannot issue again while this client's line is in flight.
+            # Explicitly quantified: zero-delay citations share the cited formula's free variables.
+            derived invariant [request_idle] forall C : bit, A : line.
+                ((C = 0 & c0.req_en & c0.req_line = A)
+                 | (C = 1 & c1.req_en & c1.req_line = A)) ->
+                    ~abs_prot.channel1(C,abs_prot.shared,A)
+                    & ~abs_prot.channel1(C,abs_prot.excl,A)
+                    & ~abs_prot.channel2(C,abs_prot.gsh,A)
+                    & ~abs_prot.channel2(C,abs_prot.gex,A)
+                    & ~((abs_prot.homeCurrentReqShared(A) | abs_prot.homeCurrentReqExclusive(A))
+                        & abs_prot.homeCurrentclient(A) = C)
+
+            # A store can commit on grant arrival, before the witness receives it.
+            derived invariant [write_permission] forall C : bit.
+                cache_image.write_en(C) ->
+                    (abs_prot.cacheExclusive(C,cache_image.write_line(C))
+                     | (abs_prot.channel2(C,abs_prot.gex,cache_image.write_line(C))
+                        & ((C = 0 & c0.ch2_body.pop & c0.ch2_body.out_line = cache_image.write_line(C))
+                           | (C = 1 & c1.ch2_body.pop & c1.ch2_body.out_line = cache_image.write_line(C)))))
+
+        }
+        isolate iso = this, cache_image,
+            c0.data.resident_frame, c1.data.resident_frame,
+            c0.data.grant_frame, c1.data.grant_frame,
+            c0.data.pending_frame, c1.data.pending_frame,
+            c0.data.give_frame, c1.data.give_frame,
+            c0, c1, c0.ch1_body, c1.ch1_body, c0.ch2_body, c1.ch2_body,
+            c0.ch3_body, c1.ch3_body, d, d.wb_body, hw.xbar_body, hw.mc_body
+            with abs_prot, basis, addr_thy, addr_thy.impl, hw,
+                concrete_refinement.witness, concrete_refinement.witness.edge,
+                concrete_refinement.witness.occupied, concrete_refinement.witness.slot_exclusive,
+                concrete_refinement.witness.tag, concrete_refinement.witness.resident_in_way,
+                concrete_refinement.witness.resident_shared, concrete_refinement.witness.resident_exclusive,
+                concrete_refinement.requests.request_shared_image,
+                concrete_refinement.requests.request_exclusive_image,
+                concrete_refinement.requests.request_grant_disjoint,
+                concrete_refinement.grants.grant_shared_image,
+                concrete_refinement.grants.grant_exclusive_image,
+                concrete_refinement.grants.invalidate_image,
+                concrete_refinement.acknowledgements.ack_image,
+                concrete_refinement.acknowledgements.ack_phases_disjoint,
+                concrete_refinement.directory.shared_request_image,
+                concrete_refinement.directory.exclusive_request_image,
+                concrete_refinement.directory.current_grant_disjoint,
+                concrete_refinement.directory.current_request_disjoint,
+                concrete_refinement.directory.active_requester
+    }
+    instance cache : cache_component
+
+    # Channel 1: the FIFO's storage invariants live in ch1_body.control.
+    module request_component = {
+        invariant [request_shared_image] abs_prot.channel1(C,abs_prot.shared,A) <-> request_shared(C,A)
+            using request_shared_image | $memory_system.cachemem.cache0_body.ch1_body.ch1_occupancy
+                | $memory_system.cachemem.cache1_body.ch1_body.ch1_occupancy
+                | $memory_system.cachemem.cache0_body.ch1_body.control.ch1_distinct
+                | $memory_system.cachemem.cache1_body.ch1_body.control.ch1_distinct
+                | $concrete_refinement.cache.request_idle
+        invariant [request_exclusive_image] abs_prot.channel1(C,abs_prot.excl,A) <-> request_exclusive(C,A)
+        implementation {
+            invariant [request_grant_disjoint]
+                (abs_prot.channel1(C,abs_prot.shared,A) | abs_prot.channel1(C,abs_prot.excl,A)) ->
+                    ~abs_prot.channel2(C,abs_prot.gsh,A) & ~abs_prot.channel2(C,abs_prot.gex,A)
+        }
+        isolate iso = this, cache_image,
+            c0.ch1_body.control.input_distinct, c1.ch1_body.control.input_distinct,
+            c0, c1, c0.ch1_body, c1.ch1_body, c0.ch2_body, c1.ch2_body,
+            c0.ch3_body, c1.ch3_body, d, d.wb_body, hw.xbar_body, hw.mc_body
+            with abs_prot, basis, addr_thy, addr_thy.impl, hw,
+                concrete_refinement.witness, concrete_refinement.witness.edge,
+                concrete_refinement.cache.request_idle,
+                concrete_refinement.directory.current_request_disjoint,
+                concrete_refinement.directory.shared_request_image,
+                concrete_refinement.directory.exclusive_request_image,
+                concrete_refinement.directory.active_requester,
+                concrete_refinement.directory.current_grant_disjoint,
+                c0.ch1_body.control.ch1_distinct, c1.ch1_body.control.ch1_distinct
+    }
+    instance requests : request_component
+
+    # Channel 2: permission/message images, independent of FIFO pointer mechanics.
+    module grant_component = {
+        invariant [grant_shared_image] abs_prot.channel2(C,abs_prot.gsh,A) <-> grant_shared(C,A)
+        invariant [grant_exclusive_image] abs_prot.channel2(C,abs_prot.gex,A) <-> grant_exclusive(C,A)
+        invariant [invalidate_image] abs_prot.channel2(C,abs_prot.inv,A) <-> invalidate(C,A)
+        isolate iso = this, cache_image, c0.ch2_body.data_frame, c1.ch2_body.data_frame,
+            c0.ch2_body.control.grant_empty, c1.ch2_body.control.grant_empty,
+            c0.ch2_body.control.invalidate_distinct, c1.ch2_body.control.invalidate_distinct,
+            c0, c1, c0.ch1_body, c1.ch1_body, c0.ch2_body, c1.ch2_body,
+            c0.ch3_body, c1.ch3_body, d, d.wb_body, hw.xbar_body, hw.mc_body
+            with abs_prot, basis, addr_thy, addr_thy.impl, hw,
+                concrete_refinement.witness, concrete_refinement.witness.edge,
+                concrete_refinement.cache.write_permission,
+                concrete_refinement.directory.grant_permission,
+                concrete_refinement.directory.shared_request_image,
+                concrete_refinement.directory.exclusive_request_image,
+                concrete_refinement.directory.active_requester,
+                c0.ch2_body.control.ch2_second_inv, c1.ch2_body.control.ch2_second_inv,
+                c0.ch2_body.control.ch2_invalidate_distinct, c1.ch2_body.control.ch2_invalidate_distinct,
+                concrete_refinement.directory.sharer_image,
+                concrete_refinement.directory.invalidate_transaction,
+                concrete_refinement.directory.invalidate_unsent,
+                concrete_refinement.directory.replacement_invalidate_sent,
+                directory_projection, directory_projection.interface
+    }
+    instance grants : grant_component
+
+    # Channel 3: a cache holding slot and its FIFO represent one abstract channel.
+    module acknowledgement_component = {
+        invariant [ack_image] abs_prot.channel3(C,A) <-> (producer(C,A) | queued_ack(C,A))
+        implementation {
+            invariant [ack_phases_disjoint] producer(C,A) -> ~queued_ack(C,A)
+        }
+        isolate iso = this, cache_image, c0.ch3_body.data_frame, c1.ch3_body.data_frame,
+            c0.ch3_body.control.input_distinct, c1.ch3_body.control.input_distinct,
+            c0.ch3_body.pop_nonempty, c1.ch3_body.pop_nonempty,
+            c0, c1, c0.ch1_body, c1.ch1_body, c0.ch2_body, c1.ch2_body,
+            c0.ch3_body, c1.ch3_body, d, d.wb_body, hw.xbar_body, hw.mc_body
+            with abs_prot, basis, addr_thy, addr_thy.impl, hw,
+                concrete_refinement.witness, concrete_refinement.witness.edge,
+                concrete_refinement.cache.write_permission,
+                concrete_refinement.writeback.writeback_has_ack,
+                concrete_refinement.arbiter.ack_lock_nonempty,
+                concrete_refinement.arbiter.locked_ack_not_producer,
+                c0.ch3_body.control.ch3_distinct, c1.ch3_body.control.ch3_distinct
+    }
+    instance acknowledgements : acknowledgement_component
+
+    # Directory demand state and invalidate bookkeeping.
+    module directory_component = {
+        invariant [sharer_image] abs_prot.homeSharerList(C,A) <-> holder(C,A)
+        invariant [shared_request_image] abs_prot.homeCurrentReqShared(A) <->
+            (d.dstate_r = d.d_req_shared & d.cr_line = A)
+        invariant [exclusive_request_image] abs_prot.homeCurrentReqExclusive(A) <->
+            (d.dstate_r = d.d_req_excl & d.cr_line = A)
+        implementation {
+            invariant [current_grant_disjoint] d.dstate_r ~= d.d_idle ->
+                ~abs_prot.channel2(d.cr_cpu,abs_prot.gsh,d.cr_line)
+                & ~abs_prot.channel2(d.cr_cpu,abs_prot.gex,d.cr_line)
+            invariant [current_request_disjoint] d.dstate_r ~= d.d_idle ->
+                ~abs_prot.channel1(d.cr_cpu,abs_prot.shared,d.cr_line)
+                & ~abs_prot.channel1(d.cr_cpu,abs_prot.excl,d.cr_line)
+            invariant [active_requester] d.dstate_r ~= d.d_idle ->
+                abs_prot.homeCurrentclient(d.cr_line) = d.cr_cpu
+            invariant [valid_directory_state] d.dstate_r = d.d_idle
+                | d.dstate_r = d.d_req_shared | d.dstate_r = d.d_req_excl
+
+            # Accepted invalidates have left the abstract unsent set.
+            invariant [invalidate_transaction]
+                abs_prot.channel2(C,abs_prot.inv,A) & abs_prot.homeSharerList(C,A) ->
+                    ~abs_prot.homeInvalidateList(C,A)
+            invariant [invalidate_pending]
+                abs_prot.channel2(C,abs_prot.inv,A) & abs_prot.homeSharerList(C,A) ->
+                    d.dstate_r ~= d.d_idle & d.inv_target = A & d.inv_pending(C)
+            # Physical unsent stages are a subset: the abstract list also retains
+            # sharers that do not block a shared request.
+            invariant [invalidate_unsent] d.dstate_r ~= d.d_idle & ~d.cr_replacing
+                & abs_prot.homeSharerList(C,d.cr_line)
+                & (d.inv_need(C) | (d.inv_v & d.inv_c = C)) ->
+                    abs_prot.homeInvalidateList(C,d.cr_line)
+            # Replacement victims have no demand request in the abstract machine.
+            invariant [replacement_invalidate_sent] d.cr_replacing
+                & abs_prot.channel2(C,abs_prot.inv,A) & abs_prot.homeSharerList(C,A) ->
+                    ~d.inv_need(C) & ~(d.inv_v & d.inv_c = C)
+            derived invariant [grant_permission] d.ch2_msg_valid & d.ch2_msg_typ ~= hw.ch2_inv ->
+                ~abs_prot.homeExclusiveGranted(d.ch2_msg_line)
+                with home_permission.read_ready, home_permission.blockers_pending,
+                    home_permission.exclusive_nonempty
+        }
+        isolate iso = this, cache_image,
+            c0, c1, c0.ch1_body, c1.ch1_body, c0.ch2_body, c1.ch2_body,
+            c0.ch3_body, c1.ch3_body, d, d.wb_body, hw.xbar_body, hw.mc_body
+            with abs_prot, basis, addr_thy, addr_thy.impl, hw,
+                concrete_refinement.witness, concrete_refinement.witness.edge,
+                directory_projection, directory_projection.interface,
+                home_permission.read_ready, home_permission.blockers_pending,
+                home_permission.exclusive_nonempty,
+                concrete_refinement.requests.request_shared_image,
+                concrete_refinement.requests.request_exclusive_image,
+                concrete_refinement.requests.request_grant_disjoint,
+                concrete_refinement.grants.grant_shared_image,
+                concrete_refinement.grants.grant_exclusive_image,
+                concrete_refinement.cache.request_idle,
+                c0.ch1_body.control.ch1_distinct, c1.ch1_body.control.ch1_distinct
+    }
+    instance directory : directory_component
+
+    # Crossbar acknowledgement ownership is stated at the abstract channel boundary.
+    module arbiter_component = {
+        implementation {
+            invariant [ack_lock_nonempty] hw.xbar_body.ack_locked ->
+                abs_prot.channel3(hw.xbar_body.ack_owner,hw.xbar_body.ack_line)
+            invariant [locked_ack_not_producer] hw.xbar_body.ack_locked ->
+                ~producer(hw.xbar_body.ack_owner,hw.xbar_body.ack_line)
+            derived invariant [ack_head_image] hw.x_ack_en ->
+                abs_prot.channel3(hw.xbar_body.src,hw.xbar_body.ack_line)
+        }
+        isolate iso = this, cache_image,
+            c0, c1, c0.ch1_body, c1.ch1_body, c0.ch2_body, c1.ch2_body,
+            c0.ch3_body, c1.ch3_body, d, d.wb_body, hw.xbar_body, hw.mc_body
+            with abs_prot, basis, addr_thy, addr_thy.impl, hw,
+                concrete_refinement.witness, concrete_refinement.witness.edge,
+                concrete_refinement.acknowledgements.ack_image,
+                concrete_refinement.acknowledgements.ack_phases_disjoint,
+                concrete_refinement.writeback.writeback_has_ack,
+                c0.ch3_body.control.ch3_distinct, c1.ch3_body.control.ch3_distinct
+    }
+    instance arbiter : arbiter_component
+
+    # Writeback permissions depend on the protocol, not cache implementation state.
+    module writeback_component = {
+        implementation {
+            invariant [writeback_has_ack]
+                (d.wb_body.wb_st = d.wb_body.wb_lo | d.wb_body.wb_st = d.wb_body.wb_hi
+                 | d.wb_body.wb_st = d.wb_body.wb_fin | d.wb_body.wb_st = d.wb_body.wb_ret) ->
+                    hw.xbar_body.ack_locked & hw.x_ack_en
+            invariant [write_command_ack] d.wb_body.cmd_en & d.wb_body.cmd_wen ->
+                ~d.wb_body.ack_empty & high(d.wb_body.cmd_addr) = d.wb_body.ack_line
+            invariant [request_buffer_lease] forall C : bit.
+                (d.wb_body.read_active | d.wb_body.data_valid) ->
+                    ~abs_prot.cacheExclusive(C,d.wb_body.req_line)
+                    & ~abs_prot.channel2(C,abs_prot.gex,d.wb_body.req_line)
+        }
+        isolate iso = this, cache_image,
+            d.wb_body.data_write_frame, d.wb_body.data_command_frame, d.wb_body.data_request_frame,
+            d.wb_body.data_ack_live,
+            c0, c1, c0.ch1_body, c1.ch1_body, c0.ch2_body, c1.ch2_body,
+            c0.ch3_body, c1.ch3_body, d, d.wb_body, hw.xbar_body, hw.mc_body
+            with abs_prot, basis, addr_thy, addr_thy.impl, hw,
+                concrete_refinement.witness, concrete_refinement.witness.edge,
+                concrete_refinement.cache.write_permission,
+                concrete_refinement.arbiter.ack_head_image,
+                concrete_refinement.arbiter.ack_lock_nonempty,
+                concrete_refinement.grants.grant_exclusive_image,
+                concrete_refinement.directory.shared_request_image,
+                concrete_refinement.directory.exclusive_request_image,
+                concrete_refinement.directory.active_requester,
+                concrete_refinement.directory.current_grant_disjoint,
+                concrete_refinement.directory.sharer_image,
+                home_permission.read_ready, home_permission.blockers_pending,
+                home_permission.exclusive_nonempty, home_permission.exclusive_sole,
+                directory_projection, directory_projection.interface
+    }
+    instance writeback : writeback_component
+    }
+    # Own only edge sequencing. Rule preconditions
+    # and component images remain obligations of their small child isolates.
+    isolate scheduler = this
+        with abs_prot, basis, addr_thy, addr_thy.impl, hw, cache_image,
+            d.clock, d.clock_step, directory_projection, directory_projection.interface
+}
+
+# Only the read/response correspondence crosses the memory-controller boundary.
+module memory_control_component = {
+    alias hw = memory_system.cachemem
+    alias d = hw.dir_body
+    implementation {
+        invariant [mc_read_active] d.wb_body.read_active -> d.wb_body.read_en
+        invariant [mc_read_command] hw.mc_body.cmd_en & ~hw.mc_body.cmd_wen ->
+            (d.wb_body.wb_st = d.wb_body.wb_rwlo | d.wb_body.wb_st = d.wb_body.wb_rwhi)
+            & d.wb_body.read_en & hw_high(hw.mc_body.cmd_addr) = d.cr_line
+        invariant [mc_read_head] hw.mc_body.cb0_valid & ~hw.mc_body.cb0_wen ->
+            (d.wb_body.wb_st = d.wb_body.wb_rwlo | d.wb_body.wb_st = d.wb_body.wb_rwhi)
+            & d.wb_body.read_en & hw_high(hw.mc_body.cb0_addr) = d.cr_line
+        invariant [mc_read_tail] hw.mc_body.cb1_valid & ~hw.mc_body.cb1_wen ->
+            (d.wb_body.wb_st = d.wb_body.wb_rwlo | d.wb_body.wb_st = d.wb_body.wb_rwhi)
+            & d.wb_body.read_en & hw_high(hw.mc_body.cb1_addr) = d.cr_line
+        invariant [mc_read_response] hw.mc_body.rsp_valid ->
+            (d.wb_body.wb_st = d.wb_body.wb_rwlo | d.wb_body.wb_st = d.wb_body.wb_rwhi)
+            & d.wb_body.read_en & hw_high(hw.mc_body.rsp_addr) = d.cr_line
+        invariant [mc_read_single]
+            (hw.mc_body.cb0_valid & ~hw.mc_body.cb0_wen ->
+                ~(hw.mc_body.cb1_valid & ~hw.mc_body.cb1_wen)
+                & ~(hw.mc_body.cmd_en & ~hw.mc_body.cmd_wen) & ~hw.mc_body.rsp_valid)
+            & (hw.mc_body.cb1_valid & ~hw.mc_body.cb1_wen ->
+                ~(hw.mc_body.cmd_en & ~hw.mc_body.cmd_wen) & ~hw.mc_body.rsp_valid)
+            & (hw.mc_body.cmd_en & ~hw.mc_body.cmd_wen -> ~hw.mc_body.rsp_valid)
+        invariant [response_request] hw.mc_body.rsp_valid ->
+            d.wb_body.read_active & hw_high(hw.mc_body.rsp_addr) = d.wb_body.req_line
+            with mc_read_response
+        derived invariant [read_permission] hw.mc_body.mem_rd_en ->
+            d.wb_body.read_active & high(hw.mc_body.mem_rd_addr) = d.wb_body.req_line
+    }
+    isolate iso = this, d, d.wb_body, hw.mc_body, hw.mc_body.data_response_frame
+        with hw, cache_image, basis, addr_thy, abs_prot,
+            concrete_refinement.cache.write_permission,
+            concrete_refinement.writeback.request_buffer_lease
+}
+instance memory_control : memory_control_component
+
+# Prove the packed-directory map separately so the control simulation consumes
+# homeExclusiveGranted without expanding the directory table in every query.
+module home_permission_component = {
+    alias d = memory_system.cachemem.dir_body
+    alias holder = directory_projection.holders
+    implementation {
+        # Prove each simulation direction separately.
+        patdef home_image_support = exclusive_home_sound | exclusive_home_complete
+            | $abs_prot.ack_has_sharer | $concrete_refinement.directory.sharer_image
+            | $directory_projection.directory_mask | $directory_projection.directory_unique
+            | $directory_projection.holder_representation | $directory_projection.active_directory_index
+            | $directory_projection.directory_index | $directory_projection.selected_identity
+            | $memory_system.cachemem.dir_body.wb_body.data_ack_live
+            | $concrete_refinement.arbiter.ack_head_image
+        invariant [exclusive_home_sound] forall A : line.
+            abs_prot.homeExclusiveGranted(A) -> directory_projection.physical_exclusive(A)
+            with directory_projection.directory_mask, directory_projection.directory_unique,
+                directory_projection.holder_representation, directory_projection.active_directory_index,
+                directory_projection.directory_index, directory_projection.selected_identity
+            using home_image_support
+        invariant [exclusive_home_complete] forall A : line.
+            directory_projection.physical_exclusive(A) -> abs_prot.homeExclusiveGranted(A)
+            with directory_projection.directory_mask, directory_projection.directory_unique,
+                directory_projection.holder_representation, directory_projection.active_directory_index,
+                directory_projection.directory_index, directory_projection.selected_identity
+            using home_image_support
+        derived invariant [exclusive_home_image] forall A : line.
+            abs_prot.homeExclusiveGranted(A) <-> directory_projection.physical_exclusive(A)
+            using exclusive_home_sound | exclusive_home_complete
+        derived invariant [blockers_pending] d.dstate_r ~= d.d_idle & ~d.cr_replacing
+            & holder(C,d.cr_line)
+            & (d.cr_excl | abs_prot.homeExclusiveGranted(d.cr_line) | C = d.cr_cpu) ->
+                d.inv_pending(C)
+            with directory_projection.blockers_pending, exclusive_home_image
+        derived invariant [retire_permission] d.ack_done
+            & holder(d.ack_done_cpu,d.ack_done_line) ->
+                (hw_dir_exclusive(d.retire_entry) <-> abs_prot.homeExclusiveGranted(d.ack_done_line))
+            with directory_projection.retire_permission, exclusive_home_image
+        derived invariant [exclusive_sole]
+            abs_prot.homeExclusiveGranted(A) & holder(C,A) & holder(D,A) -> C = D
+            with directory_projection.exclusive_sole, exclusive_home_image
+        derived invariant [exclusive_nonempty]
+            abs_prot.homeExclusiveGranted(A) -> holder(0,A) | holder(1,A)
+            with directory_projection.exclusive_nonempty, exclusive_home_image
+        derived invariant [read_ready] d.dstate_r ~= d.d_idle
+            & d.cr_slot_valid & ~d.cr_replacing & d.inv_settled ->
+                ~abs_prot.homeExclusiveGranted(d.cr_line)
+            with directory_projection.read_ready, exclusive_home_image
+    }
+    isolate iso = this,
+        memory_system.cachemem.dir_body, memory_system.cachemem.dir_body.wb_body
+        with abs_prot, basis, addr_thy, memory_system.cachemem,
+            directory_projection, directory_projection.interface,
+            directory_projection.directory_mask, directory_projection.directory_unique,
+            directory_projection.holder_representation, directory_projection.active_directory_index,
+            directory_projection.directory_index, directory_projection.selected_identity,
+            directory_projection.blockers_pending, directory_projection.retire_permission,
+            directory_projection.exclusive_sole, directory_projection.exclusive_nonempty,
+            directory_projection.read_ready,
+            concrete_refinement.witness, concrete_refinement.witness.edge, cache_image,
+            concrete_refinement.directory.sharer_image,
+            concrete_refinement.arbiter.ack_head_image,
+            memory_system.cachemem.dir_body.wb_body.data_ack_live,
+            memory_system.cachemem.cache0_body, memory_system.cachemem.cache1_body,
+            memory_system.cachemem.cache0_body.ch1_body, memory_system.cachemem.cache1_body.ch1_body,
+            memory_system.cachemem.cache0_body.ch2_body, memory_system.cachemem.cache1_body.ch2_body,
+            memory_system.cachemem.mc_body
+}
+instance home_permission : home_permission_component
+}
+}

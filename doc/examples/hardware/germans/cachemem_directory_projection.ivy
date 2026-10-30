@@ -1,0 +1,156 @@
+#lang ivy1.8
+
+specification {
+private {
+object directory_projection = {
+    alias d = memory_system.cachemem.dir_body
+    relation holders(C : bit, A : line)
+    relation physical_exclusive(A : line)
+    function table_entry(A : line, W : dir_way) : dir_entry
+    definition table_entry(A,W) = d.cache_mem(hw_dir_cidx(hw_dir_index(A),W))
+    relation matching(A : line, W : dir_way)
+    definition matching(A,W) = hw_dir_valid(table_entry(A,W))
+        & hw_dir_entry_high(table_entry(A,W)) = hw_dir_high(A)
+    relation holder_in_way(C : bit, A : line, W : dir_way)
+    definition holder_in_way(C,A,W) = matching(A,W) & hw_dir_has(table_entry(A,W),C)
+    relation physical_holder(C : bit, A : line)
+    definition physical_holder(C,A) = holder_in_way(C,A,0) | holder_in_way(C,A,1)
+        | holder_in_way(C,A,2) | holder_in_way(C,A,3)
+    relation exclusive_in_way(A : line, W : dir_way)
+    definition exclusive_in_way(A,W) = matching(A,W) & hw_dir_exclusive(table_entry(A,W))
+    definition physical_exclusive(A) = exclusive_in_way(A,0) | exclusive_in_way(A,1)
+        | exclusive_in_way(A,2) | exclusive_in_way(A,3)
+
+    implementation {
+        # Import this control interface explicitly; keep packed table facts local.
+        object interface = {
+            wire grant_now : bool
+            wire grant_line : line
+            wire grant_client : bit
+            wire retire_now : bool
+            wire retire_line : line
+            wire retire_client : bit
+            wire retire_hit : bool
+            wire retire_exclusive : bool
+            definition grant_now = d.grant_now
+            definition grant_line = d.cr_line
+            definition grant_client = d.cr_cpu
+            definition retire_now = d.ack_done
+            definition retire_line = d.ack_done_line
+            definition retire_client = d.ack_done_cpu
+            definition retire_hit = d.retire_hit
+            definition retire_exclusive = hw_dir_exclusive(d.retire_entry)
+
+            after init {
+                holders(C,A) := false;
+            }
+            action clock = {
+                if retire_now {
+                    holders(retire_client,retire_line) := false;
+                };
+                if grant_now {
+                    holders(grant_client,grant_line) := true;
+                };
+            }
+            mixin clock after posedge
+
+            # Only these control-port consequences cross the representation boundary.
+            derived invariant [invalidate_holder] d.inv_v ->
+                holders(d.inv_c,d.inv_l) & d.dstate_r ~= d.d_idle
+                & d.inv_l = d.inv_target & d.inv_pending(d.inv_c) & ~d.inv_need(d.inv_c)
+            derived invariant [pending_entry] d.inv_pending(C) ->
+                d.dstate_r ~= d.d_idle & hw_dir_has(d.selected_entry,C)
+            derived invariant [selected_retirement] d.dstate_r ~= d.d_idle
+                & retire_now & retire_hit
+                & hw_dir_cidx(d.retire_idx,d.retire_way) = hw_dir_cidx(d.cr_idx,d.cr_way) ->
+                    retire_line = d.inv_target
+            derived invariant [retire_lookup] retire_now & holders(retire_client,retire_line) -> retire_hit
+        }
+        alias grant_now = interface.grant_now
+        alias grant_line = interface.grant_line
+        alias grant_client = interface.grant_client
+        alias retire_now = interface.retire_now
+        alias retire_line = interface.retire_line
+        alias retire_client = interface.retire_client
+        alias retire_hit = interface.retire_hit
+        alias retire_exclusive = interface.retire_exclusive
+
+        # Physical exclusivity facts are consumed only by home_permission_proof.
+        derived invariant [blockers_pending] d.dstate_r ~= d.d_idle & ~d.cr_replacing
+            & holders(C,d.cr_line)
+            & (d.cr_excl | physical_exclusive(d.cr_line) | C = d.cr_cpu) -> d.inv_pending(C)
+        derived invariant [retire_permission] retire_now & holders(retire_client,retire_line) ->
+            (retire_exclusive <-> physical_exclusive(retire_line))
+        derived invariant [exclusive_sole] physical_exclusive(A) & holders(C,A) & holders(D,A) -> C = D
+        derived invariant [exclusive_nonempty] physical_exclusive(A) -> holders(0,A) | holders(1,A)
+        derived invariant [read_ready] d.dstate_r ~= d.d_idle
+            & d.cr_slot_valid & ~d.cr_replacing & d.inv_settled -> ~physical_exclusive(d.cr_line)
+
+        invariant [holder_representation] holders(C,A) <-> physical_holder(C,A)
+            with directory_unique, directory_index, active_directory_index, active_selection, selected_identity
+        patdef physical_directory = $directory_projection.directory_* | valid_directory_state
+            | active_directory_index | miss_not_present | hit_selection | active_selection
+            | replacement_identity | pending_selected | need_is_pending | held_invalidate
+            | held_invalidate_posted | selected_blockers_pending | selected_identity
+        invariant [directory_mask]
+            hw_dir_exclusives(d.cache_mem(S)) = 0
+            | (hw_dir_exclusives(d.cache_mem(S)) = hw_dir_sharers(d.cache_mem(S))
+               & hw_dir_sharers(d.cache_mem(S)) ~= 3)
+            using physical_directory
+        invariant [directory_index] hw_dir_valid(d.cache_mem(hw_dir_cidx(I,W))) ->
+            hw_dir_index(hw_dir_tag(d.cache_mem(hw_dir_cidx(I,W)))) = I
+            using physical_directory
+        invariant [directory_unique]
+            hw_dir_valid(d.cache_mem(hw_dir_cidx(I,W)))
+            & hw_dir_valid(d.cache_mem(hw_dir_cidx(I,V)))
+            & hw_dir_entry_high(d.cache_mem(hw_dir_cidx(I,W))) =
+                hw_dir_entry_high(d.cache_mem(hw_dir_cidx(I,V))) -> W = V
+            using physical_directory
+        invariant [valid_directory_state] d.dstate_r = d.d_idle
+            | d.dstate_r = d.d_req_shared | d.dstate_r = d.d_req_excl
+            using physical_directory
+        invariant [active_directory_index] d.dstate_r ~= d.d_idle ->
+            d.cr_idx = hw_dir_index(d.cr_line) & d.cr_slot_valid
+            using physical_directory
+        invariant [miss_not_present] d.dstate_r ~= d.d_idle & d.cr_miss -> ~matching(d.cr_line,W)
+            using physical_directory
+        invariant [hit_selection] d.dstate_r ~= d.d_idle & ~d.cr_miss ->
+            hw_dir_entry_high(d.selected_entry) = hw_dir_high(d.cr_line)
+            using physical_directory
+        invariant [active_selection] d.dstate_r ~= d.d_idle & matching(d.cr_line,W) ->
+            ~d.cr_replacing & W = d.cr_way
+            with directory_unique
+            using physical_directory
+        invariant [replacement_identity] d.dstate_r ~= d.d_idle & d.cr_replacing ->
+            d.cr_miss & hw_dir_tag(d.selected_entry) = d.cr_victim
+            & d.cr_victim ~= d.cr_line & hw_dir_index(d.cr_victim) = d.cr_idx
+            using physical_directory
+        invariant [pending_selected] d.inv_pending(C) ->
+            d.dstate_r ~= d.d_idle & hw_dir_has(d.selected_entry,C)
+            using physical_directory
+        invariant [need_is_pending] d.inv_need(C) -> d.inv_pending(C)
+            using physical_directory
+        invariant [held_invalidate] d.inv_v ->
+            d.dstate_r ~= d.d_idle & d.inv_l = d.inv_target & d.inv_pending(d.inv_c)
+            using physical_directory
+        invariant [held_invalidate_posted] d.inv_v -> ~d.inv_need(d.inv_c)
+            using physical_directory
+        invariant [selected_identity] d.dstate_r ~= d.d_idle & ~d.cr_replacing
+            & hw_dir_valid(d.selected_entry) -> d.selected_match
+            using physical_directory
+        invariant [selected_blockers_pending] d.dstate_r ~= d.d_idle & ~d.cr_replacing
+            & d.selected_match & hw_dir_has(d.selected_entry,C)
+            & (d.cr_excl | hw_dir_exclusive(d.selected_entry) | C = d.cr_cpu)
+                -> d.inv_pending(C)
+            using physical_directory
+    }
+}
+}
+}
+
+# Use the proved packed-field interface, not its bit-vector implementation:
+# the representation proof needs field laws, not 61-bit address expansion.
+isolate directory_projection_proof = directory_projection, memory_system.cachemem.dir_body,
+    memory_system.cachemem.dir_body.wb_body
+    with memory_system.cachemem, cache_image, basis, addr_thy
+

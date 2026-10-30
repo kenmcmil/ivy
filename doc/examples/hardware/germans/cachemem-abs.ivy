@@ -1,0 +1,2953 @@
+#lang ivy1.8
+
+# Concrete two-cache memory subsystem with scalar CPU and DRAM beat ports.
+# Check: ivy_check cachemem-concrete.ivy
+# RTL: ivy_to_rtl cachemem-concrete.ivy (top memory_system).
+# Equivalence: normalize with cachemem-equivalence.ys, then rtlil_eqv cachemem-equivalence.ileq.
+# Upstream resets scalar registers with rst, but memories use power-on init.
+# This is not a full-system warm reset. mem_rdata is combinational.
+
+include numbers
+include german
+
+type key
+type word
+alias data = word
+type line
+type bit
+type bv2
+type idx
+type dir_way
+type dir_slot
+type dir_entry
+type dir_tag_bits
+
+
+type ch2typ
+type mshr_id
+
+type store_idx
+type load_idx
+
+type four_words
+
+# ---- a whole cache line: the unit the directory and the client trade.
+# Two `four_words` beats wide, but the channels never see the seam. ----
+type cache_line
+
+function pack4(W3 : word, W2 : word, W1 : word, W0 : word) : four_words
+function unp0(M : four_words) : word
+function unp1(M : four_words) : word
+function unp2(M : four_words) : word
+function unp3(M : four_words) : word
+function wsel4(M : four_words, J : bv2) : word
+function wins4(M : four_words, J : bv2, D : word) : four_words
+
+type addr
+
+specification {
+    function img(A : addr) : data
+}
+
+type woffset
+type way
+
+type cache_slot
+# ---- the line <-> beat bridge.  `lsel`/`lins` are the word-granular view a
+# cache needs; `lpack`/`lhi`/`llo` are the beat-granular view the memory
+# controller needs, and the select-of-pack properties in `data_impl` are the
+# only place the two meet. ----
+function lsel(L : cache_line, O : woffset) : word
+function lins(L : cache_line, O : woffset, D : word) : cache_line
+function lpack(HI : four_words, LO : four_words) : cache_line
+function lhi(L : cache_line) : four_words
+function llo(L : cache_line) : four_words
+
+
+# ---- control-state encodings.  Ivy enumerated types have no bit width
+# either; these are narrow bit vectors whose named values are declared as
+# 0-ary wires inside the isolate that uses them. ----
+type mstate
+type dstate
+type mkstate
+
+# ---- the queue index types.  A queue is a fixed-size array plus a head and
+# a tail pointer: `qidx` indexes the array, and `qptr` is ONE BIT WIDER so
+# that `tail - head` counts 0, 1 or 2 and an empty queue never aliases a
+# full one. Each cache owns separate depth-two queues for channels 1, 2 and 3.
+# Outgoing requests and acknowledgements enqueue independently in both caches;
+# the crossbar arbitrates their heads only when the directory consumes them.
+type qidx
+type qptr
+
+# ---- the array slot a pointer names.  `wire`, so `ivy_to_rtl` emits the
+# truncation rather than a call into the address theory. ----
+wire qi(P : qptr) : qidx
+
+# Copies of the above functions that can be synthesized to RTL. Kept separate
+# so that use does not pull in the adddress theory
+wire hw_pack4(W3 : word, W2 : word, W1 : word, W0 : word) : four_words
+wire hw_unp0(M : four_words) : word
+wire hw_unp1(M : four_words) : word
+wire hw_unp2(M : four_words) : word
+wire hw_unp3(M : four_words) : word
+wire hw_wsel4(M : four_words, J : bv2) : word
+wire hw_wins4(M : four_words, J : bv2, D : word) : four_words
+wire hw_lsel(L : cache_line, O : woffset) : word
+wire hw_lins(L : cache_line, O : woffset, D : word) : cache_line
+wire hw_lpack(HI : four_words, LO : four_words) : cache_line
+wire hw_lhi(L : cache_line) : four_words
+wire hw_llo(L : cache_line) : four_words
+wire hw_concatbv3(H : line, O : woffset) : addr
+wire hw_high(A : addr) : line
+wire hw_low(A : addr) : woffset
+wire hw_concatbv2(B : bit, J : bv2) : woffset
+wire hw_beat_of(O : woffset) : bit
+wire hw_boff2(O : woffset) : bv2
+wire hw_hash(H : line) : key
+wire hw_cidx(K : key, W : way) : cache_slot
+wire hw_dir_index(H : line) : idx
+wire hw_dir_cidx(I : idx, W : dir_way) : dir_slot
+wire hw_dir_pack(H : line, X : bv2, S : bv2) : dir_entry
+wire hw_dir_tag(E : dir_entry) : line
+wire hw_dir_high(H : line) : dir_tag_bits
+wire hw_dir_entry_high(E : dir_entry) : dir_tag_bits
+wire hw_dir_exclusives(E : dir_entry) : bv2
+wire hw_dir_sharers(E : dir_entry) : bv2
+wire hw_dir_valid(E : dir_entry) : bool
+wire hw_dir_has(E : dir_entry, C : bit) : bool
+wire hw_dir_exclusive(E : dir_entry) : bool
+wire hw_dir_add(E : dir_entry, C : bit) : dir_entry
+wire hw_dir_remove(E : dir_entry, C : bit) : dir_entry
+
+
+# ---- the narrow index types.  These are interpreted where every
+# isolate can see them: they are three and four bit wide, so a
+# quantifier over one costs the solver nothing, and both `data_impl`
+# and `addr_thy` below need the widths to line up their concatenations.
+# ----
+isolate basis = {
+    interpret key -> bv[3]
+    interpret bit -> bv[1]
+    interpret bv2 -> bv[2]
+    interpret ch2typ -> bv[2]
+    interpret mshr_id -> bv[1]
+    interpret store_idx -> bv[3]
+    interpret load_idx -> bv[3]
+    interpret cache_slot -> bv[4]
+    interpret idx -> bv[4]
+    interpret dir_way -> bv[2]
+    interpret dir_slot -> bv[6]
+    interpret mstate -> bv[2]
+    interpret dstate -> bv[2]
+    interpret mkstate -> bv[2]
+    interpret qidx -> bv[1]
+    interpret qptr -> bv[2]
+
+    definition qi(P) = bfe[0][0](P)
+}
+
+function concatbv3(H : line, O : woffset) : addr
+function high(A : addr) : line
+function low(A : addr) : woffset
+function concatbv2(B : bit, J : bv2) : woffset
+function beat_of(O : woffset) : bit
+function boff2(O : woffset) : bv2
+function hash(H : line) : key
+function cidx(K : key, W : way) : cache_slot
+function dir_index(H : line) : idx
+function dir_cidx(I : idx, W : dir_way) : dir_slot
+function dir_pack(H : line, X : bv2, S : bv2) : dir_entry
+function dir_tag(E : dir_entry) : line
+function dir_high(H : line) : dir_tag_bits
+function dir_entry_high(E : dir_entry) : dir_tag_bits
+function dir_entry_index(E : dir_entry) : idx
+function dir_exclusives(E : dir_entry) : bv2
+function dir_sharers(E : dir_entry) : bv2
+relation dir_valid(E : dir_entry)
+relation dir_has(E : dir_entry, C : bit)
+relation dir_exclusive(E : dir_entry)
+function dir_add(E : dir_entry, C : bit) : dir_entry
+function dir_remove(E : dir_entry, C : bit) : dir_entry
+
+
+
+isolate addr_thy = {
+    interpret woffset -> bv[3]
+    interpret way -> bv[1]
+    definition concatbv2(B, J) = B :: J
+
+    property [p_way2]  forall W : way. W = 0 | W = 1
+    property [p_way_ne] (0 : way) ~= (1 : way)
+    property [p_bit2]  forall B : bit. B = 0 | B = 1
+
+    property [p_boff_beat]  forall B : bit, J : bv2. beat_of(concatbv2(B, J)) = B
+    property [p_boff_word]  forall B : bit, J : bv2. boff2(concatbv2(B, J)) = J
+    property [p_cover] forall O : woffset, B : bit. beat_of(O) = B ->
+        (O = concatbv2(B, 0) | O = concatbv2(B, 1) | O = concatbv2(B, 2) | O = concatbv2(B, 3))
+    property [p_full_inj] forall H1 : line, O1 : woffset, H2 : line, O2 : woffset. (concatbv3(H1, O1) = concatbv3(H2, O2)) -> (H1 = H2 & O1 = O2)
+    property [p_highfull] forall H : line, O : woffset. high(concatbv3(H, O)) = H
+    property [p_lowfull]  forall H : line, O : woffset. low(concatbv3(H, O)) = O
+
+    property [p_hw_high] forall A : addr. hw_high(A) = high(A)
+    property [p_hw_low]  forall A : addr. hw_low(A) = low(A)
+    property [p_hw_cat3] forall H : line, O : woffset. hw_concatbv3(H, O) = concatbv3(H, O)
+    property [p_hw_cat2] forall B : bit, J : bv2. hw_concatbv2(B, J) = concatbv2(B, J)
+    property [p_hw_beat] forall O : woffset. hw_beat_of(O) = beat_of(O)
+    property [p_hw_boff] forall O : woffset. hw_boff2(O) = boff2(O)
+    property [p_hw_hash] forall H : line. hw_hash(H) = hash(H)
+    property [p_hw_cidx] forall K : key, W : way. hw_cidx(K, W) = cidx(K, W)
+    property[hw_cidx_inj] hw_cidx(K1, W1) = hw_cidx(K2, W2) -> (K1 = K2 & W1 = W2)
+    property [p_dir_way4] forall W : dir_way.
+        W = 0 | W = 1 | W = 2 | W = 3
+    property [p_dir_split_inj] forall H1 : line, H2 : line.
+        dir_index(H1) = dir_index(H2) & dir_high(H1) = dir_high(H2) ->
+        H1 = H2
+    property [p_hw_dir_index] forall H : line.
+        hw_dir_index(H) = dir_index(H)
+    property [p_hw_dir_cidx] forall I : idx, W : dir_way.
+        hw_dir_cidx(I, W) = dir_cidx(I, W)
+    property [p_hw_dir_pack] forall H : line, X : bv2, S : bv2.
+        hw_dir_pack(H, X, S) = dir_pack(H, X, S)
+    property [p_hw_dir_tag] forall E : dir_entry.
+        hw_dir_tag(E) = dir_tag(E)
+    property [p_hw_dir_high] forall H : line.
+        hw_dir_high(H) = dir_high(H)
+    property [p_hw_dir_entry_high] forall E : dir_entry.
+        hw_dir_entry_high(E) = dir_entry_high(E)
+    property [p_hw_dir_exclusives] forall E : dir_entry.
+        hw_dir_exclusives(E) = dir_exclusives(E)
+    property [p_hw_dir_sharers] forall E : dir_entry.
+        hw_dir_sharers(E) = dir_sharers(E)
+    property [p_hw_dir_valid] forall E : dir_entry.
+        hw_dir_valid(E) = dir_valid(E)
+    property [p_hw_dir_has] forall E : dir_entry, C : bit.
+        hw_dir_has(E, C) = dir_has(E, C)
+    property [p_hw_dir_exclusive] forall E : dir_entry.
+        hw_dir_exclusive(E) = dir_exclusive(E)
+    property [p_hw_dir_add] forall E : dir_entry, C : bit.
+        hw_dir_add(E, C) = dir_add(E, C)
+    property [p_hw_dir_remove] forall E : dir_entry, C : bit.
+        hw_dir_remove(E, C) = dir_remove(E, C)
+    property [p_dir_remove_high] forall E : dir_entry, C : bit.
+        dir_entry_high(dir_remove(E, C)) = dir_entry_high(E)
+    property [p_dir_remove_valid] forall E : dir_entry, C : bit.
+        dir_valid(dir_remove(E, C)) -> dir_valid(E)
+    # Field algebra for packed directory entries.
+    property [p_dir_empty] dir_sharers(0:dir_entry) = 0
+        & dir_exclusives(0:dir_entry) = 0
+    property [p_dir_pack_tag] forall H : line, X : bv2, S : bv2.
+        dir_tag(dir_pack(H, X, S)) = H
+    property [p_dir_pack_high] forall H : line, X : bv2, S : bv2.
+        dir_entry_high(dir_pack(H, X, S)) = dir_high(H)
+    property [p_dir_pack_x] forall H : line, X : bv2, S : bv2.
+        dir_exclusives(dir_pack(H, X, S)) = X
+    property [p_dir_pack_s] forall H : line, X : bv2, S : bv2.
+        dir_sharers(dir_pack(H, X, S)) = S
+    property [p_dir_add_tag] forall E : dir_entry, C : bit.
+        dir_tag(dir_add(E, C)) = dir_tag(E)
+    property [p_dir_add_high] forall E : dir_entry, C : bit.
+        dir_entry_high(dir_add(E, C)) = dir_entry_high(E)
+    property [p_dir_add_x] forall E : dir_entry, C : bit.
+        dir_exclusives(dir_add(E, C)) = dir_exclusives(E)
+    property [p_dir_add_s] forall E : dir_entry, C : bit.
+        dir_sharers(dir_add(E, C)) =
+            ((1 if dir_sharers(E) = 0 | dir_sharers(E) = 1 else 3)
+    if C = 0 else
+        (2 if dir_sharers(E) = 0 | dir_sharers(E) = 2 else 3))
+    property [p_dir_remove_tag] forall E : dir_entry, C : bit.
+        dir_tag(dir_remove(E, C)) = dir_tag(E)
+    property [p_dir_remove_x] forall E : dir_entry, C : bit.
+        dir_exclusives(dir_remove(E, C)) =
+            ((0 if dir_exclusives(E) = 0 | dir_exclusives(E) = 1 else 2)
+    if C = 0 else
+        (0 if dir_exclusives(E) = 0 | dir_exclusives(E) = 2 else 1))
+    property [p_dir_remove_s] forall E : dir_entry, C : bit.
+        dir_sharers(dir_remove(E, C)) =
+            ((0 if dir_sharers(E) = 0 | dir_sharers(E) = 1 else 2)
+    if C = 0 else
+        (0 if dir_sharers(E) = 0 | dir_sharers(E) = 2 else 1))
+    property [p_dir_tag_high] forall E : dir_entry.
+        dir_high(dir_tag(E)) = dir_entry_high(E)
+    property [p_dir_tag_index] forall E : dir_entry.
+        dir_index(dir_tag(E)) = dir_entry_index(E)
+    property [p_dir_pack_index] forall H : line, X : bv2, S : bv2.
+        dir_entry_index(dir_pack(H, X, S)) = dir_index(H)
+    property [p_dir_add_index] forall E : dir_entry, C : bit.
+        dir_entry_index(dir_add(E, C)) = dir_entry_index(E)
+    property [p_dir_remove_index] forall E : dir_entry, C : bit.
+        dir_entry_index(dir_remove(E, C)) = dir_entry_index(E)
+
+
+    # Pack set and way directly into four bits. Both index types are already
+    # interpreted; this avoids a quantified injectivity axiom over slot pairs.
+    definition cidx(K, W) = K :: W
+
+    definition dir_cidx(I, W) = I :: W
+    definition dir_valid(E) = dir_sharers(E) ~= 0
+    definition dir_has(E, C) =
+        ((dir_sharers(E) = 1 | dir_sharers(E) = 3) if C = 0
+         else (dir_sharers(E) = 2 | dir_sharers(E) = 3))
+    definition dir_exclusive(E) = dir_exclusives(E) ~= 0
+
+
+    object impl = {
+        interpret addr -> bv[64]
+        interpret line -> bv[61]
+        interpret dir_entry -> bv[65]
+        interpret dir_tag_bits -> bv[57]
+        definition dir_index(H) = bfe[0][3](H)
+        definition dir_pack(H, X, S) = H :: X :: S
+        definition dir_tag(E) = bfe[4][64](E)
+        definition dir_high(H) = bfe[4][60](H)
+        definition dir_entry_high(E) = bfe[8][64](E)
+        definition dir_entry_index(E) = bfe[4][7](E)
+        definition dir_exclusives(E) = bfe[2][3](E)
+        definition dir_sharers(E) = bfe[0][1](E)
+        definition dir_add(E, C) =
+            dir_pack(dir_tag(E), dir_exclusives(E),
+                ((1 if dir_sharers(E) = 0 | dir_sharers(E) = 1 else 3)
+        if C = 0
+            else (2 if dir_sharers(E) = 0 | dir_sharers(E) = 2 else 3)))
+        definition dir_remove(E, C) =
+            dir_pack(dir_tag(E),
+                ((0 if dir_exclusives(E) = 0 | dir_exclusives(E) = 1 else 2)
+        if C = 0
+            else (0 if dir_exclusives(E) = 0 | dir_exclusives(E) = 2 else 1)),
+            ((0 if dir_sharers(E) = 0 | dir_sharers(E) = 1 else 2)
+        if C = 0
+            else (0 if dir_sharers(E) = 0 | dir_sharers(E) = 2 else 1)))
+        # (`cache_slot` is interpreted in `basis`, beside `key` and `way`)
+        definition high(A) = bfe[3][63](A)
+        definition low(A) = bfe[0][2](A)
+        definition concatbv3(H, O) = H :: O
+
+        property [p_recon] forall A : addr. concatbv3(high(A), low(A)) = A
+
+        definition hash(H) = bfe[0][2](H)
+        definition beat_of(O) = bfe[2][2](O)
+        definition boff2(O)   = bfe[0][1](O)
+        definition hw_high(A) = bfe[3][63](A)
+        definition hw_low(A)  = bfe[0][2](A)
+        definition hw_concatbv3(H, O) = H :: O
+        definition hw_concatbv2(B, J) = B :: J
+        definition hw_beat_of(O) = bfe[2][2](O)
+        definition hw_boff2(O)   = bfe[0][1](O)
+        definition hw_hash(H)    = bfe[0][2](H)
+        definition hw_cidx(K, W) = K :: W
+        definition hw_dir_index(H) = bfe[0][3](H)
+        definition hw_dir_cidx(I, W) = I :: W
+        definition hw_dir_pack(H, X, S) = H :: X :: S
+        definition hw_dir_tag(E) = bfe[4][64](E)
+        definition hw_dir_high(H) = bfe[4][60](H)
+        definition hw_dir_entry_high(E) = bfe[8][64](E)
+        definition hw_dir_exclusives(E) = bfe[2][3](E)
+        definition hw_dir_sharers(E) = bfe[0][1](E)
+        definition hw_dir_valid(E) = hw_dir_sharers(E) ~= 0
+        definition hw_dir_has(E, C) =
+            ((hw_dir_sharers(E) = 1 | hw_dir_sharers(E) = 3) if C = 0
+             else (hw_dir_sharers(E) = 2 | hw_dir_sharers(E) = 3))
+        definition hw_dir_exclusive(E) = hw_dir_exclusives(E) ~= 0
+        definition hw_dir_add(E, C) =
+            hw_dir_pack(hw_dir_tag(E), hw_dir_exclusives(E),
+                ((1 if hw_dir_sharers(E) = 0 | hw_dir_sharers(E) = 1 else 3)
+        if C = 0
+            else (2 if hw_dir_sharers(E) = 0 | hw_dir_sharers(E) = 2 else 3)))
+        definition hw_dir_remove(E, C) =
+            hw_dir_pack(hw_dir_tag(E),
+                ((0 if hw_dir_exclusives(E) = 0 | hw_dir_exclusives(E) = 1 else 2)
+        if C = 0
+            else (0 if hw_dir_exclusives(E) = 0 | hw_dir_exclusives(E) = 2 else 1)),
+            ((0 if hw_dir_sharers(E) = 0 | hw_dir_sharers(E) = 1 else 2)
+        if C = 0
+            else (0 if hw_dir_sharers(E) = 0 | hw_dir_sharers(E) = 2 else 1)))
+    }
+} with basis
+
+isolate data_impl = {
+    property [p_unp0] forall W3 : word, W2 : word, W1 : word, W0 : word. unp0(pack4(W3, W2, W1, W0)) = W0
+    property [p_unp1] forall W3 : word, W2 : word, W1 : word, W0 : word. unp1(pack4(W3, W2, W1, W0)) = W1
+    property [p_unp2] forall W3 : word, W2 : word, W1 : word, W0 : word. unp2(pack4(W3, W2, W1, W0)) = W2
+    property [p_unp3] forall W3 : word, W2 : word, W1 : word, W0 : word. unp3(pack4(W3, W2, W1, W0)) = W3
+
+    # ---- the dynamic view of the same four positions.  `bv2` has four
+    # values and they are enumerated here, so a caller that knows which
+    # word it wants gets the static accessor back and one that does not
+    # reasons with `p_wins_hit`/`p_wins_miss` alone. ----
+    property [p_wsel0] forall M : four_words. wsel4(M, 0) = unp0(M)
+    property [p_wsel1] forall M : four_words. wsel4(M, 1) = unp1(M)
+    property [p_wsel2] forall M : four_words. wsel4(M, 2) = unp2(M)
+    property [p_wsel3] forall M : four_words. wsel4(M, 3) = unp3(M)
+    property [p_wins_hit] forall M : four_words, J : bv2, D : word.
+        wsel4(wins4(M, J, D), J) = D
+    property [p_wins_miss] forall M : four_words, J1 : bv2, J2 : bv2, D : word.
+        J1 ~= J2 -> wsel4(wins4(M, J1, D), J2) = wsel4(M, J2)
+    property [p_hw_pack4] forall W3 : word, W2 : word, W1 : word, W0 : word.
+        hw_pack4(W3, W2, W1, W0) = pack4(W3, W2, W1, W0)
+    property [p_hw_unp0] forall M : four_words. hw_unp0(M) = unp0(M)
+    property [p_hw_unp1] forall M : four_words. hw_unp1(M) = unp1(M)
+    property [p_hw_unp2] forall M : four_words. hw_unp2(M) = unp2(M)
+    property [p_hw_unp3] forall M : four_words. hw_unp3(M) = unp3(M)
+    property [p_hw_wsel4] forall M : four_words, J : bv2. hw_wsel4(M, J) = wsel4(M, J)
+    property [p_hw_wins4] forall M : four_words, J : bv2, D : word.
+        hw_wins4(M, J, D) = wins4(M, J, D)
+
+    # ---- line <-> beat laws. Packing and projection provide both
+    # exact whole-line reconstruction and word-selection views.
+    # Word-level laws use concatbv2(B,J) so callers do not need
+    # beat_of/boff2 round trips. Whole-line transport uses the
+    # pack/projection equalities without expanding payload bits. ----
+    property [p_lpack_lo] forall HI : four_words, LO : four_words, J : bv2.
+        lsel(lpack(HI, LO), concatbv2(0, J)) = wsel4(LO, J)
+    property [p_lpack_hi] forall HI : four_words, LO : four_words, J : bv2.
+        lsel(lpack(HI, LO), concatbv2(1, J)) = wsel4(HI, J)
+    property [p_llo] forall L : cache_line, J : bv2.
+        wsel4(llo(L), J) = lsel(L, concatbv2(0, J))
+    property [p_lhi] forall L : cache_line, J : bv2.
+        wsel4(lhi(L), J) = lsel(L, concatbv2(1, J))
+    property [p_lins_hit] forall L : cache_line, O : woffset, D : word.
+        lsel(lins(L, O, D), O) = D
+    property [p_lins_miss] forall L : cache_line, O1 : woffset, O2 : woffset, D : word.
+        O1 ~= O2 -> lsel(lins(L, O1, D), O2) = lsel(L, O2)
+    property [p_lpack_llo] forall HI : four_words, LO : four_words.
+        llo(lpack(HI,LO)) = LO
+    property [p_lpack_lhi] forall HI : four_words, LO : four_words.
+        lhi(lpack(HI,LO)) = HI
+    property [p_lpack_parts] forall L : cache_line. lpack(lhi(L),llo(L)) = L
+    property [p_hw_lsel] forall L : cache_line, O : woffset. hw_lsel(L, O) = lsel(L, O)
+    property [p_hw_lins] forall L : cache_line, O : woffset, D : word.
+        hw_lins(L, O, D) = lins(L, O, D)
+    property [p_hw_lpack] forall HI : four_words, LO : four_words.
+        hw_lpack(HI, LO) = lpack(HI, LO)
+    property [p_hw_lhi] forall L : cache_line. hw_lhi(L) = lhi(L)
+    property [p_hw_llo] forall L : cache_line. hw_llo(L) = llo(L)
+
+    object impl = {
+        interpret word -> bv[64]
+        interpret four_words -> bv[256]
+        interpret cache_line -> bv[512]
+        definition pack4(W3, W2, W1, W0) = W3 :: W2 :: W1 :: W0
+        definition unp0(M) = bfe[0][63](M)
+        definition unp1(M) = bfe[64][127](M)
+        definition unp2(M) = bfe[128][191](M)
+        definition unp3(M) = bfe[192][255](M)
+        definition wsel4(M, J) = (unp0(M) if J = 0 else
+                                 (unp1(M) if J = 1 else
+                                 (unp2(M) if J = 2 else unp3(M))))
+        definition wins4(M, J, D) =
+            (pack4(unp3(M), unp2(M), unp1(M), D) if J = 0 else
+            (pack4(unp3(M), unp2(M), D, unp0(M)) if J = 1 else
+            (pack4(unp3(M), D, unp1(M), unp0(M)) if J = 2 else
+             pack4(D, unp2(M), unp1(M), unp0(M)))))
+        definition hw_pack4(W3, W2, W1, W0) = W3 :: W2 :: W1 :: W0
+        definition hw_unp0(M) = bfe[0][63](M)
+        definition hw_unp1(M) = bfe[64][127](M)
+        definition hw_unp2(M) = bfe[128][191](M)
+        definition hw_unp3(M) = bfe[192][255](M)
+        definition hw_wsel4(M, J) = (hw_unp0(M) if J = 0 else
+                                    (hw_unp1(M) if J = 1 else
+                                    (hw_unp2(M) if J = 2 else hw_unp3(M))))
+        definition hw_wins4(M, J, D) =
+            (hw_pack4(hw_unp3(M), hw_unp2(M), hw_unp1(M), D) if J = 0 else
+            (hw_pack4(hw_unp3(M), hw_unp2(M), D, hw_unp0(M)) if J = 1 else
+            (hw_pack4(hw_unp3(M), D, hw_unp1(M), hw_unp0(M)) if J = 2 else
+             hw_pack4(D, hw_unp2(M), hw_unp1(M), hw_unp0(M)))))
+
+        # ---- a line is its two beats, high first.  Every line operation is
+        # routed through `wsel4`/`wins4` on the selected half rather than
+        # through a fresh 512-bit case split, which is what keeps the six
+        # properties above provable in seconds. ----
+        definition lpack(HI, LO) = HI :: LO
+        definition llo(L) = bfe[0][255](L)
+        definition lhi(L) = bfe[256][511](L)
+        definition lsel(L, O) = (wsel4(llo(L), boff2(O)) if beat_of(O) = 0
+                                 else wsel4(lhi(L), boff2(O)))
+        definition lins(L, O, D) =
+            (lpack(lhi(L), wins4(llo(L), boff2(O), D)) if beat_of(O) = 0
+             else lpack(wins4(lhi(L), boff2(O), D), llo(L)))
+        definition hw_lpack(HI, LO) = HI :: LO
+        definition hw_llo(L) = bfe[0][255](L)
+        definition hw_lhi(L) = bfe[256][511](L)
+        definition hw_lsel(L, O) = (hw_wsel4(hw_llo(L), hw_boff2(O)) if hw_beat_of(O) = 0
+                                    else hw_wsel4(hw_lhi(L), hw_boff2(O)))
+        definition hw_lins(L, O, D) =
+            (hw_lpack(hw_lhi(L), hw_wins4(hw_llo(L), hw_boff2(O), D)) if hw_beat_of(O) = 0
+             else hw_lpack(hw_wins4(hw_lhi(L), hw_boff2(O), D), hw_llo(L)))
+    }
+} with basis, addr_thy
+
+
+export action posedge
+
+specification {
+    object cache_image = {
+        wire write_en(C : bit) : bool
+        wire write_line(C : bit) : line
+        wire write_o(C : bit) : woffset
+        wire write_d(C : bit) : word
+
+        definition write_en(C) =
+            (memory_system.cachemem.cache0_body.store_en if C = 0
+             else memory_system.cachemem.cache1_body.store_en)
+        definition write_line(C) =
+            ((memory_system.cachemem.cache0_body.p_h
+              if memory_system.cachemem.cache0_body.stage_go
+              else memory_system.cachemem.cache0_body.m_base(memory_system.cachemem.cache0_body.grant_id))
+             if C = 0 else
+             (memory_system.cachemem.cache1_body.p_h
+              if memory_system.cachemem.cache1_body.stage_go
+              else memory_system.cachemem.cache1_body.m_base(memory_system.cachemem.cache1_body.grant_id)))
+        definition write_o(C) =
+            (memory_system.cachemem.cache0_body.store_o if C = 0
+             else memory_system.cachemem.cache1_body.store_o)
+        definition write_d(C) =
+            (memory_system.cachemem.cache0_body.store_d if C = 0
+             else memory_system.cachemem.cache1_body.store_d)
+
+        action image_step = {
+            img(A) := (write_d(1) if write_en(1)
+                & A = concatbv3(write_line(1),write_o(1)) else
+                (write_d(0) if write_en(0)
+                & A = concatbv3(write_line(0),write_o(0)) else img(A)));
+        }
+        mixin image_step after posedge
+    }
+}
+
+instantiate abs_prot : abs(bit, line)
+
+# Cache/memory subsystem with explicit hardware interfaces.
+# Named clock mixins retain instance ownership when tick is substituted.
+module isolate cachemem_unit(tick)
+    with basis, cache_image, dir_body.clock, dir_body.clock_step = {
+    # Capture this instance for qualified references in nested components.
+    alias cachemem = this
+
+    # ---- the memory-side port, carried out to the top of the design ----
+    wire mem_rd_en   : bool
+    wire mem_rd_addr : addr
+    wire mem_wr_en   : bool
+    wire mem_wr_addr : addr
+    wire mem_wr_data : four_words
+    wire mem_rdata   : four_words
+
+    # Scalar ports at object boundaries keep upstream RTL wiring explicit.
+    wire cpu0_req_en : bool
+    wire cpu0_req_h : line
+    wire cpu0_req_o : woffset
+    wire cpu0_req_wen : bool
+    wire cpu0_req_wdata : word
+    wire cpu0_load_slot : load_idx
+    wire cpu0_store_slot : store_idx
+    wire cpu1_req_en : bool
+    wire cpu1_req_h : line
+    wire cpu1_req_o : woffset
+    wire cpu1_req_wen : bool
+    wire cpu1_req_wdata : word
+    wire cpu1_load_slot : load_idx
+    wire cpu1_store_slot : store_idx
+
+    wire cpu0_ready : bool
+    wire cpu0_resp_valid : bool
+    wire cpu0_resp_h : line
+    wire cpu0_resp_o : woffset
+    wire cpu0_resp_data : word
+    wire cpu0_resp_idx : load_idx
+    wire cpu0_store_ack_valid : bool
+    wire cpu0_store_ack_idx : store_idx
+    wire cpu0_store_ack_data : word
+    wire cpu1_ready : bool
+    wire cpu1_resp_valid : bool
+    wire cpu1_resp_h : line
+    wire cpu1_resp_o : woffset
+    wire cpu1_resp_data : word
+    wire cpu1_resp_idx : load_idx
+    wire cpu1_store_ack_valid : bool
+    wire cpu1_store_ack_idx : store_idx
+    wire cpu1_store_ack_data : word
+
+    definition lsq_to_cache_req_en(C) = (cpu0_req_en if C = 0 else cpu1_req_en)
+    definition lsq_to_cache_req_h(C) = (cpu0_req_h if C = 0 else cpu1_req_h)
+    definition lsq_to_cache_req_o(C) = (cpu0_req_o if C = 0 else cpu1_req_o)
+    definition lsq_to_cache_req_wen(C) = (cpu0_req_wen if C = 0 else cpu1_req_wen)
+    definition lsq_to_cache_req_wdata(C) = (cpu0_req_wdata if C = 0 else cpu1_req_wdata)
+    definition lsq_to_cache_req_idx(C) = (cpu0_load_slot if C = 0 else cpu1_load_slot)
+    definition lsq_to_cache_req_sidx(C) = (cpu0_store_slot if C = 0 else cpu1_store_slot)
+
+    definition cpu0_ready = cache_to_lsq_creq_ready(0)
+    definition cpu0_resp_valid = cache_to_lsq_resp_valid(0)
+    definition cpu0_resp_h = cache_to_lsq_resp_h(0)
+    definition cpu0_resp_o = cache_to_lsq_resp_o(0)
+    definition cpu0_resp_data = cache_to_lsq_resp_data(0)
+    definition cpu0_resp_idx = cache_to_lsq_resp_idx(0)
+    definition cpu0_store_ack_valid = cache_to_lsq_store_ack_valid(0)
+    definition cpu0_store_ack_idx = cache_to_lsq_store_ack_idx(0)
+    definition cpu0_store_ack_data = cache_to_lsq_store_ack_data(0)
+    definition cpu1_ready = cache_to_lsq_creq_ready(1)
+    definition cpu1_resp_valid = cache_to_lsq_resp_valid(1)
+    definition cpu1_resp_h = cache_to_lsq_resp_h(1)
+    definition cpu1_resp_o = cache_to_lsq_resp_o(1)
+    definition cpu1_resp_data = cache_to_lsq_resp_data(1)
+    definition cpu1_resp_idx = cache_to_lsq_resp_idx(1)
+    definition cpu1_store_ack_valid = cache_to_lsq_store_ack_valid(1)
+    definition cpu1_store_ack_idx = cache_to_lsq_store_ack_idx(1)
+    definition cpu1_store_ack_data = cache_to_lsq_store_ack_data(1)
+
+    # CPU-indexed LSQ request and response channels.
+    wire lsq_to_cache_req_en(C : bit)     : bool
+    wire lsq_to_cache_req_h(C : bit)      : line
+    wire lsq_to_cache_req_o(C : bit)      : woffset
+    wire lsq_to_cache_req_wen(C : bit)    : bool
+    wire lsq_to_cache_req_wdata(C : bit)  : word
+    wire lsq_to_cache_req_idx(C : bit)    : load_idx
+    wire lsq_to_cache_req_sidx(C : bit)   : store_idx
+    wire cache_to_lsq_creq_ready(C : bit) : bool
+    wire cache_to_lsq_resp_valid(C : bit) : bool
+    wire cache_to_lsq_resp_h(C : bit) : line
+    wire cache_to_lsq_resp_o(C : bit) : woffset
+    wire cache_to_lsq_resp_data(C : bit) : word
+    wire cache_to_lsq_resp_idx(C : bit) : load_idx
+    wire cache_to_lsq_store_ack_valid(C : bit) : bool
+    wire cache_to_lsq_store_ack_idx(C : bit) : store_idx
+    wire cache_to_lsq_store_ack_data(C : bit) : word
+
+
+
+    # ==================================================================
+    # The ARBITRATED bus between the crossbar and the directory.  ONE set
+    # per channel, because the directory has one set per channel now:
+    # `xbar_body` arbitrates channels 1 and 3 -- the contended direction,
+    # two caches and one directory -- and ROUTES channel 2, which is
+    # directory-driven.
+    #
+    # `x_src` identifies the held channel-3 head. Channel 1 has its own
+    # selector, xbar_body.req_cpu, so requests do not share the writeback lock.
+    # ==================================================================
+    wire x_src           : bit
+    wire x_req_en        : bool
+    wire x_req_line      : line
+    wire x_req_excl      : bool
+    wire x_ack_en        : bool
+    wire x_ack_line      : line
+    wire x_ack_dty       : bool
+    wire x_ack_dat       : cache_line
+    # Each cache accepts into its own channel-3 FIFO. Directory retirement
+    # pops only the selected head after the complete writeback.
+    wire x_ch2_msg_valid : bool
+    wire x_ch2_msg_typ   : ch2typ
+    wire x_ch2_msg_cpu   : bit
+    wire x_ch2_msg_line  : line
+    wire x_ch2_msg_data  : cache_line
+    wire x_ch2_msg_taken : bool
+
+    # ---- channel 2's three kinds, named once at THIS level so the
+    # directory that drives them and the decode that reads them cannot
+    # disagree. ----
+    wire ch2_gsh : ch2typ        # grant, Shared
+    wire ch2_gex : ch2typ        # grant, Exclusive
+    wire ch2_inv : ch2typ        # invalidate
+
+
+    # Per-CPU cache: 8 sets x 2 ways, 2 MSHRs, whole-line data.
+    module cache_unit(cpu_ : bit) = {
+        # Literal CPU arguments need a typed wire in mux comparisons.
+        wire cpu_id : bit
+        definition cpu_id = cpu_
+
+        # ---- LSQ request channel: the request comes from the LSQ, the
+        # ready is driven here. Load/store indices are opaque identities
+        # carried through the stage/MSHR and returned on completion. ----
+        wire lsq_to_cache_req_en     : bool
+        wire lsq_to_cache_req_h      : line
+        wire lsq_to_cache_req_o      : woffset
+        wire lsq_to_cache_req_wen    : bool
+        wire lsq_to_cache_req_wdata  : word
+        wire lsq_to_cache_req_idx    : load_idx
+        wire lsq_to_cache_req_sidx   : store_idx
+        wire cache_to_lsq_creq_ready : bool
+
+        # ---- LSQ response channel: all driven here ----
+        wire cache_to_lsq_resp_valid : bool
+        wire cache_to_lsq_resp_h     : line
+        wire cache_to_lsq_resp_o     : woffset
+        wire cache_to_lsq_resp_data  : word
+        wire cache_to_lsq_resp_idx   : load_idx
+        # Store completion from the stage/MSHR commit mux.
+        wire cache_to_lsq_store_ack_valid : bool
+        wire cache_to_lsq_store_ack_idx : store_idx
+        wire cache_to_lsq_store_ack_data : word
+
+        # ---- the ports this cache drives on the directory side ----
+        wire req_en    : bool
+        wire req_line  : line
+        wire req_excl  : bool
+        wire ch2_msg_taken : bool
+        wire ch2_pop : bool
+        wire inv_taken : bool
+        # ---- channel 2's queue, seen from outside: `empty` is what the
+        # directory waits on before it sends a grant, and `has_grant` with
+        # its payload is what `process_ch2` produced this edge. ----
+        wire ch2_empty   : bool
+        wire has_grant   : bool
+        wire grant_excl  : bool
+
+        # Channel-3 producer holding slot.
+        wire ack_en    : bool
+        wire ack_line  : line
+        wire ack_dty   : bool
+        wire ack_dat   : cache_line
+
+
+        # Combinational store completion and producer-slot events.
+        wire store_en : bool
+        wire store_o : woffset
+        wire store_d : word
+        wire give_en : bool
+
+            # ---- the MSHR's control states.  An enumeration has no bit
+            # width, so these are narrow bit vectors and the names are
+            # 0-ary wires. ----
+            wire m_idle  : mstate
+            wire m_req   : mstate
+            wire m_wait  : mstate
+            wire m_evict : mstate
+            definition m_idle  = 0
+            definition m_req   = 1
+            definition m_wait  = 2
+            definition m_evict = 3
+
+        specification {
+            derived invariant [port_safety_ch2] ch2_pop -> ~ch2_empty
+                using * - *
+        }
+
+        implementation {
+            after init {
+                tag_occ(S) := false; tag_dty(S) := false; tag_exc(S) := false; tag_ln(S) := 0;
+                tag_reserved(S) := false;
+                set_lru(K) := 0; dat(S) := 0;
+                m_state(M) := 0; m_base(M) := 0; m_excl(M) := false;
+                m_vway(M) := 0; mvline(M) := 0;
+                rq_off(M) := 0; rq_wen(M) := false;
+                rq_wdata(M) := 0; rq_idx(M) := 0;
+                rq_sidx(M) := 0;
+                p_valid := false; p_h := 0; p_o := 0; p_wen := false;
+                p_wdata := 0; p_idx := 0;
+                p_sidx := 0;
+                ev_ans := false; ev_ans_h := 0; ev_ans_o := 0;
+                ev_ans_d := 0; ev_ans_idx := 0;
+                ack_pending_valid := false;
+                ack_pending_line := 0; ack_pending_dirty := false; ack_pending_data := 0;
+            }
+
+            wire stage_go : bool
+            wire grant_id : mshr_id
+
+            # Scalar inputs bound by the parent at each physical cache.
+            wire req_taken : bool
+            wire ack_taken : bool
+            wire ch2_msg_valid : bool
+            wire ch2_msg_typ : ch2typ
+            wire ch2_msg_line : line
+            wire ch2_msg_data : cache_line
+
+            # ==========================================================
+            # The array.  One memory per former struct field, indexed by
+            # the packed (set, way) slot -- an RTLIL memory is
+            # one-dimensional and a struct sort has no bit width.  The
+            # data is ONE whole line per slot now: a fill writes it in a
+            # single edge, so there is nothing left for the beat split to
+            # buy.
+            #
+            # `set_lru` is ONE bit per set, not one per way: per way it
+            # took two writes to the same memory on every hit, which the
+            # translator merges into a single port.
+            # ==========================================================
+            # Reservations belong to active MSHRs, independently of whether
+            # the old victim is still valid. They survive eviction and are
+            # released by atomic grant completion or a full-system reset.
+            var tag_occ(S : cache_slot) : bool
+            var tag_reserved(S : cache_slot) : bool
+            var tag_dty(S : cache_slot) : bool
+            var tag_exc(S : cache_slot) : bool
+            var tag_ln(S : cache_slot)  : line
+            var set_lru(K : key)        : bit
+            var dat(S : cache_slot)     : cache_line
+
+            # Two indexed MSHRs share the cache array's single write port.
+            var m_state(M : mshr_id) : mstate
+            var m_base(M : mshr_id)  : line
+            var m_excl(M : mshr_id)  : bool
+            var m_vway(M : mshr_id)  : way
+            # Saved victim tags feed the hardware eviction acknowledgement.
+            var mvline(M : mshr_id) : line
+            var rq_off(M : mshr_id)   : woffset
+            var rq_wen(M : mshr_id)   : bool
+            var rq_wdata(M : mshr_id) : word
+            var rq_idx(M : mshr_id)   : load_idx
+            var rq_sidx(M : mshr_id)  : store_idx
+
+            # ---- the input stage.  ALL requests pass through it. ----
+            var p_valid : bool
+            var p_h     : line
+            var p_o     : woffset
+            var p_wen   : bool
+            var p_wdata : word
+            var p_idx   : load_idx
+            var p_sidx  : store_idx
+
+            var ev_ans     : bool
+            var ev_ans_h   : line
+            var ev_ans_o   : woffset
+            var ev_ans_d   : word
+            var ev_ans_idx : load_idx
+
+            # Channel-3 producer registers hold the payload until accepted.
+            var ack_pending_valid : bool
+            var ack_pending_line : line
+            var ack_pending_dirty : bool
+            var ack_pending_data : cache_line
+
+
+            # ==========================================================
+            # `process_ch2`.
+            #
+            # One message leaves the queue per edge and the whole of it is
+            # combinational: `has_grant` and `process_ch2_inval` are the
+            # two decodes of the head, exclusive because a head has one
+            # kind, and they are what the rest of the cache reads instead
+            # of a channel-2 port.
+            #
+            # `must_inval_ch2` IS the channel-3 holding slot.  A popped
+            # invalidate has to be answerable on the edge it is popped --
+            # its reply is latched and the copy dropped at the same time --
+            # so no message is taken while that slot is occupied.
+            # `ack_pending_line`/`ack_pending_dirty`/`ack_pending_data` are the plan's
+            # `inval_ch2_data*`: the slot already existed for evictions
+            # and self-downgrades and a second one would only have to be
+            # arbitrated against it.
+            #
+            # A grant is popped only when an MSHR is waiting for exactly
+            # it.  Otherwise possession would be taken and then dropped
+            # with the home still recording this cache as a sharer.
+            # Holding the head instead costs liveness in a case the
+            # protocol cannot produce -- a grant answers a request -- and
+            # costs nothing in safety.
+            # ==========================================================
+            wire q2h_typ  : ch2typ
+            wire q2h_line : line
+            wire q2h_dat  : cache_line
+            definition q2h_typ  = ch2_body.out_typ
+            definition q2h_line = ch2_body.out_line
+            definition q2h_dat  = ch2_body.out_dat
+
+            wire must_inval_ch2 : bool
+            definition must_inval_ch2 = ack_pending_valid
+
+            wire g_match(M : mshr_id) : bool
+            definition g_match(M) = m_state(M) = m_wait & m_base(M) = q2h_line
+                & (~rq_wen(M) | q2h_typ = ch2_gex)
+
+            wire process_ch2_inval : bool
+            definition has_grant = ~must_inval_ch2 & ~ch2_empty 
+                & q2h_typ ~= ch2_inv & (g_match(0) | g_match(1))
+            definition process_ch2_inval = ~must_inval_ch2 & ~ch2_empty
+                & q2h_typ = ch2_inv
+            definition ch2_pop = has_grant | process_ch2_inval
+            definition grant_excl = (q2h_typ = ch2_gex)
+
+
+            # ==========================================================
+            # The channel-2 head has priority over eviction and the input
+            # stage. A grant installs its line and completes its one saved
+            # request on the same edge, using the sole array/response port.
+            # Pending evictions outrank new stage work so a stream of hits
+            # cannot prevent an allocated miss from reaching the directory.
+            # ==========================================================
+            # ---- presence and permission are separate.  Loads hit any
+            # resident copy; stores hit only an Exclusive copy. ----
+            wire p_present : bool
+            wire p_hit     : bool
+            wire p_hway    : way
+            wire p_hexcl   : bool
+            wire p_slot    : cache_slot
+            definition p_present =
+                  (tag_occ(hw_cidx(hw_hash(p_h), 1)) & tag_ln(hw_cidx(hw_hash(p_h), 1)) = p_h)
+                | (tag_occ(hw_cidx(hw_hash(p_h), 0)) & tag_ln(hw_cidx(hw_hash(p_h), 0)) = p_h)
+            definition p_hway =
+                (1 if (tag_occ(hw_cidx(hw_hash(p_h), 1))
+                       & tag_ln(hw_cidx(hw_hash(p_h), 1)) = p_h) else 0)
+            definition p_slot = hw_cidx(hw_hash(p_h), p_hway)
+            definition p_hexcl = p_present & tag_exc(p_slot)
+            definition p_hit = p_present & (~p_wen | p_hexcl)
+            wire p_vway : way
+            wire p_vslot : cache_slot
+            # Upgrades reserve the existing Shared entry. Capacity misses
+            # prefer an empty unreserved way, then an unreserved victim.
+            definition p_vway = (p_hway if p_present else
+                (1 if ~tag_reserved(hw_cidx(hw_hash(p_h), 1))
+                      & ~tag_occ(hw_cidx(hw_hash(p_h), 1)) else
+                (0 if ~tag_reserved(hw_cidx(hw_hash(p_h), 0))
+                      & ~tag_occ(hw_cidx(hw_hash(p_h), 0)) else
+                (0 if tag_reserved(hw_cidx(hw_hash(p_h), 1)) else
+                (1 if tag_reserved(hw_cidx(hw_hash(p_h), 0)) else
+                (0 if set_lru(hw_hash(p_h)) = 1 else 1))))))
+            definition p_vslot = hw_cidx(hw_hash(p_h), p_vway)
+            wire evict_en : bool
+            wire evict_id : mshr_id
+
+            # Invalidates surrender only resident lines. An MSHR has no
+            # post-grant ownership window: it is already complete when
+            # the invalidate behind its grant reaches the queue head.
+            wire inv_hit    : bool
+            wire inv_hway   : way
+            wire inv_slot   : cache_slot
+            wire inv_act    : bool
+            definition inv_hit =
+                  (tag_occ(hw_cidx(hw_hash(q2h_line), 1)) & tag_ln(hw_cidx(hw_hash(q2h_line), 1)) = q2h_line)
+                | (tag_occ(hw_cidx(hw_hash(q2h_line), 0)) & tag_ln(hw_cidx(hw_hash(q2h_line), 0)) = q2h_line)
+            definition inv_hway =
+                (1 if (tag_occ(hw_cidx(hw_hash(q2h_line), 1))
+                       & tag_ln(hw_cidx(hw_hash(q2h_line), 1)) = q2h_line) else 0)
+            definition inv_slot = hw_cidx(hw_hash(q2h_line), inv_hway)
+            # ---- a popped invalidate is ANSWERED only if the line is
+            # here. A prior eviction may already have removed the copy,
+            # so its surrender is already in flight to the home. The pop
+            # still happens: the message is consumed either way. ----
+            definition inv_act = process_ch2_inval & inv_hit
+            definition inv_taken = inv_act
+
+            # A miss reserves its destination before it can issue. Hits
+            # keep the existing stage path; they never claim a reservation.
+            definition grant_id = (0 if g_match(0) else 1)
+            definition stage_go = p_valid
+                & ~has_grant & ~process_ch2_inval
+                & ~(m_state(0) ~= m_idle & m_base(0) = p_h)
+                & ~(m_state(1) ~= m_idle & m_base(1) = p_h)
+                & m_state(0) ~= m_evict & m_state(1) ~= m_evict
+                & (m_state(0) = m_idle | m_state(1) = m_idle)
+                & (p_hit | ~tag_reserved(p_vslot))
+            definition evict_en = ~has_grant & ~process_ch2_inval
+                & (m_state(0) = m_evict | m_state(1) = m_evict)
+            definition evict_id = (0 if m_state(0) = m_evict else 1)
+
+            # ---- the victim slot each MSHR is aiming at ----
+            wire v(M : mshr_id) : cache_slot
+            definition v(M) = hw_cidx(hw_hash(m_base(M)), m_vway(M))
+
+            # Channel 3 carries invalidation replies and pre-request
+            # evictions, including Shared-to-Exclusive surrenders.
+            wire gv(M : mshr_id) : bool
+            definition gv(M) = m_state(M) = m_evict & tag_occ(v(M)) & ~ack_pending_valid
+
+            definition give_en = inv_taken | (evict_en & gv(evict_id))
+
+            # A store commits on an Exclusive stage hit or while consuming
+            # its queued Exclusive grant. The same mux identifies the
+            # hardware write, LSQ acknowledgement, and accepted request.
+            definition store_en = (stage_go & p_wen & p_hit)
+                | (has_grant & rq_wen(grant_id))
+            definition store_o = (p_o if stage_go else rq_off(grant_id))
+            definition store_d = (p_wdata if stage_go else rq_wdata(grant_id))
+            definition cache_to_lsq_store_ack_valid = store_en
+            definition cache_to_lsq_store_ack_idx =
+                (p_sidx if stage_go else rq_sidx(grant_id))
+            # The grant payload is the pre-write line for either MSHR,
+            # including Shared-to-Exclusive upgrades. Comparison never
+            # gates the write: every store commits its requested datum.
+            definition cache_to_lsq_store_ack_data =
+                (1 if (hw_lsel(dat(p_slot), store_o) if stage_go
+                       else hw_lsel(q2h_dat, store_o)) = store_d else 0)
+
+            # Channel 1 selects a requesting MSHR, index 0 first.
+            wire req_id : mshr_id
+            definition req_id = (0 if m_state(0) = m_req else 1)
+            definition req_en   = (m_state(0) = m_req) | (m_state(1) = m_req)
+            definition req_line = m_base(req_id)
+            definition req_excl = m_excl(req_id)
+
+            definition ack_en   = ack_pending_valid
+            definition ack_line = ack_pending_line
+            definition ack_dty  = ack_pending_dirty
+            definition ack_dat  = ack_pending_data
+
+            definition cache_to_lsq_creq_ready = ~p_valid | stage_go
+
+            definition cache_to_lsq_resp_valid = ev_ans
+            definition cache_to_lsq_resp_h     = ev_ans_h
+            definition cache_to_lsq_resp_o     = ev_ans_o
+            definition cache_to_lsq_resp_data  = ev_ans_d
+            definition cache_to_lsq_resp_idx   = ev_ans_idx
+
+            # ==========================================================
+            # The three array actions.
+            # ==========================================================
+            action serve_stage = {
+                var h  : line    := p_h;
+                var o  : woffset := p_o;
+                var rs : key     := hw_hash(h);
+                p_valid := false;
+                if p_hit {
+                    if p_wen {
+                        dat(p_slot) :=
+                            hw_lins(dat(p_slot), o, p_wdata);
+                        tag_dty(p_slot) := true;
+                        tag_exc(p_slot) := true;
+                    } else {
+                        ev_ans     := true;
+                        ev_ans_h   := h;
+                        ev_ans_o   := o;
+                        ev_ans_d   := hw_lsel(dat(p_slot), o);
+                        ev_ans_idx := p_idx;
+                    };
+                    if p_hway = 1 { set_lru(rs) := 0; } else { set_lru(rs) := 1; };
+                } else {
+                    var w : way := p_vway;
+                    var victim : cache_slot := hw_cidx(rs, w);
+                    var m : mshr_id := (0 if m_state(0) = m_idle else 1);
+                    tag_reserved(victim) := true;
+                    m_state(m) := (m_evict if tag_occ(victim) else m_req);
+                    m_vway(m) := w;
+                    mvline(m) := tag_ln(victim);
+                    m_base(m) := h;
+                    m_excl(m) := p_wen;
+                    rq_off(m) := o;
+                    rq_wen(m) := p_wen; rq_wdata(m) := p_wdata;
+                    rq_idx(m) := p_idx;
+                    rq_sidx(m) := p_sidx;
+                };
+            }
+
+            action evict(m : mshr_id) = {
+                if ~tag_occ(v(m)) {
+                    m_state(m) := m_req;
+                } else { 
+                    if ~ack_pending_valid {
+                        ack_pending_valid := true;
+                        ack_pending_line := mvline(m);
+                        ack_pending_dirty := tag_dty(v(m));
+                        ack_pending_data := dat(v(m));
+                        tag_occ(v(m)) := false;
+                        m_state(m) := m_req;
+                    } 
+                };
+            }
+
+            action complete(m : mshr_id) = {
+                dat(v(m)) := (hw_lins(q2h_dat, rq_off(m), rq_wdata(m))
+                if rq_wen(m) else q2h_dat);
+                tag_ln(v(m)) := m_base(m);
+                tag_dty(v(m)) := rq_wen(m);
+                tag_exc(v(m)) := grant_excl;
+                tag_occ(v(m)) := true;
+                tag_reserved(v(m)) := false;
+                if m_vway(m) = 1 { set_lru(hw_hash(m_base(m))) := 0; }
+                else { set_lru(hw_hash(m_base(m))) := 1; };
+                if ~rq_wen(m) {
+                    ev_ans := true;
+                    ev_ans_h := m_base(m);
+                    ev_ans_o := rq_off(m);
+                    ev_ans_d := hw_lsel(q2h_dat, rq_off(m));
+                    ev_ans_idx := rq_idx(m);
+                };
+                m_state(m) := m_idle;
+            }
+
+            var ack_pending_valid_before : bool
+
+            action clock = {
+                ack_pending_valid_before := ack_pending_valid;
+                var hg  : bool := has_grant;
+                # An eviction can create a new request on this edge.
+                # Resolve the uplink handshake against the states that
+                # actually drove it, not against newly issued work.
+                var req_en_before : bool := req_en;
+                var req_id_before : mshr_id := req_id;
+
+                ev_ans    := false;
+
+                # Exactly one array operation: service the channel-2 head,
+                # otherwise evict a reserved victim or advance the stage.
+                if inv_act {
+                    ack_pending_valid := true;
+                    ack_pending_line := q2h_line;
+                    ack_pending_dirty := tag_dty(inv_slot);
+                    ack_pending_data := dat(inv_slot);
+                    tag_occ(inv_slot) := false;
+                } else { 
+                    if hg {
+                        call complete(grant_id);
+                    } else {
+                        if evict_en {
+                            call evict(evict_id);
+                        } else {
+                            if stage_go {
+                                call serve_stage;
+                            }
+                        }
+                    }
+                };
+
+                # ---- channel 1, resolved against the pre-edge states ----
+                if req_taken & req_en_before {
+                    m_state(req_id_before) := m_wait;
+                };
+
+                # ---- stage intake, after the move ----
+                if lsq_to_cache_req_en & ~p_valid {
+                    p_valid := true;
+                    p_h := lsq_to_cache_req_h;   p_o := lsq_to_cache_req_o;
+                    p_wen := lsq_to_cache_req_wen;
+                    p_wdata := lsq_to_cache_req_wdata;
+                    p_idx := lsq_to_cache_req_idx;
+                    p_sidx := lsq_to_cache_req_sidx;
+                };
+
+                # ---- channel 3 retires, off the PRE-edge slot ----
+                if ack_pending_valid_before & ack_taken {
+                    ack_pending_valid := false;
+                };
+            }
+            mixin clock after tick
+
+
+
+
+            # Prove local tag/MSHR shape once, then reuse it in system proofs.
+            specification {
+                object shape = {
+                    patdef local_cache_shape = valid_mshr_states | mshr_* | mshrs_*
+                        | evicted_line_matches | req_* | tag_* | upgrade_reserves_resident
+
+                    invariant [valid_mshr_states] forall M : mshr_id. m_state(M) = m_idle | m_state(M) = m_wait | m_state(M) = m_req | m_state(M) = m_evict
+                        using local_cache_shape
+
+                    invariant [mshr_reserves_tag] forall M : mshr_id. m_state(M) ~= m_idle -> tag_reserved(v(M))
+                        using local_cache_shape
+
+                    invariant [mshrs_dont_conflict] forall M1 : mshr_id, M2 : mshr_id. (m_state(M1) ~= m_idle & m_state(M2) ~= m_idle & v(M1) = v(M2)) -> M1 = M2
+                        using local_cache_shape
+
+                    invariant [evicted_line_matches] forall M : mshr_id. m_state(M) = m_evict -> mvline(M) = tag_ln(v(M))
+                        using local_cache_shape
+
+                    invariant [mshr_has_free] forall M : mshr_id. (m_state(M) = m_req | m_state(M) = m_wait) -> ~tag_occ(v(M))
+                        using local_cache_shape
+
+                    invariant [req_mshr_is_miss] req_en -> m_state(req_id) = m_req
+                        using local_cache_shape
+
+                    invariant [req_line_from_req_en] req_en -> req_line = m_base(req_id)
+                        using local_cache_shape
+
+                    derived invariant req_en -> ~tag_occ(v(req_id))
+                        using local_cache_shape
+
+                    invariant [mshr_bases_unique] forall M : mshr_id, N : mshr_id. m_state(M) ~= m_idle
+                        & m_state(N) ~= m_idle & m_base(M) = m_base(N) -> M = N
+                        using local_cache_shape
+
+                    invariant [mshr_kind] forall M : mshr_id. m_state(M) ~= m_idle -> m_excl(M) = rq_wen(M)
+                        using local_cache_shape
+
+                    invariant [tag_set] forall K : key, W : way. tag_occ(hw_cidx(K, W)) ->
+                        hw_hash(tag_ln(hw_cidx(K, W))) = K
+                        using local_cache_shape
+
+                    invariant [tag_unique] forall K : key, W : way, V : way. tag_occ(hw_cidx(K, W))
+                        & tag_occ(hw_cidx(K, V))
+                        & tag_ln(hw_cidx(K, W)) = tag_ln(hw_cidx(K, V)) -> W = V
+                        using local_cache_shape
+
+                    invariant [mshr_no_exclusive] forall M : mshr_id, S : cache_slot. m_state(M) ~= m_idle
+                        & tag_occ(S) & tag_ln(S) = m_base(M) -> ~tag_exc(S)
+                        using local_cache_shape
+
+                    invariant [mshr_read_absent] forall M : mshr_id, S : cache_slot. m_state(M) ~= m_idle & ~m_excl(M)
+                        -> ~(tag_occ(S) & tag_ln(S) = m_base(M))
+                        using local_cache_shape
+
+                    invariant [mshr_sent_absent] forall M : mshr_id, S : cache_slot. (m_state(M) = m_req | m_state(M) = m_wait)
+                        -> ~(tag_occ(S) & tag_ln(S) = m_base(M))
+                        using local_cache_shape
+
+                    invariant [upgrade_reserves_resident] forall M : mshr_id, S : cache_slot. m_state(M) = m_evict
+                        & tag_occ(S) & tag_ln(S) = m_base(M) -> S = v(M)
+                        using local_cache_shape
+                }
+            }
+
+
+            wire give_line : line
+            definition give_line = (q2h_line if inv_act else mvline(evict_id))
+        }
+
+        specification {
+            object data = {
+                wire resident(A : line) : bool
+                definition resident(A) =
+                    exists S : cache_slot. tag_occ(S) & tag_ln(S) = A
+                wire pending(A : line) : bool
+                definition pending(A) = ack_en & ack_line = A
+                wire resident_matches(K : key, W : way, O : woffset) : bool
+                definition resident_matches(K,W,O) =
+                    tag_occ(hw_cidx(K,W)) -> lsel(dat(hw_cidx(K,W)),O) =
+                        img(concatbv3(tag_ln(hw_cidx(K,W)),O))
+
+                derived invariant [grant_data] forall O : woffset.
+                    ~ch2_body.empty & ch2_body.out_typ ~= ch2_inv ->
+                        lsel(ch2_body.out_dat,O) = img(concatbv3(ch2_body.out_line,O))
+                    with ch2_body.data_out
+                    using * - *
+                    derived invariant [resident_frame] forall C : bit, A : line.
+                        C ~= cpu_id & cache_image.write_en(C) & resident(A) ->
+                            cache_image.write_line(C) ~= A
+                        with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease
+                    derived invariant [grant_frame] forall C : bit.
+                        C ~= cpu_id & cache_image.write_en(C) & has_grant ->
+                            cache_image.write_line(C) ~= q2h_line
+                        with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease
+                    derived invariant [pending_frame] forall C : bit, A : line.
+                        cache_image.write_en(C) & pending(A) ->
+                            cache_image.write_line(C) ~= A
+                        with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease
+                    derived invariant [give_frame] forall C : bit.
+                        cache_image.write_en(C) & give_en ->
+                            cache_image.write_line(C) ~= give_line
+                        with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease
+
+                implementation {
+                    invariant [resident_data] forall K : key, W : way, O : woffset.
+                        resident_matches(K,W,O)
+                    invariant [load_data] cache_to_lsq_resp_valid ->
+                        cache_to_lsq_resp_data = img(concatbv3(cache_to_lsq_resp_h,cache_to_lsq_resp_o))
+                    invariant [pending_data] forall O : woffset.
+                        ack_pending_valid -> lsel(ack_pending_data,O) =
+                            img(concatbv3(ack_pending_line,O))
+                }
+
+                implementation {
+                    object store_commit = {
+                        action check = {
+                            if store_en {
+                                assert [store_committed]
+                                    img(concatbv3(cache_image.write_line(cpu_id),store_o)) = store_d;
+                            }
+                        }
+                        mixin check after tick
+                    }
+                }
+
+                derived invariant [resident_image] forall K : key, W : way, O : woffset.
+                    resident_matches(K,W,O)
+                derived invariant [load_result] cache_to_lsq_resp_valid ->
+                    cache_to_lsq_resp_data = img(concatbv3(cache_to_lsq_resp_h,cache_to_lsq_resp_o))
+                derived invariant [data_ack] forall O : woffset.
+                    ack_en -> lsel(ack_dat,O) = img(concatbv3(ack_line,O))
+            }
+        }
+
+
+        isolate shape_proof = this, shape
+            with cachemem, cache_image, addr_thy, addr_thy.impl, basis
+
+        isolate data_proof = this, data, data.store_commit, cache_image, posedge
+            with cachemem, shape, addr_thy, basis, data_impl
+
+        # The cache decides when its head can be consumed; the FIFO owns
+        # its storage and pointers.
+        object ch2_body = {
+            wire in_en : bool
+            wire in_typ : ch2typ
+            wire in_line : line
+            wire in_dat : cache_line
+            wire pop : bool
+            wire taken : bool
+            wire empty : bool
+            wire out_typ : ch2typ
+            wire out_line : line
+            wire out_dat : cache_line
+
+            derived invariant [pop_nonempty] pop -> ~empty
+                with port_safety_ch2
+                using * - *
+            derived invariant [input_encoding] taken ->
+                (in_typ = ch2_gsh | in_typ = ch2_gex | in_typ = ch2_inv)
+                with dir_body.port_safety_encoding, xbar_body.port_safety_ch2_forward
+                using * - *
+            derived invariant [input_data] forall O : woffset.
+                in_en & in_typ ~= ch2_inv ->
+                    lsel(in_dat,O) = img(concatbv3(in_line,O))
+                with dir_body.data.grant, xbar_body.port_safety_ch2_forward
+                using * - *
+                derived invariant [data_frame] forall C : bit, A : line.
+                    (surviving_grant(A)
+                     | (taken & in_typ ~= ch2_inv & in_line = A))
+                    & cache_image.write_en(C) ->
+                        cache_image.write_line(C) ~= A
+                    with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease,
+                        concrete_refinement.directory.grant_permission,
+                        memory_system.cachemem.xbar_body.port_safety_ch2_forward
+                    using $concrete_refinement.grants.grant_shared_image
+                        | $concrete_refinement.grants.grant_exclusive_image
+                        | $abs_prot.exclusive_permission_directory
+                        | $memory_system.cachemem.cache0_body.ch2_body.control.ch2_second_inv
+                        | $memory_system.cachemem.cache1_body.ch2_body.control.ch2_second_inv
+
+
+            implementation {
+                # Grants enter only an empty queue. A second live entry is
+                # always an invalidate, including behind another invalidate.
+                var q2_typ(I : qidx) : ch2typ
+                var q2_line(I : qidx) : line
+                var q2_dat(I : qidx) : cache_line
+                var q2_head : qptr
+                var q2_tail : qptr
+                wire full : bool
+                definition empty = q2_head = q2_tail
+                definition full = q2_tail - q2_head = 2
+                definition taken = in_en & ~full
+                definition out_typ = q2_typ(qi(q2_head))
+                definition out_line = q2_line(qi(q2_head))
+                definition out_dat = q2_dat(qi(q2_head))
+
+                after init {
+                    q2_typ(I) := 0; q2_line(I) := 0; q2_dat(I) := 0;
+                    q2_head := 0; q2_tail := 0;
+                }
+                action update_ch2_queue = {
+                    if pop { q2_head := q2_head + 1; };
+                    # Frozen ports select the pre-edge head and full flag.
+                    # A full queue cannot reuse a retiring slot this edge.
+                    if taken {
+                        q2_typ(qi(q2_tail)) := in_typ;
+                        q2_line(qi(q2_tail)) := in_line;
+                        q2_dat(qi(q2_tail)) := in_dat;
+                        q2_tail := q2_tail + 1;
+                    };
+                }
+                mixin update_ch2_queue after tick
+                invariant [ch2_occupancy] q2_tail - q2_head <= 2
+                    using ch2_* | pop_nonempty | input_encoding
+
+                invariant [ch2_live_head_encoding]
+                    (q2_tail - q2_head = 1 | q2_tail - q2_head = 2) ->
+                    (q2_typ(qi(q2_head)) = ch2_gsh
+                     | q2_typ(qi(q2_head)) = ch2_gex
+                     | q2_typ(qi(q2_head)) = ch2_inv)
+                    using ch2_* | pop_nonempty | input_encoding
+
+                invariant [ch2_live_second_encoding]
+                    q2_tail - q2_head = 2 ->
+                    (q2_typ(qi(q2_head + 1)) = ch2_gsh
+                     | q2_typ(qi(q2_head + 1)) = ch2_gex
+                     | q2_typ(qi(q2_head + 1)) = ch2_inv)
+                    using ch2_* | pop_nonempty | input_encoding
+
+                invariant [ch2_data_head] forall O : woffset.
+                    (q2_tail - q2_head = 1 | q2_tail - q2_head = 2)
+                    & q2_typ(qi(q2_head)) ~= ch2_inv ->
+                        lsel(q2_dat(qi(q2_head)),O) =
+                            img(concatbv3(q2_line(qi(q2_head)),O))
+                    using ch2_* | pop_nonempty | input_encoding | input_data | data_frame
+
+                invariant [ch2_data_second] forall O : woffset.
+                    q2_tail - q2_head = 2
+                    & q2_typ(qi(q2_head + 1)) ~= ch2_inv ->
+                        lsel(q2_dat(qi(q2_head + 1)),O) =
+                            img(concatbv3(q2_line(qi(q2_head + 1)),O))
+                    using ch2_* | pop_nonempty | input_encoding | input_data | data_frame
+
+            }
+
+            specification {
+                # Control contracts are separate from payload correctness:
+                # the producer supplies freshness, the FIFO preserves it.
+                module control_component = {
+                        derived invariant [grant_empty]
+                            taken & in_typ ~= ch2_inv -> empty
+                        derived invariant [invalidate_distinct]
+                            taken & in_typ = ch2_inv & ~pop & ~empty
+                            & out_typ = ch2_inv -> in_line ~= out_line
+                            with directory_projection.interface.invalidate_holder
+
+                    implementation {
+                    invariant [ch2_second_inv] q2_tail - q2_head = 2 ->
+                        q2_typ(qi(q2_head + 1)) = ch2_inv
+                        using ch2_second_inv | grant_empty | ch2_occupancy | pop_nonempty
+                    invariant [ch2_invalidate_distinct]
+                        q2_tail - q2_head = 2
+                        & q2_typ(qi(q2_head)) = ch2_inv ->
+                            q2_line(qi(q2_head)) ~= q2_line(qi(q2_head + 1))
+                        using ch2_invalidate_distinct | grant_empty
+                            | invalidate_distinct | ch2_occupancy | pop_nonempty
+                    }
+                    isolate iso = this, ch2_body, cache_image
+                        with cachemem, dir_body, cache0_body, cache1_body, xbar_body,
+                            addr_thy, basis
+                }
+                instance control : control_component
+
+                derived invariant [data_out] forall O : woffset.
+                    ~empty & out_typ ~= ch2_inv ->
+                        lsel(out_dat,O) = img(concatbv3(out_line,O))
+                    using ch2_*
+                # A popped exclusive grant can atomically write its own line.
+                wire surviving_grant(A : line) : bool
+                definition surviving_grant(A) =
+                    (((q2_tail - q2_head = 1 | q2_tail - q2_head = 2)
+                      & ~pop & q2_line(qi(q2_head)) = A
+                      & q2_typ(qi(q2_head)) ~= ch2_inv)
+                     | (q2_tail - q2_head = 2
+                        & q2_line(qi(q2_head + 1)) = A
+                        & q2_typ(qi(q2_head + 1)) ~= ch2_inv))
+                # Proof-only membership views at a clock boundary.
+                wire queued_invalidate(A : line) : bool
+                definition queued_invalidate(A) =
+                    (((q2_tail - q2_head = 1 | q2_tail - q2_head = 2)
+                      & q2_line(qi(q2_head)) = A
+                      & q2_typ(qi(q2_head)) = ch2_inv)
+                     | (q2_tail - q2_head = 2
+                        & q2_line(qi(q2_head + 1)) = A
+                        & q2_typ(qi(q2_head + 1)) = ch2_inv))
+
+                wire queued_grant_shared(A : line) : bool
+                definition queued_grant_shared(A) =
+                    (((q2_tail - q2_head = 1 | q2_tail - q2_head = 2)
+                      & q2_line(qi(q2_head)) = A
+                      & q2_typ(qi(q2_head)) = ch2_gsh)
+                     | (q2_tail - q2_head = 2
+                        & q2_line(qi(q2_head + 1)) = A
+                        & q2_typ(qi(q2_head + 1)) = ch2_gsh))
+
+                wire queued_grant_exclusive(A : line) : bool
+                definition queued_grant_exclusive(A) =
+                    (((q2_tail - q2_head = 1 | q2_tail - q2_head = 2)
+                      & q2_line(qi(q2_head)) = A
+                      & q2_typ(qi(q2_head)) = ch2_gex)
+                     | (q2_tail - q2_head = 2
+                        & q2_line(qi(q2_head + 1)) = A
+                        & q2_typ(qi(q2_head + 1)) = ch2_gex))
+            }
+        }
+
+        isolate ch2_data_proof = ch2_body, cache_image
+            with cachemem, dir_body, cache0_body, cache1_body, xbar_body,
+                 addr_thy, basis
+
+
+        # This cache accepts requests locally, independently of its peer.
+        # Arbitration selects a FIFO head; only directory pickup pops it.
+        isolate ch1_body = {
+            wire in_en   : bool
+            wire in_line : line
+            wire in_excl : bool
+            wire taken   : bool
+            wire pop     : bool
+            wire empty   : bool
+            wire out_line : line
+            wire out_excl : bool
+
+            derived invariant [pop_nonempty] pop -> ~empty
+                with dir_body.port_safety_pick, xbar_body.port_safety_request
+                using * - *
+
+
+            implementation {
+                var q1_line(I : qidx) : line
+                var q1_excl(I : qidx) : bool
+                var q1_head : qptr
+                var q1_tail : qptr
+                wire full : bool
+                definition empty = q1_head = q1_tail
+                definition full = q1_tail - q1_head = 2
+                definition taken = in_en & ~full
+                definition out_line = q1_line(qi(q1_head))
+                definition out_excl = q1_excl(qi(q1_head))
+
+                after init {
+                    q1_line(I) := 0; q1_excl(I) := false;
+                    q1_head := 0; q1_tail := 0;
+                }
+                action update_ch1_queue = {
+                    if pop { q1_head := q1_head + 1; };
+                    # Frozen ports preserve the old head and pre-edge full
+                    # flag: no enqueue bypass or reuse of a full retiring slot.
+                    if taken {
+                        q1_line(qi(q1_tail)) := in_line;
+                        q1_excl(qi(q1_tail)) := in_excl;
+                        q1_tail := q1_tail + 1;
+                    };
+                }
+                mixin update_ch1_queue after tick
+                invariant [ch1_occupancy] q1_tail - q1_head <= 2
+                    using ch1_occupancy | pop_nonempty
+
+            }
+
+            specification {
+                # Only a surviving old head needs a fresh incoming line.
+                # A full FIFO cannot accept, even when its head retires.
+                module control_component = {
+                        derived invariant [input_distinct]
+                            taken & ~pop & ~empty -> in_line ~= out_line
+                            with concrete_refinement.cache.request_idle
+
+                    implementation {
+                    invariant [ch1_distinct] q1_tail - q1_head = 2 ->
+                        q1_line(qi(q1_head)) ~= q1_line(qi(q1_head + 1))
+                        using ch1_distinct | input_distinct | ch1_occupancy | pop_nonempty
+                    }
+                    isolate iso = this, ch1_body
+                        with cachemem, cache_image, dir_body, cache0_body, cache1_body,
+                            xbar_body, addr_thy, basis
+                }
+                instance control : control_component
+
+                wire queued_excl(A : line) : bool
+                definition queued_excl(A) =
+                    (((q1_tail - q1_head = 1 | q1_tail - q1_head = 2)
+                      & q1_line(qi(q1_head)) = A & q1_excl(qi(q1_head)))
+                     | (q1_tail - q1_head = 2
+                        & q1_line(qi(q1_head + 1)) = A
+                        & q1_excl(qi(q1_head + 1))))
+
+                wire queued_shared(A : line) : bool
+                definition queued_shared(A) =
+                    (((q1_tail - q1_head = 1 | q1_tail - q1_head = 2)
+                      & q1_line(qi(q1_head)) = A & ~q1_excl(qi(q1_head)))
+                     | (q1_tail - q1_head = 2
+                        & q1_line(qi(q1_head + 1)) = A
+                        & ~q1_excl(qi(q1_head + 1))))
+            }
+        } with cachemem, cache_image, dir_body, xbar_body, basis
+
+
+        # This cache retains whole acknowledgement payloads until retirement.
+        # The crossbar locks the selected head during a multi-beat writeback;
+        # either cache can still enqueue while that head is stalled.
+        object ch3_body = {
+            wire in_en   : bool
+            wire in_cpu  : bit
+            wire in_line : line
+            wire in_dty  : bool
+            wire in_dat  : cache_line
+            wire taken   : bool
+            wire pop     : bool
+            wire empty   : bool
+            wire drained : bool
+            wire out_cpu  : bit
+            wire out_line : line
+            wire out_dty  : bool
+            wire out_dat  : cache_line
+
+            derived invariant [input_data] forall O : woffset.
+                in_en -> lsel(in_dat,O) = img(concatbv3(in_line,O))
+                with data.data_ack
+                using * - *
+            derived invariant [pop_nonempty] pop -> ~empty
+                derived invariant [data_frame] forall C : bit, A : line.
+                    (surviving_ack(A) | (taken & in_line = A))
+                    & cache_image.write_en(C) ->
+                        cache_image.write_line(C) ~= A
+                    with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease
+                    using $concrete_refinement.acknowledgements.ack_image
+
+
+            implementation {
+                var q3_line(I : qidx) : line
+                var q3_dty(I : qidx)  : bool
+                var q3_dat(I : qidx)  : cache_line
+                var q3_head : qptr
+                var q3_tail : qptr
+                wire full : bool
+                definition empty = q3_head = q3_tail
+                definition full = q3_tail - q3_head = 2
+                definition taken = in_en & ~full
+                # Post-pop, pre-enqueue emptiness preserves same-edge request
+                # pickup and victim drainage without exposing either pointer.
+                definition drained =
+                    ((q3_head + 1 = q3_tail) if pop else empty)
+                definition out_cpu = in_cpu
+                definition out_line = q3_line(qi(q3_head))
+                definition out_dty  = q3_dty(qi(q3_head))
+                definition out_dat  = q3_dat(qi(q3_head))
+
+                after init {
+                    q3_line(I) := 0; q3_dty(I) := false;
+                    q3_dat(I) := 0;
+                    q3_head := 0; q3_tail := 0;
+                }
+                action update_ch3_queue = {
+                    if pop { q3_head := q3_head + 1; };
+                    # taken is frozen from the pre-edge full flag. A full
+                    # queue cannot reuse its retiring slot on this edge.
+                    if taken {
+                        q3_line(qi(q3_tail)) := in_line;
+                        q3_dty(qi(q3_tail)) := in_dty;
+                        q3_dat(qi(q3_tail)) := in_dat;
+                        q3_tail := q3_tail + 1;
+                    };
+                }
+                mixin update_ch3_queue after tick
+                invariant [ch3_occupancy] q3_tail - q3_head <= 2
+                    using ch3_occupancy | pop_nonempty
+
+                invariant [ch3_data_head] forall O : woffset.
+                    (q3_tail - q3_head = 1 | q3_tail - q3_head = 2) ->
+                        lsel(q3_dat(qi(q3_head)),O) =
+                            img(concatbv3(q3_line(qi(q3_head)),O))
+                    using ch3_* | pop_nonempty | input_data | data_frame
+
+                invariant [ch3_data_second] forall O : woffset.
+                    q3_tail - q3_head = 2 ->
+                        lsel(q3_dat(qi(q3_head + 1)),O) =
+                            img(concatbv3(q3_line(qi(q3_head + 1)),O))
+                    using ch3_* | pop_nonempty | input_data | data_frame
+
+            }
+
+            specification {
+                # The producer must not enqueue the surviving FIFO head's
+                # line again; acknowledgement ownership supplies this fact.
+                module control_component = {
+                        derived invariant [input_distinct]
+                            taken & ~pop & ~empty -> in_line ~= out_line
+
+                    implementation {
+                    invariant [ch3_distinct] q3_tail - q3_head = 2 ->
+                        q3_line(qi(q3_head)) ~= q3_line(qi(q3_head + 1))
+                        using ch3_distinct | input_distinct | ch3_occupancy | pop_nonempty
+                    }
+                    isolate iso = this, ch3_body, cache_image
+                        with cachemem, dir_body, cache0_body, cache1_body, xbar_body,
+                            addr_thy, basis
+                }
+                instance control : control_component
+
+                derived invariant [data_out] forall O : woffset.
+                    ~empty -> lsel(out_dat,O) = img(concatbv3(out_line,O))
+                    using ch3_*
+                wire surviving_ack(A : line) : bool
+                definition surviving_ack(A) =
+                    (((q3_tail - q3_head = 1 | q3_tail - q3_head = 2)
+                      & ~pop & q3_line(qi(q3_head)) = A)
+                     | (q3_tail - q3_head = 2
+                        & q3_line(qi(q3_head + 1)) = A))
+                wire queued_ack(A : line) : bool
+                definition queued_ack(A) =
+                    (((q3_tail - q3_head = 1 | q3_tail - q3_head = 2)
+                      & q3_line(qi(q3_head)) = A)
+                     | (q3_tail - q3_head = 2
+                        & q3_line(qi(q3_head + 1)) = A))
+            }
+        }
+
+        isolate ch3_data_proof = ch3_body, cache_image
+            with cachemem, dir_body, cache0_body, cache1_body, xbar_body,
+                 addr_thy, basis
+
+
+        # Each queue crosses the cache boundary through scalar ports.
+        wire ch1_taken : bool
+        definition ch1_taken = ch1_body.taken
+        wire ch1_empty : bool
+        definition ch1_empty = ch1_body.empty
+        wire ch1_line : line
+        definition ch1_line = ch1_body.out_line
+        wire ch1_excl : bool
+        definition ch1_excl = ch1_body.out_excl
+        wire ch3_taken : bool
+        definition ch3_taken = ch3_body.taken
+        wire ch3_empty : bool
+        definition ch3_empty = ch3_body.empty
+        wire ch3_line : line
+        definition ch3_line = ch3_body.out_line
+        wire ch3_dty : bool
+        definition ch3_dty = ch3_body.out_dty
+        wire ch3_dat : cache_line
+        definition ch3_dat = ch3_body.out_dat
+        wire ch3_drained : bool
+        definition ch3_drained = ch3_body.drained
+        wire ch1_pop : bool
+        wire ch3_pop : bool
+        definition ch2_empty = ch2_body.empty
+        definition ch2_msg_taken = ch2_body.taken
+
+        definition ch1_body.in_en = req_en
+        definition ch1_body.in_line = req_line
+        definition ch1_body.in_excl = req_excl
+        definition ch1_body.pop = ch1_pop
+        definition ch3_body.in_en = ack_en
+        definition ch3_body.in_cpu = cpu_id
+        definition ch3_body.in_line = ack_line
+        definition ch3_body.in_dty = ack_dty
+        definition ch3_body.in_dat = ack_dat
+        definition ch3_body.pop = ch3_pop
+        definition ch2_body.in_en = ch2_msg_valid
+        definition ch2_body.in_typ = ch2_msg_typ
+        definition ch2_body.in_line = ch2_msg_line
+        definition ch2_body.in_dat = ch2_msg_data
+        definition ch2_body.pop = ch2_pop
+
+
+        # Each interface guarantee is checked with its producer specification;
+        # the consuming FIFO/cache imports the fact without reopening its proof.
+        isolate grant_interface = data.grant_data, cache_image
+            with cachemem, ch2_body, addr_thy, basis, data_impl
+        isolate request_retirement_interface = ch1_body.pop_nonempty, cache_image
+            with cachemem, ch1_body, dir_body, xbar_body, basis
+        isolate grant_control_interface = ch2_body.pop_nonempty, ch2_body.input_encoding, cache_image
+            with cachemem, ch2_body, this, dir_body, xbar_body, basis
+        isolate grant_payload_interface = ch2_body.input_data, cache_image
+            with cachemem, ch2_body, dir_body, dir_body.data, xbar_body, basis
+        isolate acknowledgement_payload_interface = ch3_body.input_data, cache_image
+            with cachemem, ch3_body, data, basis
+    } 
+
+    # Concrete instances attach their clock actions directly to tick.
+    instance cache0_body : cache_unit(0)
+    instance cache1_body : cache_unit(1)
+
+    # Physical cache inputs are owned and connected by their parent.
+    definition cache0_body.lsq_to_cache_req_en = cpu0_req_en
+    definition cache0_body.lsq_to_cache_req_h = cpu0_req_h
+    definition cache0_body.lsq_to_cache_req_o = cpu0_req_o
+    definition cache0_body.lsq_to_cache_req_wen = cpu0_req_wen
+    definition cache0_body.lsq_to_cache_req_wdata = cpu0_req_wdata
+    definition cache0_body.lsq_to_cache_req_idx = cpu0_load_slot
+    definition cache0_body.lsq_to_cache_req_sidx = cpu0_store_slot
+    definition cache0_body.req_taken = cache0_body.ch1_taken
+    definition cache0_body.ack_taken = cache0_body.ch3_taken
+    definition cache0_body.ch2_msg_valid = xbar_body.ch2_valid0
+    definition cache0_body.ch2_msg_typ = xbar_body.ch2_typ
+    definition cache0_body.ch2_msg_line = xbar_body.ch2_line
+    definition cache0_body.ch2_msg_data = xbar_body.ch2_data
+    definition cache0_body.ch1_pop = dir_body.req_pick & xbar_body.req_cpu = 0
+    definition cache0_body.ch3_pop = dir_body.ack_done & xbar_body.src = 0
+
+    definition cache1_body.lsq_to_cache_req_en = cpu1_req_en
+    definition cache1_body.lsq_to_cache_req_h = cpu1_req_h
+    definition cache1_body.lsq_to_cache_req_o = cpu1_req_o
+    definition cache1_body.lsq_to_cache_req_wen = cpu1_req_wen
+    definition cache1_body.lsq_to_cache_req_wdata = cpu1_req_wdata
+    definition cache1_body.lsq_to_cache_req_idx = cpu1_load_slot
+    definition cache1_body.lsq_to_cache_req_sidx = cpu1_store_slot
+    definition cache1_body.req_taken = cache1_body.ch1_taken
+    definition cache1_body.ack_taken = cache1_body.ch3_taken
+    definition cache1_body.ch2_msg_valid = xbar_body.ch2_valid1
+    definition cache1_body.ch2_msg_typ = xbar_body.ch2_typ
+    definition cache1_body.ch2_msg_line = xbar_body.ch2_line
+    definition cache1_body.ch2_msg_data = xbar_body.ch2_data
+    definition cache1_body.ch1_pop = dir_body.req_pick & xbar_body.req_cpu = 1
+    definition cache1_body.ch3_pop = dir_body.ack_done & xbar_body.src = 1
+
+
+    definition dir_body.req_empty = ~x_req_en
+    definition dir_body.req_cpu = xbar_body.req_cpu
+    definition dir_body.req_line = x_req_line
+    definition dir_body.req_excl = x_req_excl
+
+
+
+
+    # The beat controller is an independent cachemem component. The parent
+    # connects its command/response interface to the directory's sequencer.
+    object mc_body = {
+
+        # ---- directory command channel: the command comes from the
+        # directory, the ready is driven here ----
+        wire cmd_en    : bool
+        wire cmd_wen   : bool
+        wire cmd_addr  : addr
+        wire cmd_data  : four_words
+        wire cmd_ready : bool
+
+        # ---- directory response channel: all driven here ----
+        wire rsp_valid : bool
+        wire rsp_addr  : addr
+        wire rsp_data  : four_words
+
+        wire mem_rd_en   : bool
+        wire mem_rd_addr : addr
+        wire mem_wr_en   : bool
+        wire mem_wr_addr : addr
+        wire mem_wr_data : four_words
+        wire mem_rdata   : four_words
+
+        derived invariant [data_write_boundary] forall J : bv2.
+            cmd_en & cmd_wen ->
+                wsel4(cmd_data,J) =
+                    img(concatbv3(high(cmd_addr),
+                        concatbv2(beat_of(low(cmd_addr)),J)))
+            with dir_body.data.write
+            using * - *
+            derived invariant [data_response_frame] forall C : bit.
+                mem_rd_en & cache_image.write_en(C) ->
+                    cache_image.write_line(C) ~= high(mem_rd_addr)
+                with concrete_refinement.cache.write_permission,
+                    concrete_refinement.writeback.request_buffer_lease,
+                    memory_control.read_permission
+                using * - *
+
+        specification {
+            # External read data is the sole trusted memory data boundary.
+            before tick {
+                require forall J : bv2. mem_rd_en ->
+                    wsel4(mem_rdata,J) =
+                        img(concatbv3(high(mem_rd_addr),
+                            concatbv2(beat_of(low(mem_rd_addr)),J)));
+            }
+            derived invariant [data_write] forall J : bv2.
+                (cmd_en & cmd_wen ->
+                    wsel4(cmd_data,J) =
+                        img(concatbv3(high(cmd_addr),
+                            concatbv2(beat_of(low(cmd_addr)),J))))
+                & mem_wr_en ->
+                    wsel4(mem_wr_data,J) =
+                        img(concatbv3(high(mem_wr_addr),
+                            concatbv2(beat_of(low(mem_wr_addr)),J)))
+                using * - *
+            invariant [data_response] forall J : bv2.
+                rsp_valid ->
+                    wsel4(rsp_data,J) =
+                        img(concatbv3(high(rsp_addr),
+                            concatbv2(beat_of(low(rsp_addr)),J)))
+                using data_* | addr_thy.* | data_impl.*
+        }
+
+        implementation {
+            type latency
+            interpret latency -> bv[4]
+
+            # ---- the command buffer ----
+            var cb0_valid : bool
+            var cb0_wen   : bool
+            var cb0_addr  : addr
+            var cb1_valid : bool
+            var cb1_wen   : bool
+            var cb1_addr  : addr
+            var svc_count : latency
+            wire mem_latency : latency
+            definition mem_latency = 8
+
+            # ---- the registers driving the response port ----
+            var rsp_valid_r : bool
+            var rsp_addr_r  : addr
+            var rsp_data_r  : four_words
+
+            after init {
+                cb0_valid := false; cb0_wen := false; cb0_addr := 0;
+                cb1_valid := false; cb1_wen := false; cb1_addr := 0;
+                svc_count := 0;
+                rsp_valid_r := false; rsp_addr_r := 0; rsp_data_r := 0;
+            }
+
+            definition cmd_ready = ~(cb0_valid & cb1_valid) & ~cmd_en
+
+            definition rsp_valid = rsp_valid_r
+            definition rsp_addr  = rsp_addr_r
+            definition rsp_data  = rsp_data_r
+
+            definition mem_rd_en   = cb0_valid & ~cb0_wen & ~rsp_valid & svc_count = 0
+            definition mem_rd_addr = cb0_addr
+            definition mem_wr_en   = cmd_en & cmd_wen
+            definition mem_wr_addr = cmd_addr
+            definition mem_wr_data = cmd_data
+
+            action update_memory_controller = {
+                rsp_valid_r := false;
+
+                if cmd_en {
+                    var a : addr := cmd_addr;
+                    if ~cb0_valid {
+                        cb0_valid := true; cb0_wen := cmd_wen; cb0_addr := a;
+                        svc_count := mem_latency;
+                    } else {
+                        cb1_valid := true; cb1_wen := cmd_wen; cb1_addr := a;
+                    };
+                };
+
+                if cb0_valid & (cb0_wen | ~rsp_valid) {
+                    if svc_count = 0 {
+                        if ~cb0_wen {
+                            var h : line := hw_high(cb0_addr);
+                            var b : bit  := hw_beat_of(hw_low(cb0_addr));
+                            rsp_valid_r := true;
+                            rsp_addr_r  := cb0_addr;
+                            rsp_data_r  := (cmd_data
+                            if (cmd_en & cmd_wen
+                                & hw_high(cmd_addr) = h
+                                & hw_beat_of(hw_low(cmd_addr)) = b)
+                                else mem_rdata);
+                        };
+                        if cb1_valid {
+                            cb0_valid := true; cb0_wen := cb1_wen; cb0_addr := cb1_addr;
+                            cb1_valid := false;
+                            svc_count := mem_latency;
+                        } else {
+                            cb0_valid := false;
+                        };
+                    } else {
+                        svc_count := svc_count - 1;
+                    }
+                };
+            }
+            mixin update_memory_controller after tick
+
+        }
+
+    }
+    isolate mc_data_proof = mc_body, mc_body.data_response, mc_body.data_write, cache_image
+        with addr_thy, basis, data_impl
+
+    # ==================================================================
+    # The directory: German's home node, now with two clients.
+    #
+    # It owns no resident data. The directory reserves a way and manages
+    # ownership; wb_body owns the transient line buffer and the shared
+    # read/writeback sequencer. Dirty data reaches DRAM before retirement,
+    # and queued writebacks take priority over new reads.
+    #
+    # Blocking, single slot everywhere (decision 2): one request start to
+    # finish, one grant outstanding, one writeback at a time, one
+    # invalidate in flight.  There is ONE port set per channel:
+    # `xbar_body` arbitrates channels 1 and 3 and routes channel 2, so
+    # wb_body consumes the held channel-3 head without choosing a client.
+    #
+    # Every request reserves a directory way. Exclusive requests displace
+    # every holder; Shared requests displace the exclusive holder and any
+    # stale requester copy.
+    #
+    # An invalidate is sent only to a cache with no acknowledgement of its
+    # own in flight. An acknowledgement clears its holder bit at retirement.
+    # ==================================================================
+    object dir_body = {
+        # Per-cache occupancy and producer-slot events are scalar inputs.
+        wire in_ch2_empty0 : bool
+        wire in_ch2_empty1 : bool
+        wire in_ack_en0 : bool
+        wire in_ack_en1 : bool
+        wire in_ack_taken0 : bool
+        wire in_ack_taken1 : bool
+        wire in_give_en0 : bool
+        wire in_give_en1 : bool
+        wire in_ack_drained : bool
+
+        # Beat interface to the sibling memory controller, wired by cachemem.
+        wire mc_cmd_en    : bool
+        wire mc_cmd_wen   : bool
+        wire mc_cmd_addr  : addr
+        wire mc_cmd_data  : four_words
+        wire mc_cmd_ready : bool
+        wire mc_rsp_valid : bool
+        wire mc_rsp_addr  : addr
+        wire mc_rsp_data  : four_words
+
+        # The parent binds the FIFO output to these hardware input ports.
+        wire req_empty : bool
+        wire req_cpu   : bit
+        wire req_line  : line
+        wire req_excl  : bool
+
+        # ---- the ports this directory drives.  ONE set per channel:
+        # the crossbar arbitrates the contended ones, and channel 2 is a
+        # single addressed message whose `typ` names its kind, because a
+        # grant and an invalidate are never live on the same edge. ----
+        wire req_pick : bool
+        # Retirement releases the selected cache's channel-3 queue head.
+        # The crossbar holds that source and payload until this pulse.
+        wire ack_done      : bool
+        wire ack_done_cpu  : bit
+        wire ack_done_line : line
+        wire ch2_msg_valid : bool
+        wire ch2_msg_typ   : ch2typ      # ch2_gsh | ch2_gex | ch2_inv
+        wire ch2_msg_cpu   : bit
+        wire ch2_msg_line  : line
+        wire ch2_msg_data  : cache_line  # grant only
+
+        definition ack_done_cpu = x_src
+        definition ack_done_line = x_ack_line
+
+
+        specification {
+            derived invariant [port_safety_pick] req_pick -> ~req_empty
+                using * - *
+            derived invariant [port_safety_encoding]
+                ch2_msg_typ = ch2_gsh | ch2_msg_typ = ch2_gex | ch2_msg_typ = ch2_inv
+                using * - *
+            object data = {
+                derived invariant [grant] forall O : woffset.
+                    ch2_msg_valid & ch2_msg_typ ~= ch2_inv ->
+                        lsel(ch2_msg_data,O) = img(concatbv3(ch2_msg_line,O))
+                derived invariant [write] forall J : bv2.
+                    mc_cmd_en & mc_cmd_wen ->
+                        wsel4(mc_cmd_data,J) =
+                            img(concatbv3(high(mc_cmd_addr),
+                                concatbv2(beat_of(low(mc_cmd_addr)),J)))
+            }
+        }
+
+        implementation {
+            # Initialize directory state in its owning hardware object.
+            after init {
+                cache_mem(S) := 0;
+                dir_repl(I) := 0;
+                dstate_r := 0; cr_cpu := 0; cr_line := 0;
+                cr_idx := 0; cr_way := 0; cr_slot_valid := false;
+                cr_replacing := false; cr_victim := 0; cr_miss := false;
+                inv_need(C) := false;
+                inv_pending(C) := false;
+                inv_v := false; inv_l := 0; inv_c := 0;
+            }
+
+            # ==============================================================
+            # The finite physical directory: sixteen sets, four ways, one
+            # flattened RTL memory.  Each entry carries the complete line tag,
+            # an exclusive-owner mask, and the two independent sharer bits.
+            # Layout: tag [64:4], exclusive mask [3:2], sharers [1:0].
+            # All 65 bits retain the 61-bit tag and both masks.
+            # ==============================================================
+
+            register cache_mem(S : dir_slot) : dir_entry
+            register dir_repl(I : idx) : dir_way
+
+        }
+
+        implementation {
+            # One owner for the beat port, including the read ladder that
+            # shares its state register. The directory observes whole-line
+            # data, retirement, and a derived read-phase predicate.
+            object wb_body = {
+                wire ack_empty : bool
+                wire ack_line  : line
+                wire ack_dty   : bool
+                wire ack_dat   : cache_line
+                wire req_active : bool
+                wire req_line   : line
+                wire read_en    : bool
+                wire clear      : bool
+
+                wire cmd_en    : bool
+                wire cmd_wen   : bool
+                wire cmd_addr  : addr
+                wire cmd_data  : four_words
+                wire cmd_ready : bool
+                wire rsp_valid : bool
+                wire rsp_addr  : addr
+                wire rsp_data  : four_words
+
+                wire idle       : bool
+                wire idle_after : bool
+                wire read_start : bool
+                wire read_done  : bool
+                wire retire     : bool
+                wire data_valid : bool
+                wire data       : cache_line
+                # The port is frozen during an edge; d_have is the real state.
+                definition data_valid = d_have
+                type wbstate
+                interpret wbstate -> bv[4]
+                wire wb_idle : wbstate
+                wire wb_lo   : wbstate
+                wire wb_hi   : wbstate
+                wire wb_fin  : wbstate
+                wire wb_ret  : wbstate
+                wire wb_rlo  : wbstate
+                wire wb_rwlo : wbstate
+                wire wb_rhi  : wbstate
+                wire wb_rwhi : wbstate
+                definition wb_idle = 0
+                definition wb_lo   = 1
+                definition wb_hi   = 2
+                definition wb_fin  = 3
+                definition wb_ret  = 4
+                definition wb_rlo  = 5
+                definition wb_rwlo = 6
+                definition wb_rhi  = 7
+                definition wb_rwhi = 8
+
+                # Reset the sequencer and line-buffer validity together.
+                after init {
+                    wb_st := 0;
+                    d_have := false;
+                }
+
+                wire read_active : bool
+                definition read_active =
+                    (wb_st = wb_rlo | wb_st = wb_rwlo
+                     | wb_st = wb_rhi | wb_st = wb_rwhi)
+
+                specification {
+                    wire write_active : bool
+                    definition write_active =
+                        wb_st = wb_lo | wb_st = wb_hi
+                        | wb_st = wb_fin | wb_st = wb_ret
+                }
+
+                derived invariant [data_ack] forall O : woffset.
+                    ~ack_empty ->
+                        lsel(ack_dat,O) = img(concatbv3(ack_line,O))
+                    with cache0_body.ch3_body.data_out, cache1_body.ch3_body.data_out,
+                        xbar_body.data_ack
+                    using * - *
+                derived invariant [data_response] forall J : bv2.
+                    rsp_valid -> wsel4(rsp_data,J) =
+                        img(concatbv3(high(rsp_addr),
+                            concatbv2(beat_of(low(rsp_addr)),J)))
+                    with mc_body.data_response
+                    using * - *
+                derived invariant [data_ack_live] write_active -> ~ack_empty
+                    derived invariant [data_write_frame] forall C : bit.
+                        ~ack_empty & cache_image.write_en(C) ->
+                            cache_image.write_line(C) ~= ack_line
+                        with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease,
+                            concrete_refinement.arbiter.ack_head_image
+                        using * - *
+                    derived invariant [data_command_frame] forall C : bit.
+                        cmd_en & cmd_wen & cache_image.write_en(C) ->
+                            cache_image.write_line(C) ~= high(cmd_addr)
+                        with concrete_refinement.cache.write_permission, abs_prot.exclusive_lease,
+                            concrete_refinement.arbiter.ack_head_image
+                        using $concrete_refinement.writeback.write_command_ack
+                    derived invariant [data_request_frame] forall C : bit.
+                        (read_active | data_valid) & cache_image.write_en(C) ->
+                            cache_image.write_line(C) ~= req_line
+                        with concrete_refinement.cache.write_permission
+                        using $concrete_refinement.writeback.request_buffer_lease
+
+                implementation {
+
+                    register wb_st : wbstate
+                    # Retirement waits until both write beats have landed.
+                    var wb_lo_done : bool
+                    var wb_hi_done : bool
+                    var dfb : cache_line
+                    register d_have : bool
+                    var ev_cmd : bool
+                    var ev_cmd_wen : bool
+                    var ev_cmd_addr : addr
+                    var ev_cmd_data : four_words
+
+                    definition idle = wb_st = wb_idle
+                    definition retire = wb_st = wb_ret
+                    definition read_start =
+                        idle & ack_empty & read_en & ~data_valid
+                    definition read_done = wb_st = wb_rwhi & rsp_valid
+                        & hw_high(rsp_addr) = req_line
+                        & hw_beat_of(hw_low(rsp_addr)) = 1
+                    definition idle_after =
+                        retire | (idle & ack_empty & ~read_start)
+                        | (read_done & ack_empty)
+                    definition data = dfb
+                    definition cmd_en = ev_cmd
+                    definition cmd_wen = ev_cmd_wen
+                    definition cmd_addr = ev_cmd_addr
+                    definition cmd_data = ev_cmd_data
+
+                    after init {
+                        wb_lo_done := false; wb_hi_done := false;
+                        dfb := 0;
+                        ev_cmd := false; ev_cmd_wen := false;
+                        ev_cmd_addr := 0; ev_cmd_data := 0;
+                    }
+                    action update_writeback = {
+                        if ev_cmd & ev_cmd_wen & hw_high(ev_cmd_addr) = ack_line {
+                            if hw_beat_of(hw_low(ev_cmd_addr)) = 0 {
+                                wb_lo_done := true;
+                            } else {
+                                wb_hi_done := true;
+                            };
+                        };
+                        ev_cmd := false;
+
+                        if rsp_valid & hw_high(rsp_addr) = req_line {
+                            if wb_st = wb_rwlo & hw_beat_of(hw_low(rsp_addr)) = 0 {
+                                dfb := hw_lpack(hw_lhi(dfb), rsp_data);
+                                wb_st := wb_rhi;
+                            } else { if wb_st = wb_rwhi
+                                    & hw_beat_of(hw_low(rsp_addr)) = 1 {
+                                    dfb := hw_lpack(rsp_data, hw_llo(dfb));
+                                    wb_st := wb_idle;
+                                    d_have := true;
+                            } };
+                        };
+
+                        # Issue before queue pickup. A low read response can
+                        # issue the high read on this same edge, as before.
+                        if cmd_ready {
+                            if wb_st = wb_lo {
+                                ev_cmd := true; ev_cmd_wen := true;
+                                ev_cmd_addr := hw_concatbv3(ack_line, hw_concatbv2(0, 0));
+                                ev_cmd_data := hw_llo(ack_dat);
+                                wb_st := wb_hi;
+                            } else { if wb_st = wb_hi {
+                                    ev_cmd := true; ev_cmd_wen := true;
+                                    ev_cmd_addr := hw_concatbv3(ack_line, hw_concatbv2(1, 0));
+                                    ev_cmd_data := hw_lhi(ack_dat);
+                                    wb_st := wb_fin;
+                                } else { if wb_st = wb_rlo {
+                                        ev_cmd := true; ev_cmd_wen := false;
+                                        ev_cmd_addr := hw_concatbv3(req_line, hw_concatbv2(0, 0));
+                                        ev_cmd_data := 0;
+                                        wb_st := wb_rwlo;
+                                    } else { if wb_st = wb_rhi {
+                                            ev_cmd := true; ev_cmd_wen := false;
+                                            ev_cmd_addr := hw_concatbv3(req_line, hw_concatbv2(1, 0));
+                                            ev_cmd_data := 0;
+                                            wb_st := wb_rwhi;
+                            } } } };
+                        };
+
+                        # The FIFO retains the payload through retirement.
+                        # Reads start only after earlier writebacks drain.
+                        if wb_st = wb_idle {
+                            if ~ack_empty {
+                                wb_lo_done := false; wb_hi_done := false;
+                                if ack_dty { wb_st := wb_lo; }
+                                    else {
+                                    wb_st := wb_ret;
+                                };
+                            } else { if read_en & ~d_have {
+                                    wb_st := wb_rlo;
+                            } };
+                        } else { if wb_st = wb_fin & wb_lo_done & wb_hi_done {
+                                wb_st := wb_ret;
+                            } else { if wb_st = wb_ret {
+                                    if ack_dty & req_active & ack_line = req_line {
+                                        dfb := ack_dat; d_have := true;
+                                    };
+                                    wb_st := wb_idle;
+                                    wb_lo_done := false; wb_hi_done := false;
+                        } } };
+                        if clear { d_have := false; };
+                    }
+                    mixin update_writeback after tick
+
+                    specification {
+                        object data_shape = {
+                            invariant [read_has_no_line] read_active -> ~d_have
+                            invariant [low_data] forall J : bv2.
+                                (wb_st = wb_rhi | wb_st = wb_rwhi) ->
+                                    lsel(dfb,concatbv2(0,J)) =
+                                        img(concatbv3(req_line,concatbv2(0,J)))
+                            invariant [buffer_data] forall O : woffset.
+                                data_valid ->
+                                    lsel(data,O) = img(concatbv3(req_line,O))
+                            invariant [write_data] forall J : bv2.
+                                cmd_en & cmd_wen ->
+                                    wsel4(cmd_data,J) =
+                                        img(concatbv3(high(cmd_addr),
+                                            concatbv2(beat_of(low(cmd_addr)),J)))
+                        }
+                    }
+
+                }
+            }
+        }
+
+        # No child reads the directory's table, request registers,
+        # or invalidation state.
+        definition wb_body.ack_empty = ~x_ack_en
+        definition wb_body.ack_line = x_ack_line
+        definition wb_body.ack_dty = x_ack_dty
+        definition wb_body.ack_dat = x_ack_dat
+        definition wb_body.req_active = dstate_r ~= d_idle
+        definition wb_body.req_line = cr_line
+        definition wb_body.read_en = dstate_r ~= d_idle & cr_slot_valid
+            & ~cr_replacing & inv_settled
+        definition wb_body.clear = grant_now | req_pick
+        definition wb_body.cmd_ready = mc_cmd_ready
+        definition wb_body.rsp_valid = mc_rsp_valid
+        definition wb_body.rsp_addr = mc_rsp_addr
+        definition wb_body.rsp_data = mc_rsp_data
+        definition mc_cmd_en = wb_body.cmd_en
+        definition mc_cmd_wen = wb_body.cmd_wen
+        definition mc_cmd_addr = wb_body.cmd_addr
+        definition mc_cmd_data = wb_body.cmd_data
+        definition ack_done = wb_body.retire
+
+        implementation {
+
+            # Four retire comparators converge with grant installation on
+            # one write port. All wires describe the pre-edge transaction;
+            # sequential post-write lookups read cache_mem directly.
+            wire retire_idx   : idx
+            wire retire_way   : dir_way
+            wire retire_entry : dir_entry
+            wire retire_hit   : bool
+            wire re0 : dir_entry
+            wire re1 : dir_entry
+            wire re2 : dir_entry
+            wire re3 : dir_entry
+            wire rm0 : bool
+            wire rm1 : bool
+            wire rm2 : bool
+            wire rm3 : bool
+            definition retire_idx = hw_dir_index(ack_done_line)
+            definition re0 = cache_mem(hw_dir_cidx(retire_idx, 0))
+            definition re1 = cache_mem(hw_dir_cidx(retire_idx, 1))
+            definition re2 = cache_mem(hw_dir_cidx(retire_idx, 2))
+            definition re3 = cache_mem(hw_dir_cidx(retire_idx, 3))
+            definition rm0 = hw_dir_valid(re0)
+                & hw_dir_entry_high(re0) = hw_dir_high(ack_done_line)
+                & hw_dir_has(re0, ack_done_cpu)
+            definition rm1 = hw_dir_valid(re1)
+                & hw_dir_entry_high(re1) = hw_dir_high(ack_done_line)
+                & hw_dir_has(re1, ack_done_cpu)
+            definition rm2 = hw_dir_valid(re2)
+                & hw_dir_entry_high(re2) = hw_dir_high(ack_done_line)
+                & hw_dir_has(re2, ack_done_cpu)
+            definition rm3 = hw_dir_valid(re3)
+                & hw_dir_entry_high(re3) = hw_dir_high(ack_done_line)
+                & hw_dir_has(re3, ack_done_cpu)
+            definition retire_hit = rm0 | rm1 | rm2 | rm3
+            definition retire_way =
+                (0 if rm0 else (1 if rm1 else (2 if rm2 else 3)))
+            definition retire_entry =
+                cache_mem(hw_dir_cidx(retire_idx, retire_way))
+
+            wire install_sharers : bv2
+            wire install_exclusives : bv2
+            definition install_sharers =
+                (hw_dir_sharers(selected_entry) if selected_match else 0)
+            definition install_exclusives =
+                ((1 if cr_cpu = 0 else 2) if cr_excl else 0)
+            wire table_write_en   : bool
+            wire table_write_slot : dir_slot
+            wire table_write_data : dir_entry
+            definition table_write_en =
+                (ack_done & retire_hit) | grant_now
+            definition table_write_slot =
+                (hw_dir_cidx(retire_idx, retire_way)
+            if ack_done & retire_hit
+                else hw_dir_cidx(cr_idx, cr_way))
+            definition table_write_data =
+                (hw_dir_remove(retire_entry, ack_done_cpu)
+            if ack_done & retire_hit
+                else hw_dir_add(hw_dir_pack(
+                cr_line, install_exclusives, install_sharers), cr_cpu))
+
+            # ==========================================================
+            # THREE control states, and the ladder is gone.
+            #
+            # A transaction is "idle" or "serving a Shared request" or
+            # "serving an Exclusive request", and the kind IS the state --
+            # there is no `cr_excl` register left to disagree with it.
+            # Everything the eight-state ladder sequenced by hand is now a
+            # guard on the one register set: invalidates go out while
+            # `inv_need(C)` is set, the data arrives either from a dirty
+            # acknowledgement or from a read, and the transaction ends on
+            # the edge all three conditions of `grant_now` hold at once.
+            # ==========================================================
+            wire d_idle       : dstate
+            wire d_req_shared : dstate
+            wire d_req_excl   : dstate
+            definition d_idle       = 0
+            definition d_req_shared = 1
+            definition d_req_excl   = 2
+
+
+            # ---- the current request, and who still has to give the
+            # line up before it can be served.  `cr_excl` is a WIRE off
+            # the state now, not a register. ----
+            var dstate_r  : dstate
+            var cr_cpu    : bit
+            register cr_line : line
+            var cr_idx        : idx
+            var cr_way        : dir_way
+            var cr_slot_valid : bool
+            var cr_replacing  : bool
+            var cr_victim     : line
+            var cr_miss       : bool
+            # Unsent messages and outstanding retirements are distinct:
+            # posting an invalidate clears inv_need, never inv_pending.
+            var inv_pending(C : bit) : bool
+            var inv_need(C : bit) : bool
+
+
+            wire cr_excl : bool
+            definition cr_excl = (dstate_r = d_req_excl)
+
+            # ---- ONE held invalidate slot, addressed the way the grant
+            # is addressed by `cr_cpu`.  One slot is one invalidate in
+            # flight, so invalidates to the two caches serialize. ----
+            var inv_v : bool
+            var inv_l : line
+            var inv_c : bit
+
+            # ==========================================================
+            # The end of a transaction, as ONE wire.
+            #
+            # The invalidate list remains set until matching channel-3
+            # retirement, across producer, FIFO, and writeback delays.
+            # Exclusive requests wait for every sharer; Shared requests
+            # wait for an exclusive owner and the requester's stale copy.
+            #
+            # Channel 2 must be empty so the grant precedes a subsequent
+            # invalidate. The local channel-3/writeback engine must also
+            # be idle; unrelated cache producer slots do not block grants.
+            #
+            # There is no grant register or grant acknowledgement.
+            # The combinational grant is sent only to an empty channel 2.
+            # ==========================================================
+            wire selected_entry : dir_entry
+            wire selected_match : bool
+            wire selected_ready : bool
+            wire inv_target     : line
+            wire inv_settled    : bool
+            wire ch2_empty_t    : bool
+            wire grant_now      : bool
+            definition selected_entry =
+                cache_mem(hw_dir_cidx(cr_idx, cr_way))
+            definition selected_match =
+                hw_dir_valid(selected_entry)
+                & hw_dir_entry_high(selected_entry) = hw_dir_high(cr_line)
+            definition selected_ready =
+                cr_slot_valid & ~cr_replacing
+                & (selected_match | ~hw_dir_valid(selected_entry))
+            definition inv_target =
+                (cr_victim if cr_replacing else cr_line)
+            definition inv_settled = ~inv_pending(0) & ~inv_pending(1)
+            definition ch2_empty_t =
+                (in_ch2_empty0 if cr_cpu = 0 else in_ch2_empty1)
+            definition grant_now = dstate_r ~= d_idle & selected_ready
+                & ~inv_v & inv_settled & wb_body.data_valid & ch2_empty_t
+                & ~x_ack_en & wb_body.idle
+
+            # The pending invalidate owns channel 2 until accepted.
+            # Block installation as well as the grant message while it
+            # is live; the table update and visible grant are one event.
+            # Invalidates do not consume ch2_msg_data.
+            definition ch2_msg_valid = grant_now | inv_v
+            definition ch2_msg_typ   = (ch2_inv if inv_v
+                                        else (ch2_gex if dstate_r = d_req_excl
+                                              else ch2_gsh))
+            definition ch2_msg_cpu   = (inv_c if inv_v else cr_cpu)
+            definition ch2_msg_line  = (inv_l if inv_v else cr_line)
+            definition ch2_msg_data = wb_body.data
+
+            # Preserve same-edge producer-slot retirement and posting
+            # visibility using the hardware events.
+            wire ack_pending(C : bit) : bool
+            definition ack_pending(C) =
+                (((in_ack_en0 & ~in_ack_taken0) | in_give_en0) if C = 0
+                 else ((in_ack_en1 & ~in_ack_taken1) | in_give_en1))
+
+
+
+            # Predict readiness at the late pickup point from frozen
+            # events. A grant or final acknowledgement retirement can
+            # release the directory on this edge, but a new enqueue cannot.
+            definition req_pick =
+                ~req_empty & ~ack_pending(0) & ~ack_pending(1)
+                & in_ack_drained
+                & (dstate_r = d_idle | grant_now)
+                & ((wb_body.idle & ~x_ack_en) | ack_done)
+
+
+            action clock = {
+
+                # The old channel-3 head retires only after its writeback
+                # is complete. Grants and retirements cannot share this
+                # edge, so the table has exactly one physical write port.
+                if table_write_en {
+                    cache_mem(table_write_slot) := table_write_data;
+                };
+
+
+                # Retirement has already completed the memory operation;
+                # only ownership and invalidate bookkeeping remain here.
+                if ack_done {
+                    if ack_done_cpu = 0 {
+                        if dstate_r ~= d_idle
+                                & inv_target = ack_done_line {
+                            inv_need(0) := false;
+                            inv_pending(0) := false;
+                        };
+                        if inv_v & inv_c = 0 & inv_l = ack_done_line {
+                            inv_v := false;
+                        };
+                    } else {
+                        if dstate_r ~= d_idle
+                                & inv_target = ack_done_line {
+                            inv_need(1) := false;
+                            inv_pending(1) := false;
+                        };
+                        if inv_v & inv_c = 1 & inv_l = ack_done_line {
+                            inv_v := false;
+                        };
+                    };
+                };
+
+                # A reserved victim becomes free only after its last
+                # physical sharer retires and channel 3 is fully quiet.
+                if dstate_r ~= d_idle & cr_replacing
+                        & hw_dir_sharers(cache_mem(
+                            hw_dir_cidx(cr_idx, cr_way))) = 0
+                        & in_ack_drained & wb_body.idle_after
+                        & ~ack_pending(0) & ~ack_pending(1) {
+                    cr_replacing := false;
+                    inv_need(C) := false;
+                    inv_pending(C) := false;
+                };
+
+                if dstate_r ~= d_idle {
+                    if inv_v & x_ch2_msg_taken & x_ch2_msg_typ = ch2_inv {
+                        inv_v := false;
+                    };
+                    if inv_need(0) & ~inv_v & ~ack_pending(0) {
+                        inv_v := true; inv_l := inv_target; inv_c := 0;
+                        inv_need(0) := false;
+                    };
+                    if inv_need(1) & ~inv_v & ~ack_pending(1) {
+                        inv_v := true; inv_l := inv_target; inv_c := 1;
+                        inv_need(1) := false;
+                    };
+                };
+
+                # Complete one grant. A hit preserves the other Shared
+                # holder; a miss installs only after the selected entry is
+                # invalid. Exclusive ownership is stored in the entry.
+                if grant_now {
+                    if cr_miss {
+                        dir_repl(cr_idx) := dir_repl(cr_idx) + 1;
+                    };
+                    cr_slot_valid := false;
+                    cr_replacing  := false;
+                    cr_miss       := false;
+                    dstate_r      := d_idle;
+                };
+
+                if req_pick {
+                    var pl : line := req_line;
+                    var px : bool := req_excl;
+                    var pi : idx := hw_dir_index(pl);
+                    # Check if it's in a directory entry
+                    var pe0 : dir_entry := cache_mem(hw_dir_cidx(pi, 0));
+                    var pe1 : dir_entry := cache_mem(hw_dir_cidx(pi, 1));
+                    var pe2 : dir_entry := cache_mem(hw_dir_cidx(pi, 2));
+                    var pe3 : dir_entry := cache_mem(hw_dir_cidx(pi, 3));
+                    cr_cpu        := req_cpu;
+                    cr_line       := pl;
+                    cr_idx        := pi;
+                    cr_slot_valid := true;
+                    cr_victim     := 0;
+                    dstate_r      :=
+                        (d_req_excl if px else d_req_shared);
+
+                    if hw_dir_valid(pe0)
+                            & hw_dir_entry_high(pe0) = hw_dir_high(pl) {
+                        cr_way := 0; cr_replacing := false;
+                        cr_miss := false;
+                        inv_need(C) := hw_dir_has(pe0, C)
+                            & (px | hw_dir_exclusive(pe0) | C = cr_cpu);
+                    } else { if hw_dir_valid(pe1)
+                            & hw_dir_entry_high(pe1) = hw_dir_high(pl) {
+                            cr_way := 1; cr_replacing := false;
+                            cr_miss := false;
+                            inv_need(C) := hw_dir_has(pe1, C)
+                                & (px | hw_dir_exclusive(pe1) | C = cr_cpu);
+                        } else { if hw_dir_valid(pe2)
+                                & hw_dir_entry_high(pe2) = hw_dir_high(pl) {
+                                cr_way := 2; cr_replacing := false;
+                                cr_miss := false;
+                                inv_need(C) := hw_dir_has(pe2, C)
+                                    & (px | hw_dir_exclusive(pe2) | C = cr_cpu);
+                            } else { if hw_dir_valid(pe3)
+                                    & hw_dir_entry_high(pe3) = hw_dir_high(pl) {
+                                    cr_way := 3; cr_replacing := false;
+                                    inv_need(C) := hw_dir_has(pe3, C)
+                                        & (px | hw_dir_exclusive(pe3) | C = cr_cpu);
+                                    cr_miss := false;
+                                } else { if ~hw_dir_valid(pe0) {
+                                        cr_way := 0; cr_replacing := false;
+                                        cr_miss := true;
+                                        inv_need(C) := false;
+                                    } else { if ~hw_dir_valid(pe1) {
+                                            cr_way := 1; cr_replacing := false;
+                                            cr_miss := true;
+                                            inv_need(C) := false;
+                                        } else { if ~hw_dir_valid(pe2) {
+                                                cr_way := 2; cr_replacing := false;
+                                                cr_miss := true;
+                                                inv_need(C) := false;
+                                            } else { if ~hw_dir_valid(pe3) {
+                                                    cr_way := 3; cr_replacing := false;
+                                                    cr_miss := true;
+                                                    inv_need(C) := false;
+                                                } else {
+                                                    var rw : dir_way := dir_repl(pi);
+                                                    var ve : dir_entry := cache_mem(hw_dir_cidx(pi, rw));
+                                                    cr_way       := rw;
+                                                    cr_replacing := true;
+                                                    cr_victim := hw_dir_tag(ve);
+                                                    cr_miss      := true;
+                                                    inv_need(C) := hw_dir_has(ve, C);
+                    } } } } } } } };
+                    inv_pending(C) := inv_need(C);
+                };
+            }
+            action clock_step = {
+                call clock;
+            }
+            mixin clock_step after tick
+
+        }
+
+    }
+
+    # Parent-owned beat interface between sibling controller and directory.
+    definition dir_body.mc_cmd_ready = mc_body.cmd_ready
+    definition dir_body.mc_rsp_valid = mc_body.rsp_valid
+    definition dir_body.mc_rsp_addr = mc_body.rsp_addr
+    definition dir_body.mc_rsp_data = mc_body.rsp_data
+    definition mc_body.cmd_en = dir_body.mc_cmd_en
+    definition mc_body.cmd_wen = dir_body.mc_cmd_wen
+    definition mc_body.cmd_addr = dir_body.mc_cmd_addr
+    definition mc_body.cmd_data = dir_body.mc_cmd_data
+
+    # The crossbar arbitrates the per-cache channel-1 and channel-3 heads
+    # independently. Requests pop at directory pickup; acknowledgements
+    # remain in their cache's FIFO until the complete writeback retires.
+    # Channel 2 is routed by destination, without arbitration.
+    isolate xbar_body = {
+        # Physical FIFO heads and return handshakes are scalar child ports.
+        wire in_ch1_empty0 : bool
+        wire in_ch1_empty1 : bool
+        wire in_ch1_line0 : line
+        wire in_ch1_line1 : line
+        wire in_ch1_excl0 : bool
+        wire in_ch1_excl1 : bool
+        wire in_ch3_empty0 : bool
+        wire in_ch3_empty1 : bool
+        wire in_ch3_line0 : line
+        wire in_ch3_line1 : line
+        wire in_ch3_dty0 : bool
+        wire in_ch3_dty1 : bool
+        wire in_ch3_dat0 : cache_line
+        wire in_ch3_dat1 : cache_line
+        wire in_ch3_drained0 : bool
+        wire in_ch3_drained1 : bool
+        wire in_ch2_taken0 : bool
+        wire in_ch2_taken1 : bool
+        wire in_req_pick : bool
+        wire in_ack_done : bool
+        wire ch2_valid0 : bool
+        wire ch2_valid1 : bool
+        wire ch2_typ : ch2typ
+        wire ch2_line : line
+        wire ch2_data : cache_line
+
+        # ---- the ports this crossbar drives.  Uplink to the directory
+        # first: ONE set, because the directory has one set now. ----
+        wire src       : bit
+        wire req_cpu   : bit
+        wire ack_drained : bool
+        wire req_en    : bool
+        wire req_line  : line
+        wire req_excl  : bool
+        wire ack_en    : bool
+        wire ack_line  : line
+        wire ack_dty   : bool
+        wire ack_dat   : cache_line
+
+        # ---- channel 2's handshake, muxed back by destination.  One
+        # wire, unused if the message is an invalidate. ----
+        wire ch2_msg_taken : bool
+
+
+        # ---- and channel 2 out to the two caches: one message, no
+        # separate grant and invalidate.  The type is either a grant --
+        # Shared or Exclusive -- or a request to invalidate, and `data`
+        # is unused if it is an invalidate. ----
+        wire ch2_msg_valid(C : bit) : bool
+        wire ch2_msg_typ(C : bit) : ch2typ
+        wire ch2_msg_line(C : bit) : line
+        wire ch2_msg_data(C : bit) : cache_line
+
+        specification {
+            derived invariant [port_safety_request] req_en ->
+                ~(in_ch1_empty0 if req_cpu = 0 else in_ch1_empty1)
+                using * - *
+            derived invariant [port_safety_ack] ack_en ->
+                ~(in_ch3_empty0 if src = 0 else in_ch3_empty1)
+                using * - *
+            derived invariant [port_safety_ch2_forward]
+                ch2_typ = x_ch2_msg_typ & ch2_line = x_ch2_msg_line
+                & ch2_data = x_ch2_msg_data
+                & ((ch2_valid0 | ch2_valid1) -> x_ch2_msg_valid)
+                using * - *
+            # Assume faithful live input heads; guarantee a faithful output.
+            derived invariant [data_ack] forall O : woffset.
+                (~in_ch3_empty0 ->
+                    lsel(in_ch3_dat0,O) = img(concatbv3(in_ch3_line0,O)))
+                & (~in_ch3_empty1 ->
+                    lsel(in_ch3_dat1,O) = img(concatbv3(in_ch3_line1,O)))
+                & ack_en ->
+                    lsel(ack_dat,O) = img(concatbv3(ack_line,O))
+                using * - *
+            derived invariant [data_grant] forall C : bit, O : woffset.
+                (x_ch2_msg_valid
+                 & (x_ch2_msg_typ = ch2_gsh | x_ch2_msg_typ = ch2_gex) ->
+                    lsel(x_ch2_msg_data,O) = img(concatbv3(x_ch2_msg_line,O)))
+                & ch2_msg_valid(C)
+                & (ch2_msg_typ(C) = ch2_gsh | ch2_msg_typ(C) = ch2_gex) ->
+                    lsel(ch2_msg_data(C),O) = img(concatbv3(ch2_msg_line(C),O))
+                using * - *
+        }
+
+        implementation {
+            var req_last : bit
+            var ack_last : bit
+            var ack_locked : bool
+            var ack_owner : bit
+            after init {
+                req_last := 1; ack_last := 1;
+                ack_locked := false; ack_owner := 0;
+            }
+
+            # Choose a nonempty queue immediately, with round-robin tie breaks.
+            # Only channel 3 needs a lock: its head is read across several beats.
+            definition req_cpu =
+                (1 if in_ch1_empty0 else
+                 (0 if in_ch1_empty1 else
+                  (1 if req_last = 0 else 0)))
+            definition req_en =
+                ~in_ch1_empty0 | ~in_ch1_empty1
+            definition req_line = (in_ch1_line0 if req_cpu = 0 else in_ch1_line1)
+            definition req_excl = (in_ch1_excl0 if req_cpu = 0 else in_ch1_excl1)
+            definition src =
+                (ack_owner if ack_locked else
+                 (1 if in_ch3_empty0 else
+                  (0 if in_ch3_empty1 else
+                   (1 if ack_last = 0 else 0))))
+            definition ack_en =
+                ~(in_ch3_empty0 if src = 0 else in_ch3_empty1)
+            definition ack_line = (in_ch3_line0 if src = 0 else in_ch3_line1)
+            definition ack_dty = (in_ch3_dty0 if src = 0 else in_ch3_dty1)
+            definition ack_dat = (in_ch3_dat0 if src = 0 else in_ch3_dat1)
+            definition ack_drained =
+                in_ch3_drained0 & in_ch3_drained1
+
+            # Channel 2 routes independently of both outgoing-channel arbiters.
+            definition ch2_valid0 = x_ch2_msg_valid & x_ch2_msg_cpu = 0
+            definition ch2_valid1 = x_ch2_msg_valid & x_ch2_msg_cpu = 1
+            definition ch2_typ = x_ch2_msg_typ
+            definition ch2_line = x_ch2_msg_line
+            definition ch2_data = x_ch2_msg_data
+            definition ch2_msg_valid(C) = (ch2_valid0 if C = 0 else ch2_valid1)
+            definition ch2_msg_typ(C) = ch2_typ
+            definition ch2_msg_line(C) = ch2_line
+            definition ch2_msg_data(C) = ch2_data
+            definition ch2_msg_taken =
+                (in_ch2_taken0 if x_ch2_msg_cpu = 0 else in_ch2_taken1)
+
+            action update_arbitration = {
+                if in_req_pick { req_last := req_cpu; };
+                if in_ack_done {
+                    ack_last := src;
+                    ack_locked := false;
+                } else { if ack_en {
+                        ack_owner := src;
+                        ack_locked := true;
+                } };
+            }
+            mixin update_arbitration after tick
+        }
+    } with cachemem, cache0_body.ch1_body, cache1_body.ch1_body,
+           cache0_body.ch3_body, cache1_body.ch3_body,
+           basis, cache_image
+
+    definition xbar_body.in_ch1_empty0 = cache0_body.ch1_empty
+    definition xbar_body.in_ch1_line0 = cache0_body.ch1_line
+    definition xbar_body.in_ch1_excl0 = cache0_body.ch1_excl
+    definition xbar_body.in_ch3_empty0 = cache0_body.ch3_empty
+    definition xbar_body.in_ch3_line0 = cache0_body.ch3_line
+    definition xbar_body.in_ch3_dty0 = cache0_body.ch3_dty
+    definition xbar_body.in_ch3_dat0 = cache0_body.ch3_dat
+    definition xbar_body.in_ch3_drained0 = cache0_body.ch3_drained
+    definition xbar_body.in_ch2_taken0 = cache0_body.ch2_msg_taken
+    definition dir_body.in_ch2_empty0 = cache0_body.ch2_empty
+    definition dir_body.in_ack_en0 = cache0_body.ack_en
+    definition dir_body.in_ack_taken0 = cache0_body.ch3_taken
+    definition dir_body.in_give_en0 = cache0_body.give_en
+    definition xbar_body.in_ch1_empty1 = cache1_body.ch1_empty
+    definition xbar_body.in_ch1_line1 = cache1_body.ch1_line
+    definition xbar_body.in_ch1_excl1 = cache1_body.ch1_excl
+    definition xbar_body.in_ch3_empty1 = cache1_body.ch3_empty
+    definition xbar_body.in_ch3_line1 = cache1_body.ch3_line
+    definition xbar_body.in_ch3_dty1 = cache1_body.ch3_dty
+    definition xbar_body.in_ch3_dat1 = cache1_body.ch3_dat
+    definition xbar_body.in_ch3_drained1 = cache1_body.ch3_drained
+    definition xbar_body.in_ch2_taken1 = cache1_body.ch2_msg_taken
+    definition dir_body.in_ch2_empty1 = cache1_body.ch2_empty
+    definition dir_body.in_ack_en1 = cache1_body.ack_en
+    definition dir_body.in_ack_taken1 = cache1_body.ch3_taken
+    definition dir_body.in_give_en1 = cache1_body.give_en
+    definition dir_body.in_ack_drained = xbar_body.ack_drained
+    definition xbar_body.in_req_pick = dir_body.req_pick
+    definition xbar_body.in_ack_done = dir_body.ack_done
+
+
+    # The crossbar presents the selected queue heads to the directory.
+    # Enqueue handshakes remain local to each cache.
+    definition x_src           = xbar_body.src
+    definition x_req_en        = xbar_body.req_en
+    definition x_req_line      = xbar_body.req_line
+    definition x_req_excl      = xbar_body.req_excl
+    definition x_ack_en        = xbar_body.ack_en
+    definition x_ack_line      = xbar_body.ack_line
+    definition x_ack_dty       = xbar_body.ack_dty
+    definition x_ack_dat       = xbar_body.ack_dat
+    definition x_ch2_msg_valid = dir_body.ch2_msg_valid
+    definition x_ch2_msg_typ   = dir_body.ch2_msg_typ
+    definition x_ch2_msg_cpu   = dir_body.ch2_msg_cpu
+    definition x_ch2_msg_line  = dir_body.ch2_msg_line
+    definition x_ch2_msg_data  = dir_body.ch2_msg_data
+    definition x_ch2_msg_taken = xbar_body.ch2_msg_taken
+
+    # ---- and channel 2's three kinds ----
+    definition ch2_gsh = 0
+    definition ch2_gex = 1
+    definition ch2_inv = 2
+
+    # ---- cache-driven responses on the two LSQ-side channels ----
+    definition cache_to_lsq_creq_ready(C) =
+        (cache0_body.cache_to_lsq_creq_ready if C = 0 else cache1_body.cache_to_lsq_creq_ready)
+    definition cache_to_lsq_resp_valid(C) =
+        (cache0_body.cache_to_lsq_resp_valid if C = 0 else cache1_body.cache_to_lsq_resp_valid)
+    definition cache_to_lsq_resp_h(C) =
+        (cache0_body.cache_to_lsq_resp_h if C = 0 else cache1_body.cache_to_lsq_resp_h)
+    definition cache_to_lsq_resp_o(C) =
+        (cache0_body.cache_to_lsq_resp_o if C = 0 else cache1_body.cache_to_lsq_resp_o)
+    definition cache_to_lsq_resp_data(C) =
+        (cache0_body.cache_to_lsq_resp_data if C = 0 else cache1_body.cache_to_lsq_resp_data)
+    definition cache_to_lsq_resp_idx(C) =
+        (cache0_body.cache_to_lsq_resp_idx if C = 0 else cache1_body.cache_to_lsq_resp_idx)
+    definition cache_to_lsq_store_ack_valid(C) =
+        (cache0_body.cache_to_lsq_store_ack_valid if C = 0 else cache1_body.cache_to_lsq_store_ack_valid)
+    definition cache_to_lsq_store_ack_idx(C) =
+        (cache0_body.cache_to_lsq_store_ack_idx if C = 0 else cache1_body.cache_to_lsq_store_ack_idx)
+    definition cache_to_lsq_store_ack_data(C) =
+        (cache0_body.cache_to_lsq_store_ack_data if C = 0 else cache1_body.cache_to_lsq_store_ack_data)
+
+    # ---- the memory controller drives the external beat port directly ----
+    definition mem_rd_en   = mc_body.mem_rd_en
+    definition mem_rd_addr = mc_body.mem_rd_addr
+    definition mem_wr_en   = mc_body.mem_wr_en
+    definition mem_wr_addr = mc_body.mem_wr_addr
+    definition mem_wr_data = mc_body.mem_wr_data
+    definition mc_body.mem_rdata = mem_rdata
+
+    isolate memory_write_interface = mc_body.data_write_boundary, cache_image
+        with cachemem, mc_body, dir_body, dir_body.data, basis, addr_thy
+    isolate writeback_acknowledgement_interface = dir_body.wb_body.data_ack, cache_image
+        with cachemem, dir_body, dir_body.wb_body, xbar_body,
+            cache0_body.ch3_body, cache1_body.ch3_body, basis, addr_thy
+    isolate writeback_response_interface = dir_body.wb_body.data_response, cache_image
+        with cachemem, dir_body, dir_body.wb_body, mc_body, basis, addr_thy
+
+}
+
+# Hardware wrapper with two independent CPU ports and an external beat memory.
+isolate memory_system = {
+    import wire cpu0_req_en : bool
+    import wire cpu0_req_h : line
+    import wire cpu0_req_o : woffset
+    import wire cpu0_req_wen : bool
+    import wire cpu0_req_wdata : word
+    import wire cpu0_load_slot : load_idx
+    import wire cpu0_store_slot : store_idx
+    import wire cpu1_req_en : bool
+    import wire cpu1_req_h : line
+    import wire cpu1_req_o : woffset
+    import wire cpu1_req_wen : bool
+    import wire cpu1_req_wdata : word
+    import wire cpu1_load_slot : load_idx
+    import wire cpu1_store_slot : store_idx
+
+    export wire cpu0_ready : bool
+    export wire cpu0_resp_valid : bool
+    export wire cpu0_resp_h : line
+    export wire cpu0_resp_o : woffset
+    export wire cpu0_resp_data : word
+    export wire cpu0_resp_idx : load_idx
+    export wire cpu0_store_ack_valid : bool
+    export wire cpu0_store_ack_idx : store_idx
+    export wire cpu0_store_ack_data : word
+    export wire cpu1_ready : bool
+    export wire cpu1_resp_valid : bool
+    export wire cpu1_resp_h : line
+    export wire cpu1_resp_o : woffset
+    export wire cpu1_resp_data : word
+    export wire cpu1_resp_idx : load_idx
+    export wire cpu1_store_ack_valid : bool
+    export wire cpu1_store_ack_idx : store_idx
+    export wire cpu1_store_ack_data : word
+
+    import wire mem_rdata : four_words
+    export wire mem_rd_en : bool
+    export wire mem_rd_addr : addr
+    export wire mem_wr_en : bool
+    export wire mem_wr_addr : addr
+    export wire mem_wr_data : four_words
+
+    instance cachemem : cachemem_unit(posedge)
+
+    # Scalar hardware ports.
+    definition cachemem.cpu0_req_en = cpu0_req_en
+    definition cachemem.cpu0_req_h = cpu0_req_h
+    definition cachemem.cpu0_req_o = cpu0_req_o
+    definition cachemem.cpu0_req_wen = cpu0_req_wen
+    definition cachemem.cpu0_req_wdata = cpu0_req_wdata
+    definition cachemem.cpu0_load_slot = cpu0_load_slot
+    definition cachemem.cpu0_store_slot = cpu0_store_slot
+    definition cachemem.cpu1_req_en = cpu1_req_en
+    definition cachemem.cpu1_req_h = cpu1_req_h
+    definition cachemem.cpu1_req_o = cpu1_req_o
+    definition cachemem.cpu1_req_wen = cpu1_req_wen
+    definition cachemem.cpu1_req_wdata = cpu1_req_wdata
+    definition cachemem.cpu1_load_slot = cpu1_load_slot
+    definition cachemem.cpu1_store_slot = cpu1_store_slot
+
+    definition cpu0_ready = cachemem.cpu0_ready
+    definition cpu0_resp_valid = cachemem.cpu0_resp_valid
+    definition cpu0_resp_h = cachemem.cpu0_resp_h
+    definition cpu0_resp_o = cachemem.cpu0_resp_o
+    definition cpu0_resp_data = cachemem.cpu0_resp_data
+    definition cpu0_resp_idx = cachemem.cpu0_resp_idx
+    definition cpu0_store_ack_valid = cachemem.cpu0_store_ack_valid
+    definition cpu0_store_ack_idx = cachemem.cpu0_store_ack_idx
+    definition cpu0_store_ack_data = cachemem.cpu0_store_ack_data
+    definition cpu1_ready = cachemem.cpu1_ready
+    definition cpu1_resp_valid = cachemem.cpu1_resp_valid
+    definition cpu1_resp_h = cachemem.cpu1_resp_h
+    definition cpu1_resp_o = cachemem.cpu1_resp_o
+    definition cpu1_resp_data = cachemem.cpu1_resp_data
+    definition cpu1_resp_idx = cachemem.cpu1_resp_idx
+    definition cpu1_store_ack_valid = cachemem.cpu1_store_ack_valid
+    definition cpu1_store_ack_idx = cachemem.cpu1_store_ack_idx
+    definition cpu1_store_ack_data = cachemem.cpu1_store_ack_data
+
+    definition cachemem.mem_rdata = mem_rdata
+    definition mem_rd_en = cachemem.mem_rd_en
+    definition mem_rd_addr = cachemem.mem_rd_addr
+    definition mem_wr_en = cachemem.mem_wr_en
+    definition mem_wr_addr = cachemem.mem_wr_addr
+    definition mem_wr_data = cachemem.mem_wr_data
+} with abs_prot, cache_image
+
+include cachemem_refinement
+
+
+delegate memory_system.cachemem.cache0_body.data.store_commit.check -> memory_system.cachemem.cache0_body.data.store_commit
+delegate memory_system.cachemem.cache1_body.data.store_commit.check -> memory_system.cachemem.cache1_body.data.store_commit
+
+
+isolate directory_data_proof = memory_system.cachemem.dir_body,
+    memory_system.cachemem.dir_body.data,
+    memory_system.cachemem.dir_body.wb_body,
+    memory_system.cachemem.dir_body.wb_body.data_shape, cache_image
+    with memory_system.cachemem, addr_thy, basis, data_impl
+
