@@ -2,10 +2,9 @@
 
 # Concrete two-cache memory subsystem with scalar CPU and DRAM beat ports.
 # Check: ivy_check cachemem-concrete.ivy
-# RTL: ivy_to_rtl cachemem-concrete.ivy (top memory_system).
-# Equivalence: normalize with cachemem-equivalence.ys, then rtlil_eqv cachemem-equivalence.ileq.
-# Upstream resets scalar registers with rst, but memories use power-on init.
-# This is not a full-system warm reset. mem_rdata is combinational.
+
+# Limitations: The directory can only handle one request at a time. Caches can handle
+# multiple in-flight requests at a time. 
 
 include numbers
 include german
