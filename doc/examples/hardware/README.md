@@ -33,6 +33,20 @@ global `rst` is the reset.
 
 Each `.il` beside a `.ivy` is the committed golden output of the translator.
 
+### Verifying German's caches
+
+Run `ivy_check germans_caches.ivy` from this directory; use
+`timeout 180s ivy_check germans_caches.ivy` to enforce the verification deadline.
+The hardware wrapper assumes the request-slot/payload contract and the external
+DRAM read contract stated in the model.
+
+Cache channel-2 inputs bind to the crossbar's public, tracked interface, not
+hidden implementation wires. The `ch2_net_*` identities are derived invariants
+(same-state checks). The cache and directory hardware initializers live in
+named `reset` objects so `native_ack` and `native_control` explicitly include
+their reset behavior as well as their clock transitions.
+
+
 ## Checking an RTLIL design with Yosys
 
 Structural sanity check of a generated netlist:

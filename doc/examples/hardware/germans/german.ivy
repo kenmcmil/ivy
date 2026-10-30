@@ -1,0 +1,230 @@
+#lang ivy1.8
+
+
+module isolate abs(client, addr_t) = {
+
+    specification {
+
+    type ch1_message = {excl, shared}
+    type ch2_message = {gsh, gex, inv}
+
+    # Channels record messages per client and address. An invalidate may follow
+    # an unconsumed grant, or race a voluntary eviction and its acknowledgement.
+    # Grants require an empty channel for their address; invalidate reception
+    # waits for any preceding grant. Directory replacement may invalidate a
+    # holder without a demand request for the victim address.
+    # Requests from cache -> directory
+    var channel1(C : client, M : ch1_message, A : addr_t) : bool
+    # Messages from directory -> cache
+    var channel2(C : client, M : ch2_message, A : addr_t) : bool
+    # Invalidate acknowledgement from cache -> directory
+    var channel3(C : client, A : addr_t) : bool
+
+    var cacheShared(C:client, A : addr_t) : bool
+    var cacheExclusive(C:client, A : addr_t) : bool
+    var homeSharerList(C:client, A : addr_t) : bool
+    var homeInvalidateList(C:client, A : addr_t) : bool
+    var homeExclusiveGranted(A : addr_t) : bool
+    var homeCurrentReqShared(A : addr_t) : bool
+    var homeCurrentReqExclusive(A : addr_t) : bool
+    var homeCurrentclient(A : addr_t) : client
+
+    var owner(A : addr_t) : client
+
+    after init {
+        channel1(C:client, M:ch1_message, A:addr_t) := false;
+        channel2(C:client, M:ch2_message, A:addr_t) := false;
+        channel3(C:client, A:addr_t) := false;
+        cacheShared(C:client, A:addr_t) := false;
+        cacheExclusive(C:client, A:addr_t) := false;
+        homeSharerList(C:client, A:addr_t) := false;
+        homeInvalidateList(C:client, A:addr_t) := false;
+        homeExclusiveGranted(A:addr_t) := false;
+        homeCurrentReqShared(A:addr_t) := false;
+        homeCurrentReqExclusive(A:addr_t) := false;
+    }
+
+    action reqSharedRule(cl:client, a:addr_t) = {
+        # this is a slight weakening of german's protocol: we should also require not cacheExclusive
+        require ~cacheShared(cl, a) & ~cacheExclusive(cl, a) & ~channel1(cl, M, a);
+        channel1(cl, shared, a) := true;
+    }
+
+    action reqExclusiveRule(cl:client, a:addr_t) = {
+        # this is another weakening of standard German's
+        require ~cacheExclusive(cl, a) & ~channel1(cl, M, a);
+        channel1(cl, excl, a) := true;
+    }
+
+    action pickNewSharedRequestRule(cl:client, a:addr_t) = {
+        require ~homeCurrentReqShared(a) & ~homeCurrentReqExclusive(a) & channel1(cl, shared, a);
+        homeCurrentReqShared(a) := true;
+        channel1(cl, shared, a) := false;
+        homeCurrentclient(a) := cl;
+        homeInvalidateList(C, a) := homeSharerList(C, a);
+    }
+
+    action pickNewExclusiveRequestRule(cl:client, a:addr_t) = {
+        require ~homeCurrentReqShared(a) & ~homeCurrentReqExclusive(a) & channel1(cl, excl, a);
+        homeCurrentReqExclusive(a) := true;
+        channel1(cl, excl, a) := false;
+        homeCurrentclient(a) := cl;
+        homeInvalidateList(C, a) := homeSharerList(C, a);
+    }
+
+    action grantSharedRule(a:addr_t) = {
+        require
+            homeCurrentReqShared(a)
+            & ~homeExclusiveGranted(a)
+            & ~channel2(homeCurrentclient(a), M, a)
+            & ~channel3(homeCurrentclient(a), a);
+        homeSharerList(homeCurrentclient(a), a) := true;
+        homeCurrentReqShared(a) := false;
+        channel2(homeCurrentclient(a), gsh, a) := true;
+    }
+
+    action grantExclusiveRule(a:addr_t) = {
+        require
+            homeCurrentReqExclusive(a)
+            & ~channel2(homeCurrentclient(a), M, a)
+            & forall I. ~homeSharerList(I, a);
+        homeSharerList(homeCurrentclient(a), a) := true;
+        homeCurrentReqExclusive(a) := false;
+        homeExclusiveGranted(a) := true;
+        channel2(homeCurrentclient(a), gex, a) := true;
+        owner(a) := homeCurrentclient(a);
+    }
+
+    action sendInvalidateRule(cl:client, a:addr_t) = {
+        require ~channel2(cl, inv, a) & homeSharerList(cl, a);
+        channel2(cl, inv, a) := true;
+        homeInvalidateList(cl, a) := false;
+    }
+
+    # Evictions and replacement victims can retire without a demand request
+    # for their address. The acknowledgement itself authorizes retirement.
+    action receiveInvalidateAckRule(cl:client, a:addr_t) = {
+        require channel3(cl, a);
+        homeSharerList(cl, a) := false;
+        homeExclusiveGranted(a) := false;
+        channel3(cl, a) := false;
+    }
+
+    action sharerInvalidatesCacheRule(cl:client, a:addr_t) = {
+        require channel2(cl, inv, a) & ~channel3(cl, a)
+            & (cacheShared(cl, a) | cacheExclusive(cl, a))
+            & ~(channel2(cl, gsh, a) | channel2(cl, gex, a));
+        channel2(cl, inv, a) := false;
+        channel3(cl, a) := true;
+        cacheShared(cl, a) := false;
+        cacheExclusive(cl, a) := false;
+    }
+
+    # A capacity eviction or upgrade surrenders permission independently of
+    # directory traffic. It must not consume an invalidate still in flight.
+    action evictCacheRule(cl:client, a:addr_t) = {
+        require ~channel3(cl, a)
+            & (cacheShared(cl, a) | cacheExclusive(cl, a))
+            & ~(channel2(cl, gsh, a) | channel2(cl, gex, a));
+        channel3(cl, a) := true;
+        cacheShared(cl, a) := false;
+        cacheExclusive(cl, a) := false;
+    }
+
+    # An eviction's acknowledgement already accounts for an absent copy.
+    # Consuming a late invalidate must not manufacture a second acknowledgement.
+    action discardInvalidateRule(cl:client, a:addr_t) = {
+        require channel2(cl, inv, a)
+            & ~cacheShared(cl, a) & ~cacheExclusive(cl, a)
+            & ~channel2(cl, gsh, a) & ~channel2(cl, gex, a);
+        channel2(cl, inv, a) := false;
+    }
+
+    action receiveSharedGrantRule(cl:client, a:addr_t) = {
+        require channel2(cl, gsh, a);
+        cacheShared(cl, a) := true;
+        channel2(cl, gsh, a) := false;
+    }
+
+    action receiveExclusiveGrantRule(cl:client, a:addr_t) = {
+        require channel2(cl, gex, a);
+        cacheExclusive(cl, a) := true;
+        channel2(cl, gex, a) := false;
+    }
+
+    # Cache permissions: a resident exclusive copy excludes every other copy.
+    invariant [cache_swmr]
+        ~(C ~= D & cacheExclusive(C, A) & (cacheExclusive(D, A) | cacheShared(D, A)))
+    invariant [cache_permissions_disjoint]
+        forall C1. ~(cacheShared(C1, A) & cacheExclusive(C1, A))
+
+    # Channel permissions: grants and acknowledgements cannot overlap.
+    invariant [ack_grant_disjoint]
+        forall C1. ~(channel3(C1, A) & (channel2(C1, gsh, A) | channel2(C1, gex, A)))
+    invariant [grant_kinds_disjoint]
+        channel2(C, gsh, A) -> ~channel2(C, gex, A)
+    # Sending an exclusive grant requires an empty sharer list; receiving it
+    # consumes the grant before making the exclusive permission resident.
+    invariant [exclusive_grant_not_resident]
+        channel2(C, gex, A) -> ~cacheExclusive(C, A)
+    # A late invalidate can outlive both permission and acknowledgement.
+    invariant [ack_not_resident]
+        channel3(C, A) -> ~(cacheShared(C, A) | cacheExclusive(C, A))
+
+    # Home ownership: the directory accounts for resident and in-flight leases.
+    invariant [current_request_disjoint]
+        ~(homeCurrentReqShared(A) & homeCurrentReqExclusive(A))
+    invariant [resident_exclusive_granted]
+        cacheExclusive(C, A) -> homeExclusiveGranted(A)
+    invariant [exclusive_ack_owner]
+        channel3(C, A) & homeExclusiveGranted(A) -> C = owner(A)
+    invariant [requested_exclusive_ack_owner]
+        homeExclusiveGranted(A) & (homeCurrentReqShared(A) | homeCurrentReqExclusive(A)) & channel3(C1, A) -> C1 = owner(A)
+    invariant [shared_permission_directory]
+        (cacheShared(C, A) | channel2(C, gsh, A)) -> homeSharerList(C, A) & ~homeExclusiveGranted(A)
+    invariant [exclusive_permission_directory]
+        (cacheExclusive(C, A) | channel2(C, gex, A)) -> homeSharerList(C, A) & homeExclusiveGranted(A) & C = owner(A)
+    invariant [exclusive_sharer_owner]
+        homeExclusiveGranted(A) & homeSharerList(C, A) -> C = owner(A)
+    invariant [ack_has_sharer]
+        ~homeSharerList(C, A) -> ~channel3(C, A)
+
+    # Abstract exclusion facts shared by cache, channel, and data refinements.
+    derived invariant [exclusive_lease] forall C : client, D : client, A : addr_t.
+        (cacheExclusive(C, A) | channel2(C, gex, A)) ->
+            (~cacheShared(D, A) & ~channel2(D, gsh, A)
+             & (C = D | (~cacheExclusive(D, A) & ~channel2(D, gex, A)))
+             & ~channel3(D, A))
+        using shared_permission_directory | exclusive_permission_directory
+            | exclusive_ack_owner | ack_not_resident | ack_grant_disjoint
+
+    derived invariant [inflight_swmr] forall C : client, D : client, A : addr_t.
+        (channel2(C, gsh, A) | channel2(C, gex, A) | channel3(C, A)) ->
+            ~cacheExclusive(D, A)
+        using exclusive_lease | exclusive_grant_not_resident
+
+}
+
+}
+
+isolate abs_test_proof = {
+    type client 
+    type addr_t
+    instance abs_dut : abs(client, addr_t)
+
+    # Check abs invariants under every protocol transition.
+    # Run with: ivy_check german.ivy
+    export abs_dut.reqSharedRule
+    export abs_dut.reqExclusiveRule
+    export abs_dut.pickNewSharedRequestRule
+    export abs_dut.pickNewExclusiveRequestRule
+    export abs_dut.grantSharedRule
+    export abs_dut.grantExclusiveRule
+    export abs_dut.sendInvalidateRule
+    export abs_dut.receiveInvalidateAckRule
+    export abs_dut.sharerInvalidatesCacheRule
+    export abs_dut.evictCacheRule
+    export abs_dut.discardInvalidateRule
+    export abs_dut.receiveSharedGrantRule
+    export abs_dut.receiveExclusiveGrantRule
+}
