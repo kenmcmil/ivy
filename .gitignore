@@ -36,3 +36,24 @@ specs
 
 # These are library directories
 gnutls
+
+# macOS
+.DS_Store
+
+# direnv local state
+.direnv/
+
+# build_submodules.py outputs
+/ivy/bin/
+/ivy/lib/
+/ivy/include/picotls*
+/ivy/z3/
+
+# clang debug symbols
+*.dSYM/
+
+# v2 compiler binaries
+/ivy/ivy2/s1/ivyc_s1
+/ivy/ivy2/s1/ivyc_s1.dsc
+/ivy/ivy2/s2/ivyc_s2
+/ivy/ivy2/s3/ivyc_s3
